@@ -1,6 +1,6 @@
 verilog work "sbi.v"
 verilog work "nvaxtto.v"
 verilog work "nvaxtti.v"
+verilog work "nvaxconsole.v"
 # verilog work "sdram.v"
 # verilog work "cpu.v"
-# verilog work "console.v"

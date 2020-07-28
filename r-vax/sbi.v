@@ -68,12 +68,28 @@ defparam tto.CLKPERBIT = 2604;
 	assign rst = !n_rst;
 
 	reg buzz;
-	assign buzzer = buzz;
+	assign buzzer = 1;
 
+	/* instance wires */
+	wire tti_break;		// Break received on console
+	wire [7:0] cono_data;	// Data from console
 	wire [7:0] tti_data, tto_data;
-	wire tto_done, tti_done;
+	wire coni_ack, cono_start, cono_clear;
 
-	assign tto_data = tti_data;
+	/* common control wires */
+	wire reqhalt;		// CPU halt requested
+	wire halted;		// CPU is halted
+
+	/* backplane logic */
+	assign reqhalt = tti_break | rst /* | cpu_halt */;
+	assign running = !halted;
+	assign tto_data = /* running ? ipr_rxdb : */ cono_data;
+	assign tti_clear = /* running ? ipr_rxdb_ack : */ coni_ack;
+	assign tto_start = /* running ? ipr_txdb_start : */ cono_start;
+	assign tto_clear = /* running ? ipr_txdb_clear : */ cono_clear;
+
+`ifdef notdef
+	wire tto_done, tti_done;
 
 	reg ttos, ttic, ttoc;
 	assign tto_start = ttos;
@@ -96,6 +112,23 @@ defparam tto.CLKPERBIT = 2604;
 			ttic <= 0;
 		end
 	end
+`endif
+
+	console console(
+		.clk(clk),
+
+		.halted_i(halted),	// Handle commands
+
+		.din_i(tti_data),	// Data from tti
+		.dinrdy_i(tti_done),	// Data in valid
+		.dinack_o(coni_ack),	// Acknowledge data in
+
+		.dutbusy_i(tto_busy),	// tto currently sending
+		.dutdone_i(tto_done),	// tto finished
+		.dutst_o(cono_start),	// Start sending dono_data
+		.dutclr_o(cono_clear),	// Acknowledge done
+		.dut_o(cono_data)	// Only valid if halted == 1
+	);
 
 	tti tti(
 		.clk(clk),
