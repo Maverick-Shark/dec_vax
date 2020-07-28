@@ -1,0 +1,6 @@
+setmode -bscan
+setcable -p auto
+identify
+assignfile -p 1 -file nvax.bit
+program -p 1
+quit

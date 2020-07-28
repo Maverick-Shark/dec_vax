@@ -1,0 +1,92 @@
+# CPU pins
+NET "clkin" LOC = P184 | IOSTANDARD = LVTTL;
+NET "n_rst" LOC = P101 | IOSTANDARD = LVTTL;
+
+NET "buzzer" LOC=P123 | IOSTANDARD = LVTTL;
+
+# RS232 console device
+NET "tti_rx" LOC = P75 | IOSTANDARD = LVTTL;
+NET "tto_tx" LOC = P76 | IOSTANDARD = LVTTL;
+
+# USB host adapter
+#NET "usb_ncs"		LOC = P119 | IOSTANDARD = LVTTL;
+#NET "usb_data<0>"	LOC = P116 | IOSTANDARD = LVTTL;
+#NET "usb_nrd"		LOC = P115 | IOSTANDARD = LVTTL;
+#NET "usb_data<1>"	LOC = P113 | IOSTANDARD = LVTTL;
+#NET "usb_nwr"		LOC = P112 | IOSTANDARD = LVTTL;
+#NET "usb_data<2>"	LOC = P109 | IOSTANDARD = LVTTL;
+#NET "usb_intrq"		LOC = P108 | IOSTANDARD = LVTTL;
+#NET "usb_data<3>"	LOC = P107 | IOSTANDARD = LVTTL;
+#NET "usb_a0"		LOC = P106 | IOSTANDARD = LVTTL;
+#NET "usb_data<4>"	LOC = P102 | IOSTANDARD = LVTTL;
+#NET "usb_nrst"		LOC = P100 | IOSTANDARD = LVTTL;
+#NET "usb_data<5>"	LOC = P99 | IOSTANDARD = LVTTL;
+#NET "usb_ndack"		LOC = P98 | IOSTANDARD = LVTTL;
+#NET "usb_data<6>"	LOC = P97 | IOSTANDARD = LVTTL;
+## NET "usb_ndrq"		LOC = P96 | IOSTANDARD = LVTTL;
+#NET "usb_data<7>"	LOC = P94 | IOSTANDARD = LVTTL;
+
+# SDRAM adapter
+#NET "sdram_addr<5>"	LOC = P9 | IOSTANDARD = LVTTL | DRIVE=12 | SLEW=FAST;
+#NET "sdram_addr<4>"	LOC = P8 | IOSTANDARD = LVTTL | DRIVE=12 | SLEW=FAST;
+#NET "sdram_addr<7>"	LOC = P12 | IOSTANDARD = LVTTL | DRIVE=12 | SLEW=FAST;
+#NET "sdram_addr<6>"	LOC = P11 | IOSTANDARD = LVTTL | DRIVE=12 | SLEW=FAST;
+#NET "sdram_addr<9>"	LOC = P16 | IOSTANDARD = LVTTL | DRIVE=12 | SLEW=FAST;
+#NET "sdram_addr<8>"	LOC = P15 | IOSTANDARD = LVTTL | DRIVE=12 | SLEW=FAST;
+# NET "sdram_addr<12>"	LOC = P19 | IOSTANDARD = LVTTL | DRIVE=12 | SLEW=FAST;
+#NET "sdram_addr<11>"	LOC = p18 | IOSTANDARD = LVTTL | DRIVE=12 | SLEW=FAST;
+#NET "sdram_clk"		LOC = P23 | IOSTANDARD = LVTTL | DRIVE=12 | SLEW=FAST;
+#NET "sdram_cke"		LOC = P22 | IOSTANDARD = LVTTL | DRIVE=12 | SLEW=FAST;
+#NET "sdram_data<8>"	LOC = P25 | IOSTANDARD = LVTTL | DRIVE=12 | SLEW=FAST;
+#NET "sdram_udqm"	LOC = P24 | IOSTANDARD = LVTTL | DRIVE=12 | SLEW=FAST;
+#NET "sdram_data<10>"	LOC = P29 | IOSTANDARD = LVTTL | DRIVE=12 | SLEW=FAST;
+#NET "sdram_data<9>"	LOC = P28 | IOSTANDARD = LVTTL | DRIVE=12 | SLEW=FAST;
+#NET "sdram_data<12>"	LOC = P31 | IOSTANDARD = LVTTL | DRIVE=12 | SLEW=FAST;
+#NET "sdram_data<11>"	LOC = P30 | IOSTANDARD = LVTTL | DRIVE=12 | SLEW=FAST;
+#NET "sdram_data<14>"	LOC = P34 | IOSTANDARD = LVTTL | DRIVE=12 | SLEW=FAST;
+#NET "sdram_data<13>"	LOC = P33 | IOSTANDARD = LVTTL | DRIVE=12 | SLEW=FAST;
+# NET "SDRAM_L_21"      NC
+#NET "sdram_data<15>"	LOC = P35 | IOSTANDARD = LVTTL | DRIVE=12 | SLEW=FAST;
+#NET "sdram_addr<3>"	LOC = P153 | IOSTANDARD = LVTTL | DRIVE=12 | SLEW=FAST;
+#NET "sdram_addr<2>"	LOC = P160 | IOSTANDARD = LVTTL | DRIVE=12 | SLEW=FAST;
+#NET "sdram_addr<1>"	LOC = P151 | IOSTANDARD = LVTTL | DRIVE=12 | SLEW=FAST;
+#NET "sdram_addr<0>"	LOC = P152 | IOSTANDARD = LVTTL | DRIVE=12 | SLEW=FAST;
+#NET "sdram_addr<10>"	LOC = P147 | IOSTANDARD = LVTTL | DRIVE=12 | SLEW=FAST;
+#NET "sdram_ba<1>"	LOC = P150 | IOSTANDARD = LVTTL | DRIVE=12 | SLEW=FAST;
+#NET "sdram_ba<0>"	LOC = P145 | IOSTANDARD = LVTTL | DRIVE=12 | SLEW=FAST;
+#NET "sdram_cs"		LOC = P146 | IOSTANDARD = LVTTL | DRIVE=12 | SLEW=FAST;
+#NET "sdram_ras"		LOC = P140 | IOSTANDARD = LVTTL | DRIVE=12 | SLEW=FAST;
+#NET "sdram_cas"		LOC = P144 | IOSTANDARD = LVTTL | DRIVE=12 | SLEW=FAST;
+#NET "sdram_we"		LOC = P138 | IOSTANDARD = LVTTL | DRIVE=12 | SLEW=FAST;
+#NET "sdram_ldqm"	LOC = P139 | IOSTANDARD = LVTTL | DRIVE=12 | SLEW=FAST;
+#NET "sdram_data<7>"	LOC = P135 | IOSTANDARD = LVTTL | DRIVE=12 | SLEW=FAST;
+#NET "sdram_data<6>"	LOC = P137 | IOSTANDARD = LVTTL | DRIVE=12 | SLEW=FAST;
+#NET "sdram_data<5>"	LOC = P133 | IOSTANDARD = LVTTL | DRIVE=12 | SLEW=FAST;
+#NET "sdram_data<4>"	LOC = P134 | IOSTANDARD = LVTTL | DRIVE=12 | SLEW=FAST;
+#NET "sdram_data<3>"	LOC = P129 | IOSTANDARD = LVTTL | DRIVE=12 | SLEW=FAST;
+#NET "sdram_data<2>"	LOC = P132 | IOSTANDARD = LVTTL | DRIVE=12 | SLEW=FAST;
+#NET "sdram_data<1>"	LOC = P127 | IOSTANDARD = LVTTL | DRIVE=12 | SLEW=FAST;
+#NET "sdram_data<0>"	LOC = P128 | IOSTANDARD = LVTTL | DRIVE=12 | SLEW=FAST;
+
+#NET "n_pfail" LOC = AA3 | IOSTANDARD = LVTTL | PULLUP;
+# NET "d1" LOC = AB4 | IOSTANDARD = LVTTL;
+#NET "d2" LOC = AA4 | IOSTANDARD = LVTTL;
+#NET "d3" LOC = AA5 | IOSTANDARD = LVTTL;
+#NET "d4" LOC = AB5 | IOSTANDARD = LVTTL;
+
+# User 4-DIGIT 7-Segment data signals
+#NET "segment<0>"    LOC = "W18"  | IOSTANDARD = LVTTL  | DRIVE = 24 ;	# G
+#NET "segment<1>"    LOC = "AA18" | IOSTANDARD = LVTTL  | DRIVE = 24 ;	# F	
+#NET "segment<2>"    LOC = "AB18" | IOSTANDARD = LVTTL  | DRIVE = 24 ;	# E
+#NET "segment<3>"    LOC = "Y17"  | IOSTANDARD = LVTTL  | DRIVE = 24 ;	# D
+#NET "segment<4>"    LOC = "V18"  | IOSTANDARD = LVTTL  | DRIVE = 24 ;	# C
+#NET "segment<5>"    LOC = "AA20" | IOSTANDARD = LVTTL  | DRIVE = 24 ;	# B
+#NET "segment<6>"    LOC = "AB20" | IOSTANDARD = LVTTL  | DRIVE = 24 ;	# A
+# NET "segment<7>"    LOC = "W17"  | IOSTANDARD = LVTTL  | DRIVE = 24 ;	# decimal point.
+
+# User 4-DIGIT 7-Segment digit selection signals	 
+#NET "digit<0>"  LOC = "U14"  | IOSTANDARD = LVTTL  | DRIVE = 24 ;	# digit 4
+#NET "digit<1>"  LOC = "U16"  | IOSTANDARD = LVTTL  | DRIVE = 24 ;	# digit 3
+#NET "digit<2>"  LOC = "U17"  | IOSTANDARD = LVTTL  | DRIVE = 24 ;	# digit 2
+#NET "digit<3>"  LOC = "AA17" | IOSTANDARD = LVTTL  | DRIVE = 24 ;	# digit 1
+# NET "SEG_LED_SELECT<4>"  LOC = "V17"  | IOSTANDARD = LVTTL  | DRIVE = 24 ;	-- colon and upper point.
