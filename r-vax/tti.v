@@ -1,5 +1,5 @@
 /*
- * TTI - Resembles (somewhat) a 4077 controller.
+ * TTI - Resembles (somewhat) a DG 4077 controller.
  *
  * Set DONE after character received. Must be cleared by program.
  * BUSY is set if START is issued and cleared when DONE.
@@ -9,16 +9,25 @@
  * a done/devcomplete signal.
  */
 
+`define		DEVTTI	6'o10
+`define		IODIA	3'b001
+
 module tti #(
 	parameter CLKPERBIT = 5208
 ) (
 	input		clk,
 	input		iorst,
 
-	input		clear_i,
-	output 		done_o,
-	output [7:0]	outdata_o,
-	output reg	gotbreak_o,
+	input		start,
+	input		clear,
+	input [0:5]	device,
+	input [0:2]	ioreg,
+	input		intmsk,
+	output 		busy,
+	output 		done,
+	output [7:0]	outdata,
+	output		intreq,
+	output reg	gotbreak,
 
 	input		tti_rx
 );
@@ -39,20 +48,32 @@ localparam TTISTOP=	4'd10;
 	reg [7:0] rxdata, data;
 	reg [15:0] clkcnt;
 	reg [3:0] state;
-	reg ffdone;
+	reg ffbusy, ffdone;
 
-	assign done_o = ffdone;
-	assign outdata_o = data;
+	assign devsel = device == `DEVTTI;
+	assign busy = devsel ? ffbusy : 1'b0;
+	assign done = devsel ? ffdone : 1'b0;
+	assign outdata = devsel && ioreg == `IODIA ? data : 0;
+	assign intreq = intmsk ? 1'b0 : ffdone;
 
 	reg devcomplete;
 
 	always @(posedge clk) begin
 		if (iorst) begin
+			ffbusy <= 0;
 			ffdone <= 0;
 		end else if (devcomplete) begin
+			ffbusy <= 0;
 			ffdone <= 1;
-		end else if (clear_i) begin
-			ffdone <= 0;
+		end else
+		if (devsel) begin
+			if (clear) begin
+				ffbusy <= 0;
+				ffdone <= 0;
+			end else if (start) begin
+				ffbusy <= 1;
+				ffdone <= 0;
+			end
 		end
 	end
 
@@ -64,8 +85,8 @@ localparam TTISTOP=	4'd10;
 			state <= TTIIDLE;
 		end else if (state == TTIIDLE) begin
 			devcomplete <= 0;
-			if (gotbreak_o && tti_rx)
-				gotbreak_o <= 0;
+			if (gotbreak && tti_rx)
+				gotbreak <= 0;
 			else if (tti_rx == 0) begin
 				clkcnt <= 0;
 				state <= TTISTART;
@@ -83,7 +104,7 @@ localparam TTISTOP=	4'd10;
 			if (clkcnt == CLKPERBIT) begin
 				if (state == TTISTOP) begin
 					if (tti_rx == 0)
-						gotbreak_o <= 1;
+						gotbreak <= 1;
 					else
 						devcomplete <= 1;
 					state <= TTIIDLE;

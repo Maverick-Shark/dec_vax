@@ -1,9 +1,9 @@
 set -tmpdir "xst/projnav.tmp"
 set -xsthdpdir "xst"
 run
--ifn nvax.prj
+-ifn sbi.prj
 -ifmt mixed
--ofn nvax
+-ofn sbi
 -ofmt NGC
 -p xc3s500e-4-pq208
 -top sbi
@@ -42,7 +42,7 @@ run
 -async_to_sync NO
 -mult_style Auto
 -iobuf YES
--max_fanout 100000
+-max_fanout 500
 -bufg 24
 -register_duplication YES
 -register_balancing No

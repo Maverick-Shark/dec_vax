@@ -69,91 +69,25 @@ defparam tto.CLKPERBIT = 2604;
 
 	reg buzz;
 	assign buzzer = 1;
-
-	/* instance wires */
-	wire tti_break;		// Break received on console
-	wire [7:0] cono_data;	// Data from console
-	wire [7:0] tti_data, tto_data;
-	wire coni_ack, cono_start, cono_clear;
+	assign halted = 1;
 
 	/* common control wires */
 	wire reqhalt;		// CPU halt requested
-	wire halted;		// CPU is halted
+//	wire halted;		// CPU is halted
+	wire brk;
 
 	/* backplane logic */
-	assign reqhalt = tti_break | rst /* | cpu_halt */;
+	assign reqhalt = brk | rst /* | cpu_halt */;
 	assign running = !halted;
-	assign tto_data = /* running ? ipr_rxdb : */ cono_data;
-	assign tti_clear = /* running ? ipr_rxdb_ack : */ coni_ack;
-	assign tto_start = /* running ? ipr_txdb_start : */ cono_start;
-	assign tto_clear = /* running ? ipr_txdb_clear : */ cono_clear;
-
-`ifdef notdef
-	wire tto_done, tti_done;
-
-	reg ttos, ttic, ttoc;
-	assign tto_start = ttos;
-	assign tti_clear = ttic;
-	assign tto_clear = ttoc;
-
-	always @(posedge clk) begin
-		if (tti_done) begin
-			ttos <= 1;
-			ttic <= 1;
-			if (tti_data == "B")
-				buzz <= 1;
-			else if (tti_data == "b")
-				buzz <= 0;
-		end else if (tto_done) begin
-			ttoc <= 1;
-		end else begin
-			ttos <= 0;
-			ttoc <= 0;
-			ttic <= 0;
-		end
-	end
-`endif
 
 	console console(
 		.clk(clk),
+		.rst(rst),
 
 		.halted_i(halted),	// Handle commands
+		.break_o(brk),	// want to halt
 
-		.din_i(tti_data),	// Data from tti
-		.dinrdy_i(tti_done),	// Data in valid
-		.dinack_o(coni_ack),	// Acknowledge data in
-
-		.dutbusy_i(tto_busy),	// tto currently sending
-		.dutdone_i(tto_done),	// tto finished
-		.dutst_o(cono_start),	// Start sending dono_data
-		.dutclr_o(cono_clear),	// Acknowledge done
-		.dut_o(cono_data)	// Only valid if halted == 1
-	);
-
-	tti tti(
-		.clk(clk),
-		.iorst(rst),
-
-		.clear_i(tti_clear),	// clears done
-		.done_o(tti_done),	// set when a char is received
-					// also signals rx interrupt
-		.outdata_o(tti_data),	// data [7:0] valid when done is set
-		.gotbreak_o(tti_break),	// break received
-
-		.tti_rx(tti_rx)
-	);
-
-	tto tto(
-		.clk(clk),
-		.iorst(rst),
-
-		.start_i(tto_start),	// starts transmission of buffer
-		.clear_i(tto_clear),	// clears done
-		.busy_o(tto_busy),	// set while sending
-		.done_o(tto_done),	// set when done
-
-		.data_i(tto_data),	// send buffer, loaded at start
-
+		.tti_rx(tti_rx),
 		.tto_tx(tto_tx)
 	);
 

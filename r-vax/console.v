@@ -1,41 +1,553 @@
-/*	$Id$	*/
+
 /*
+ * Simple nova4-like console emulator.
  *
+ * All commands can begin with an octal number.
+ * 	/	Open a memory cell
+ *	C	Continue at address
+ *	S	Execute one insn, then jump back to the console
+ *	L	Load from device
+ *	A	Open cell at number
+ *			0-3	AC
+ *			4	PC
+ *			11	Switch register
+ *			12	C
+ *			13	Halt reason
  */
+`define	CPUHALT		5'd0
+`define	CPUFETCH2	5'd2
+`define	IODIA		3'b001
+`define	IODOA		3'b010
 
-module console (
-	input		clk,
+`define DEVTTI		6'o10
+`define DEVTTO		6'o11
 
-	input		halted_i,
+`define	CONSOLE		6'd0
+`define	CONSOLE2	6'd1
+`define	CONSOLE3	6'd2
+`define	CONSOLE4	6'd3
+`define	GETCHAR		6'd4
+`define	GETCHAR2	6'd5
+`define	GETCHAR3	6'd6
+`define	PUTCHAR		6'd7
+`define	PUTCHAR2	6'd8
+`define	PUTCHAR3	6'd9
+`define	CRLFEXC		6'd10
+`define	CRLFEXC2	6'd11
+`define	CRLFEXC3	6'd12
+`define	READNUM		6'd13
+`define	READNUM2	6'd14
+`define	READNUM3	6'd15
+`define	WRITENUM	6'd16
+`define	WRITENUM2	6'd17
+`define	WRITENUM3	6'd18
+`define	WRITENUM4	6'd19
+`define	WRITENUM5	6'd20
+`define	WRITENUM6	6'd21
+`define	GETCHAR4	6'd22
+`define	MEMREFS		6'd23
+`define	MEMREFS2	6'd24
+`define	MEMREFS3	6'd25
+`define	MEMREFS4	6'd26
+`define	MEMREFS5	6'd27
+`define	AREFS		6'd28
+`define	AREFS2		6'd29
+`define	AREFS3		6'd30
+`define	AREFS4		6'd31
+`define	PUTCHAR21	6'd32
+`define	LOAD		6'd33
+`define	LOAD2		6'd34
 
-	input		dinrdy_i,
-	output		dinack_o,
-	input [7:0]	din_i,
+`define	READNUM_NEXT_C4	2'd0
+`define	READNUM_NEXT_A4	2'd1
+`define	READNUM_NEXT_M4	2'd2
 
-	input 		dutbusy_i,
-	input 		dutdone_i,
-	output		dutst_o,
-	output		dutclr_o,
-	output [7:0]	dut_o
+`define	WRITNUM_NEXT_C2	2'd0
+`define	WRITNUM_NEXT_A2	2'd1
+`define	WRITNUM_NEXT_M2	2'd2
+
+`define	PUTCHAR_NEXT_C2	4'd0
+`define	PUTCHAR_NEXT_A3	4'd1
+`define	PUTCHAR_NEXT_M3	4'd2
+`define	PUTCHAR_NEXT_C3	4'd3
+`define	PUTCHAR_NXT_CL2	4'd4
+`define	PUTCHAR_NXT_CL3	4'd5
+`define	PUTCHAR_NEXT_W2	4'd6
+`define	PUTCHAR_NEXT_W3	4'd7
+`define	PUTCHAR_NEXT_W4	4'd8
+`define	PUTCHAR_NEXT_W5	4'd9
+`define	PUTCHAR_NEXT_W6	4'd10
+`define	PUTCHAR_NEXT_R3	4'd11
+`define	PUTCHAR_NEXT_A2	4'd12
+`define	PUTCHAR_NEXT_M2	4'd13
+
+module console(
+	input clk,
+	input rst,
+
+	output reg [1:15] conaddr,
+	output reg	  conwrite,
+	output reg [0:15] conwdata,
+	output reg	  conready,
+	input [0:15]	  conrdata,
+	input		  convalid,
+
+	output reg halt, output reg cont,
+	output reg refpc, output reg refac0, output reg refac1,
+	output reg refac2, output reg refac3,
+	input [4:0] cpustate,
+	input [1:15] pc,
+	input [0:15] ac0,
+	input [0:15] ac1,
+	input [0:15] ac2,
+	input [0:15] ac3,
+	input C,
+	input [1:0]	hreason,
+	output reg [0:15]	switches,
+
+	input halted_i,
+	output break_o,
+
+	input tti_rx,
+	output tto_tx
+
 );
 
-	assign dut_o = din_i;
-	reg ack, start, clear;
+	reg [5:0]	state;		/* 33 states */
+	reg [1:0] 	readnum_next;	/* three states */
+	reg [1:0]	writenum_next;	/* three states */
+	reg [3:0]	putchar_next;	/* 14 states */
+	reg [15:0] 	innum, utnum;
+	reg [7:0] 	tmp;
+	reg		step, nodig;
+	reg [3:0] 	anum;
+	reg [4:0]	bootidx;
 
-	assign dinack_o = ack;
-	assign dutst_o = start;
-	assign dutclr_o = clear;
+	(*rom_style = "block" *) reg [15:0] romdata;
+
+	reg [0:5] device;
+	wire busy, done, ttibusy, ttobusy, ttidone, ttodone;
+	wire [7:0] iodatain;
+	reg start, clear;
+	reg [0:2] ioreg;
+	reg [7:0] iodataut;
+	wire ttiintreq, ttointreq;
+
+	assign busy = ttibusy | ttobusy;
+	assign done = ttidone | ttodone;
+	assign ttiintmsk = 1'b0;
+	assign ttointmsk = 1'b0;
+	assign intreq = ttiintreq | ttointreq;
+
+	tti tti(
+		.clk(clk),
+		.iorst(rst),
+
+		.start(start),
+		.clear(clear),
+		.device(device),
+		.ioreg(ioreg),
+		.intmsk(ttiintmsk),
+
+		.busy(ttibusy),
+		.done(ttidone),
+		.outdata(iodatain),
+		.intreq(ttiintreq),
+		.gotbreak(break_o),
+
+		.tti_rx(tti_rx)
+	);
+
+	tto tto(
+		.clk(clk),
+		.iorst(rst),
+
+		.start(start),
+		.clear(clear),
+		.device(device),
+		.ioreg(ioreg),
+		.intmsk(ttointmsk),
+
+		.busy(ttobusy),
+		.done(ttodone),
+		.intreq(ttointreq),
+
+		.data(iodataut),
+
+		.tto_tx(tto_tx)
+	);
+
+
 
 	always @(posedge clk) begin
-		if (dinrdy_i) begin
-			ack <= 1;
-			start <= 1;
-		end else if (dutdone_i) begin
-			clear <= 1;
-		end else begin
-			ack <= 0;
-			start <= 0;
-			clear <= 0;
+		if (rst) begin
+			state <= `CONSOLE;
+			cont <= 0;
+			step <= 0;
+		end else if (cpustate == `CPUFETCH2) begin
+			if (step) begin
+				step <= 0;
+				halt <= 1;
+			end
+			cont <= 0;
+		end else if (cpustate == `CPUHALT)
+		case (state)
+		`CONSOLE: begin
+			if (cpustate == `CPUHALT && !cont) begin
+				halt <= 0;
+				utnum <= { 1'b0, pc };
+				writenum_next <= `WRITNUM_NEXT_C2;
+				state <= `WRITENUM;
+			end
 		end
+		`CONSOLE2: begin
+			state <= `CRLFEXC;
+			conwrite <= 0;
+			refpc <= 0;
+			refac0 <= 0;
+			refac1 <= 0;
+			refac2 <= 0;
+			refac3 <= 0;
+		end
+		`CONSOLE3: begin
+			state <= `READNUM;
+			readnum_next <= `READNUM_NEXT_C4;
+		end
+		`CONSOLE4: begin
+			if (tmp == "C") begin
+				state <= `CONSOLE;
+				cont <= 1;
+			end else if (tmp == "S") begin
+				state <= `CONSOLE;
+				step <= 1;
+				cont <= 1;
+			end else if (tmp == "/") begin
+				conaddr <= innum;
+				conwrite <= 0;
+				conready <= 1;
+				state <= `MEMREFS;
+			end else if (tmp == "L") begin
+				switches <= innum;
+				bootidx <= 0;
+				state <= `LOAD;
+			end else if (tmp == "A") begin
+				state <= `AREFS;
+			end else begin
+				tmp <= "?";
+				state <= `PUTCHAR;
+				putchar_next <= `PUTCHAR_NEXT_C2;
+			end
+		end
+		/*
+		 * boot from given device.
+		 */
+		`LOAD: begin
+			conaddr <= { 11'b0, bootidx };
+			case (bootidx)
+			5'o00: romdata = 16'o062677;
+			5'o01: romdata = 16'o060477;
+			5'o02: romdata = 16'o024026;
+			5'o03: romdata = 16'o107400;
+			5'o04: romdata = 16'o124000;
+			5'o05: romdata = 16'o010014;
+			5'o06: romdata = 16'o010030;
+			5'o07: romdata = 16'o010032;
+			5'o10: romdata = 16'o125404;
+			5'o11: romdata = 16'o000005;
+			5'o12: romdata = 16'o030016;
+			5'o13: romdata = 16'o050377;
+			5'o14: romdata = 16'o060077;
+			5'o15: romdata = 16'o101102;
+			5'o16: romdata = 16'o000377;
+			5'o17: romdata = 16'o004030;
+			5'o20: romdata = 16'o101065;
+			5'o21: romdata = 16'o000017;
+			5'o22: romdata = 16'o004027;
+			5'o23: romdata = 16'o046026;
+			5'o24: romdata = 16'o010100;
+			5'o25: romdata = 16'o000022;
+			5'o26: romdata = 16'o000077;
+			5'o27: romdata = 16'o126420;
+			5'o30: romdata = 16'o063577;
+			5'o31: romdata = 16'o000030;
+			5'o32: romdata = 16'o060477;
+			5'o33: romdata = 16'o107363;
+			5'o34: romdata = 16'o000030;
+			5'o35: romdata = 16'o125300;
+			5'o36: romdata = 16'o001400;
+			5'o37: romdata = 16'o000000;
+			endcase
+			conwdata <= romdata;
+			conwrite <= 1;
+			conready <= 1;
+			state <= `LOAD2;
+		end
+		`LOAD2: if (convalid) begin
+			conready <= 0;
+			conwrite <= 0;
+			bootidx <= bootidx + 1;
+			if (bootidx == 5'o37) begin
+				state <= `CONSOLE;
+				cont <= 1;
+				conwdata <= 0;
+				conwrite <= 1;
+				refpc <= 1;
+			end else
+				state <= `LOAD;
+		end
+		/*
+		 * Read (and maybe write?) from an A register.
+		 */
+		`AREFS: begin
+			anum <= innum[3:0];
+			case (innum[3:0])
+			16'd0: utnum <= ac0;
+			16'd1: utnum <= ac1;
+			16'd2: utnum <= ac2;
+			16'd3: utnum <= ac3;
+			16'd4: utnum <= { 1'b0, pc };
+			16'o11: utnum <= { switches };
+			16'o12: utnum <= { 15'b0, C };
+			16'o13: utnum <= { 14'b0, hreason };
+			default: utnum <= 16'o177777;
+			endcase
+			writenum_next <= `WRITNUM_NEXT_A2;
+			state <= `WRITENUM;
+		end
+		`AREFS2: begin
+			tmp <= " ";
+			state <= `PUTCHAR;
+			putchar_next <= `PUTCHAR_NEXT_A3;
+		end
+		`AREFS3: begin
+			innum <= 0;
+			state <= `READNUM;
+			readnum_next <= `READNUM_NEXT_A4;
+		end
+		`AREFS4: begin
+			if (tmp == 8'd13) begin
+				if (nodig == 0) begin
+					case (anum[3:0])
+					4'd0: begin
+						conwdata <= innum;
+						conwrite <= 1;
+						refac0 <= 1;
+					end
+					4'd1: begin
+						conwdata <= innum;
+						conwrite <= 1;
+						refac1 <= 1;
+					end
+					4'd2: begin
+						conwdata <= innum;
+						conwrite <= 1;
+						refac2 <= 1;
+					end
+					4'd3: begin
+						conwdata <= innum;
+						conwrite <= 1;
+						refac3 <= 1;
+					end
+					4'd4: begin
+						conwdata <= innum[14:0];
+						conwrite <= 1;
+						refpc <= 1;
+					end
+					4'o11: switches <= innum;
+					default: conwdata <= 0;
+					endcase
+				end
+				state <= `CONSOLE2;
+			end else begin
+				tmp <= "?";
+				state <= `PUTCHAR;
+				putchar_next <= `PUTCHAR_NEXT_C2;
+			end
+		end
+
+		/*
+		 * Read (and maybe write?) from a memory location.
+		 */
+		`MEMREFS: if (convalid) begin
+			utnum <= conrdata;
+			writenum_next <= `WRITNUM_NEXT_M2;
+			state <= `WRITENUM;
+		end
+		`MEMREFS2: begin
+			conready <= 0;
+			tmp <= " ";
+			state <= `PUTCHAR;
+			putchar_next <= `PUTCHAR_NEXT_M3;
+		end
+		`MEMREFS3: begin
+			innum <= 0;
+			state <= `READNUM;
+			readnum_next <= `READNUM_NEXT_M4;
+		end
+		`MEMREFS4: begin
+			if (tmp == 8'd13) begin
+				if (nodig == 0) begin
+					conwdata <= innum;
+					conwrite <= 1;
+					conready <= 1;
+					state <= `MEMREFS5;
+				end else
+					state <= `CONSOLE2;
+			end else begin
+				tmp <= "?";
+				state <= `PUTCHAR;
+				putchar_next <= `PUTCHAR_NEXT_C2;
+			end
+		end
+		`MEMREFS5: if (convalid) begin
+			conready <= 0;
+			conwrite <= 0;
+			state <= `CONSOLE2;
+		end
+
+		/*
+		 * Get char and put in tmp
+		 */
+		`GETCHAR: begin
+			device <= `DEVTTI;
+			ioreg <= `IODIA;
+			state <= `GETCHAR2;
+		end
+		`GETCHAR2: if (done) begin
+			tmp <= iodatain;
+			clear <= 1;
+			state <= `GETCHAR3;
+		end
+		`GETCHAR3: state <= `GETCHAR4;
+		`GETCHAR4: begin
+			device <= 0;
+			clear <= 0;
+			ioreg <= 0;
+			state <= `READNUM2;
+		end
+		/*
+		 * Print out char in tmp
+		 */
+		`PUTCHAR: begin
+			device <= `DEVTTO;
+			state <= `PUTCHAR2;
+		end
+		`PUTCHAR2: if (busy == 0) begin
+			start <= 1;
+			ioreg <= `IODOA;
+			iodataut <= tmp;
+			state <= `PUTCHAR21;
+		end
+		`PUTCHAR21: state <= `PUTCHAR3;
+		`PUTCHAR3: begin
+			device <= 0;
+			start <= 0;
+			ioreg <= 0;
+			iodataut <= 0;
+			case (putchar_next)
+			`PUTCHAR_NEXT_C2: state <= `CONSOLE2;
+			`PUTCHAR_NEXT_A3: state <= `AREFS3;
+			`PUTCHAR_NEXT_M3: state <= `MEMREFS3;
+			`PUTCHAR_NEXT_C3: state <= `CONSOLE3;
+			`PUTCHAR_NXT_CL2: state <= `CRLFEXC2;
+			`PUTCHAR_NXT_CL3: state <= `CRLFEXC3;
+			`PUTCHAR_NEXT_W2: state <= `WRITENUM2;
+			`PUTCHAR_NEXT_W3: state <= `WRITENUM3;
+			`PUTCHAR_NEXT_W4: state <= `WRITENUM4;
+			`PUTCHAR_NEXT_W5: state <= `WRITENUM5;
+			`PUTCHAR_NEXT_W6: state <= `WRITENUM6;
+			`PUTCHAR_NEXT_R3: state <= `READNUM3;
+			`PUTCHAR_NEXT_A2: state <= `AREFS2;
+			`PUTCHAR_NEXT_M2: state <= `MEMREFS2;
+			default: state <= `CONSOLE2;
+			endcase
+		end
+		/*
+		 * Print out \r\n!
+		 */
+		`CRLFEXC: begin
+			tmp <= 8'd13;
+			state <= `PUTCHAR;
+			putchar_next <= `PUTCHAR_NXT_CL2;
+		end
+		`CRLFEXC2: begin
+			tmp <= 8'd10;
+			state <= `PUTCHAR;
+			putchar_next <= `PUTCHAR_NXT_CL3;
+		end
+		`CRLFEXC3: begin
+			tmp <= "#";
+			state <= `PUTCHAR;
+			putchar_next <= `PUTCHAR_NEXT_C3;
+		end
+		/*
+		 * Print out num in utnum.
+		 */
+		`WRITENUM: begin
+			tmp <= { 7'b0011000, utnum[15] };
+			state <= `PUTCHAR;
+			putchar_next <= `PUTCHAR_NEXT_W2;
+		end
+		`WRITENUM2: begin
+			tmp <= { 5'b00110, utnum[14:12] };
+			state <= `PUTCHAR;
+			putchar_next <= `PUTCHAR_NEXT_W3;
+		end
+		`WRITENUM3: begin
+			tmp <= { 5'b00110, utnum[11:9] };
+			state <= `PUTCHAR;
+			putchar_next <= `PUTCHAR_NEXT_W4;
+		end
+		`WRITENUM4: begin
+			tmp <= { 5'b00110, utnum[8:6] };
+			state <= `PUTCHAR;
+			putchar_next <= `PUTCHAR_NEXT_W5;
+		end
+		`WRITENUM5: begin
+			tmp <= { 5'b00110, utnum[5:3] };
+			state <= `PUTCHAR;
+			putchar_next <= `PUTCHAR_NEXT_W6;
+		end
+		`WRITENUM6: begin
+			tmp <= { 5'b00110, utnum[2:0] };
+			state <= `PUTCHAR;
+			(* full_case *)
+			case (writenum_next)
+			`WRITNUM_NEXT_C2: putchar_next <= `PUTCHAR_NEXT_C2;
+			`WRITNUM_NEXT_A2: putchar_next <= `PUTCHAR_NEXT_A2;
+			`WRITNUM_NEXT_M2: putchar_next <= `PUTCHAR_NEXT_M2;
+			endcase
+		end
+		/*
+		 * read in digits until no more digit into innum.
+		 * return offending char in tmp
+		 */
+		`READNUM: begin
+			nodig <= 1;
+			innum <= 0;
+			state <= `GETCHAR;
+		end
+		`READNUM2: begin
+			state <= `PUTCHAR;
+			putchar_next <= `PUTCHAR_NEXT_R3;
+		end
+		`READNUM3: begin
+			if (tmp[6:3] == 4'b0110) begin // digit
+				nodig <= 0;
+				innum <= { innum[12:0], tmp[2:0] };
+				state <= `GETCHAR;
+			end else begin
+				if (tmp[6])
+					tmp[5] <= 0;
+				(* full_case *)
+				case (readnum_next)
+				`READNUM_NEXT_C4: state <= `CONSOLE4;
+				`READNUM_NEXT_A4: state <= `AREFS4;
+				`READNUM_NEXT_M4: state <= `MEMREFS4;
+				endcase
+			end
+		end
+		endcase
 	end
+
 endmodule

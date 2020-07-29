@@ -1,6 +1,6 @@
 setmode -bscan
 setcable -p auto
 identify
-assignfile -p 1 -file nvax.bit
+assignfile -p 1 -file sbi.bit
 program -p 1
 quit
