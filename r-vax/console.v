@@ -182,7 +182,41 @@ module console(
 		.tto_tx(tto_tx)
 	);
 
+	reg [3:0] htoa;
+	reg [7:0] hexd;
+	always @(htoa) begin
+		case (htoa)
+		4'd0: hexd = "0";
+		4'd1: hexd = "1";
+		4'd2: hexd = "2";
+		4'd3: hexd = "3";
+		4'd4: hexd = "4";
+		4'd5: hexd = "5";
+		4'd6: hexd = "6";
+		4'd7: hexd = "7";
+		4'd8: hexd = "8";
+		4'd9: hexd = "9";
+		4'd10: hexd = "A";
+		4'd11: hexd = "B";
+		4'd12: hexd = "C";
+		4'd13: hexd = "D";
+		4'd14: hexd = "E";
+		4'd15: hexd = "F";
+		endcase
+	end
 
+	always @* begin
+		case (state)
+		`WRITENUM21: htoa = utnum[31:28];
+		`WRITENUM2: htoa = utnum[27:24];
+		`WRITENUM3: htoa = utnum[23:20];
+		`WRITENUM4: htoa = utnum[19:16];
+		`WRITENUM5: htoa = utnum[15:12];
+		`WRITENUM51: htoa = utnum[11:8];
+		`WRITENUM52: htoa = utnum[7:4];
+		default: htoa = utnum[3:0];
+		endcase
+	end
 
 	always @(posedge clk) begin
 		if (rst) begin
@@ -201,7 +235,7 @@ module console(
 			if (cpustate == `CPUHALT && !cont) begin
 				halt <= 0;
 		//		utnum <= { 1'b0, pc };
-				utnum <= 32'h1234abcd;
+				utnum <= 32'h7234abcd;
 				writenum_next <= `WRITNUM_NEXT_C2;
 				state <= `WRITENUM;
 			end
@@ -499,66 +533,42 @@ module console(
 			putchar_next <= `PUTCHAR_NEXT_W21;
 		end
 		`WRITENUM21: begin
-			if (utnum[31:28] >= 4'd9)
-				tmp <= 8'd55 + utnum[31:28];
-			else
-				tmp <= { 4'b0011, utnum[31:28] };
+			tmp <= hexd;
 			state <= `PUTCHAR;
 			putchar_next <= `PUTCHAR_NEXT_W2;
 		end
 		`WRITENUM2: begin
-			if (utnum[27:24] > 4'd9)
-				tmp <= 8'd55 + utnum[27:24];
-			else
-				tmp <= { 4'b0011, utnum[27:24] };
+			tmp <= hexd;
 			state <= `PUTCHAR;
 			putchar_next <= `PUTCHAR_NEXT_W3;
 		end
 		`WRITENUM3: begin
-			if (utnum[23:20] > 4'd9)
-				tmp <= 8'd55 + utnum[23:20];
-			else
-				tmp <= { 4'b0011, utnum[23:20] };
+			tmp <= hexd;
 			state <= `PUTCHAR;
 			putchar_next <= `PUTCHAR_NEXT_W4;
 		end
 		`WRITENUM4: begin
-			if (utnum[19:16] > 4'd9)
-				tmp <= 8'd55 + utnum[19:16];
-			else
-				tmp <= { 4'b0011, utnum[19:16] };
+			tmp <= hexd;
 			state <= `PUTCHAR;
 			putchar_next <= `PUTCHAR_NEXT_W5;
 		end
 		`WRITENUM5: begin
-			if (utnum[15:12] > 4'd9)
-				tmp <= 8'd55 + utnum[15:12];
-			else
-				tmp <= { 4'b0011, utnum[15:12] };
+			tmp <= hexd;
 			state <= `PUTCHAR;
 			putchar_next <= `PUTCHAR_NEXT_W51;
 		end
 		`WRITENUM51: begin
-			if (utnum[11:8] > 4'd9)
-				tmp <= 8'd55 + utnum[11:8];
-			else
-				tmp <= { 4'b0011, utnum[11:8] };
+			tmp <= hexd;
 			state <= `PUTCHAR;
 			putchar_next <= `PUTCHAR_NEXT_W52;
 		end
 		`WRITENUM52: begin
-			if (utnum[7:4] > 4'd9)
-				tmp <= 8'd55 + utnum[7:4];
-			else
-				tmp <= { 4'b0011, utnum[7:4] };
+			tmp <= hexd;
 			state <= `PUTCHAR;
 			putchar_next <= `PUTCHAR_NEXT_W6;
 		end
 		`WRITENUM6: begin
-			if (utnum[3:0] > 4'd9)
-				tmp <= 8'd55 + utnum[3:0];
-			else
-				tmp <= { 4'b0011, utnum[3:0] };
+			tmp <= hexd;
 			state <= `PUTCHAR;
 			(* full_case *)
 			case (writenum_next)
