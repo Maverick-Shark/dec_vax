@@ -1,19 +1,18 @@
-
 /*
- * Simple nova4-like console emulator.
+ * Simple console emulator.
  *
- * All commands can begin with an octal number.
- * 	/	Open a memory cell
- *	C	Continue at address
+ * All commands can begin with a hex number.
+ * 	/	Open a (virtual) memory cell
+ * 	P	Open a (physical) memory cell
+ *	G	Continue at address
  *	S	Execute one insn, then jump back to the console
  *	L	Load from device
- *	A	Open cell at number
- *			0-3	AC
- *			4	PC
- *			11	Switch register
- *			12	C
- *			13	Halt reason
+ *	R	Open a register
+ *	I	Open an internal register
  */
+`define	WBITS		31
+
+
 `define	CPUHALT		5'd0
 `define	CPUFETCH2	5'd2
 `define	IODIA		3'b001
@@ -57,6 +56,9 @@
 `define	PUTCHAR21	6'd32
 `define	LOAD		6'd33
 `define	LOAD2		6'd34
+`define	WRITENUM21	6'd35
+`define	WRITENUM51	6'd36
+`define	WRITENUM52	6'd37
 
 `define	READNUM_NEXT_C4	2'd0
 `define	READNUM_NEXT_A4	2'd1
@@ -66,20 +68,23 @@
 `define	WRITNUM_NEXT_A2	2'd1
 `define	WRITNUM_NEXT_M2	2'd2
 
-`define	PUTCHAR_NEXT_C2	4'd0
-`define	PUTCHAR_NEXT_A3	4'd1
-`define	PUTCHAR_NEXT_M3	4'd2
-`define	PUTCHAR_NEXT_C3	4'd3
-`define	PUTCHAR_NXT_CL2	4'd4
-`define	PUTCHAR_NXT_CL3	4'd5
-`define	PUTCHAR_NEXT_W2	4'd6
-`define	PUTCHAR_NEXT_W3	4'd7
-`define	PUTCHAR_NEXT_W4	4'd8
-`define	PUTCHAR_NEXT_W5	4'd9
-`define	PUTCHAR_NEXT_W6	4'd10
-`define	PUTCHAR_NEXT_R3	4'd11
-`define	PUTCHAR_NEXT_A2	4'd12
-`define	PUTCHAR_NEXT_M2	4'd13
+`define	PUTCHAR_NEXT_C2	5'd0
+`define	PUTCHAR_NEXT_A3	5'd1
+`define	PUTCHAR_NEXT_M3	5'd2
+`define	PUTCHAR_NEXT_C3	5'd3
+`define	PUTCHAR_NXT_CL2	5'd4
+`define	PUTCHAR_NXT_CL3	5'd5
+`define	PUTCHAR_NEXT_W2	5'd6
+`define	PUTCHAR_NEXT_W3	5'd7
+`define	PUTCHAR_NEXT_W4	5'd8
+`define	PUTCHAR_NEXT_W5	5'd9
+`define	PUTCHAR_NEXT_W6	5'd10
+`define	PUTCHAR_NEXT_R3	5'd11
+`define	PUTCHAR_NEXT_A2	5'd12
+`define	PUTCHAR_NEXT_M2	5'd13
+`define PUTCHAR_NEXT_W21 5'd14
+`define PUTCHAR_NEXT_W51 5'd15
+`define PUTCHAR_NEXT_W52 5'd16
 
 module console(
 	input clk,
@@ -116,9 +121,9 @@ module console(
 	reg [5:0]	state;		/* 33 states */
 	reg [1:0] 	readnum_next;	/* three states */
 	reg [1:0]	writenum_next;	/* three states */
-	reg [3:0]	putchar_next;	/* 14 states */
-	reg [15:0] 	innum, utnum;
-	reg [7:0] 	tmp;
+	reg [4:0]	putchar_next;
+	reg [`WBITS:0] 	innum, utnum;
+	reg [7:0] 	tmp, cmd;
 	reg		step, nodig;
 	reg [3:0] 	anum;
 	reg [4:0]	bootidx;
@@ -195,7 +200,8 @@ module console(
 		`CONSOLE: begin
 			if (cpustate == `CPUHALT && !cont) begin
 				halt <= 0;
-				utnum <= { 1'b0, pc };
+		//		utnum <= { 1'b0, pc };
+				utnum <= 32'h1234abcd;
 				writenum_next <= `WRITNUM_NEXT_C2;
 				state <= `WRITENUM;
 			end
@@ -214,7 +220,8 @@ module console(
 			readnum_next <= `READNUM_NEXT_C4;
 		end
 		`CONSOLE4: begin
-			if (tmp == "C") begin
+			cmd <= tmp;
+			if (tmp == "G") begin
 				state <= `CONSOLE;
 				cont <= 1;
 			end else if (tmp == "S") begin
@@ -451,10 +458,13 @@ module console(
 			`PUTCHAR_NEXT_C3: state <= `CONSOLE3;
 			`PUTCHAR_NXT_CL2: state <= `CRLFEXC2;
 			`PUTCHAR_NXT_CL3: state <= `CRLFEXC3;
+			`PUTCHAR_NEXT_W21: state <= `WRITENUM21;
 			`PUTCHAR_NEXT_W2: state <= `WRITENUM2;
 			`PUTCHAR_NEXT_W3: state <= `WRITENUM3;
 			`PUTCHAR_NEXT_W4: state <= `WRITENUM4;
 			`PUTCHAR_NEXT_W5: state <= `WRITENUM5;
+			`PUTCHAR_NEXT_W51: state <= `WRITENUM51;
+			`PUTCHAR_NEXT_W52: state <= `WRITENUM52;
 			`PUTCHAR_NEXT_W6: state <= `WRITENUM6;
 			`PUTCHAR_NEXT_R3: state <= `READNUM3;
 			`PUTCHAR_NEXT_A2: state <= `AREFS2;
@@ -476,7 +486,7 @@ module console(
 			putchar_next <= `PUTCHAR_NXT_CL3;
 		end
 		`CRLFEXC3: begin
-			tmp <= "#";
+			tmp <= ">";
 			state <= `PUTCHAR;
 			putchar_next <= `PUTCHAR_NEXT_C3;
 		end
@@ -484,32 +494,71 @@ module console(
 		 * Print out num in utnum.
 		 */
 		`WRITENUM: begin
-			tmp <= { 7'b0011000, utnum[15] };
+			tmp <= 8'b00101101;
+			state <= `PUTCHAR;
+			putchar_next <= `PUTCHAR_NEXT_W21;
+		end
+		`WRITENUM21: begin
+			if (utnum[31:28] >= 4'd9)
+				tmp <= 8'd55 + utnum[31:28];
+			else
+				tmp <= { 4'b0011, utnum[31:28] };
 			state <= `PUTCHAR;
 			putchar_next <= `PUTCHAR_NEXT_W2;
 		end
 		`WRITENUM2: begin
-			tmp <= { 5'b00110, utnum[14:12] };
+			if (utnum[27:24] > 4'd9)
+				tmp <= 8'd55 + utnum[27:24];
+			else
+				tmp <= { 4'b0011, utnum[27:24] };
 			state <= `PUTCHAR;
 			putchar_next <= `PUTCHAR_NEXT_W3;
 		end
 		`WRITENUM3: begin
-			tmp <= { 5'b00110, utnum[11:9] };
+			if (utnum[23:20] > 4'd9)
+				tmp <= 8'd55 + utnum[23:20];
+			else
+				tmp <= { 4'b0011, utnum[23:20] };
 			state <= `PUTCHAR;
 			putchar_next <= `PUTCHAR_NEXT_W4;
 		end
 		`WRITENUM4: begin
-			tmp <= { 5'b00110, utnum[8:6] };
+			if (utnum[19:16] > 4'd9)
+				tmp <= 8'd55 + utnum[19:16];
+			else
+				tmp <= { 4'b0011, utnum[19:16] };
 			state <= `PUTCHAR;
 			putchar_next <= `PUTCHAR_NEXT_W5;
 		end
 		`WRITENUM5: begin
-			tmp <= { 5'b00110, utnum[5:3] };
+			if (utnum[15:12] > 4'd9)
+				tmp <= 8'd55 + utnum[15:12];
+			else
+				tmp <= { 4'b0011, utnum[15:12] };
+			state <= `PUTCHAR;
+			putchar_next <= `PUTCHAR_NEXT_W51;
+		end
+		`WRITENUM51: begin
+			if (utnum[11:8] > 4'd9)
+				tmp <= 8'd55 + utnum[11:8];
+			else
+				tmp <= { 4'b0011, utnum[11:8] };
+			state <= `PUTCHAR;
+			putchar_next <= `PUTCHAR_NEXT_W52;
+		end
+		`WRITENUM52: begin
+			if (utnum[7:4] > 4'd9)
+				tmp <= 8'd55 + utnum[7:4];
+			else
+				tmp <= { 4'b0011, utnum[7:4] };
 			state <= `PUTCHAR;
 			putchar_next <= `PUTCHAR_NEXT_W6;
 		end
 		`WRITENUM6: begin
-			tmp <= { 5'b00110, utnum[2:0] };
+			if (utnum[3:0] > 4'd9)
+				tmp <= 8'd55 + utnum[3:0];
+			else
+				tmp <= { 4'b0011, utnum[3:0] };
 			state <= `PUTCHAR;
 			(* full_case *)
 			case (writenum_next)
@@ -532,9 +581,14 @@ module console(
 			putchar_next <= `PUTCHAR_NEXT_R3;
 		end
 		`READNUM3: begin
-			if (tmp[6:3] == 4'b0110) begin // digit
+			if (tmp >= 8'd48 && tmp <= 8'd57) begin // digit
 				nodig <= 0;
-				innum <= { innum[12:0], tmp[2:0] };
+				innum <= { innum[27:0], tmp[3:0] };
+				state <= `GETCHAR;
+			end else if (tmp >= 8'd65 && tmp <= 8'd70) begin
+				nodig <= 0;
+				innum <= { innum[27:0], 4'd0 } + 
+				    tmp - 8'd55;
 				state <= `GETCHAR;
 			end else begin
 				if (tmp[6])

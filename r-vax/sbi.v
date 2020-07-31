@@ -65,7 +65,8 @@ defparam tto.CLKPERBIT = 2604;
 	assign clk = clkin;
 `endif
 
-	assign rst = !n_rst;
+	wire brk;
+	assign rst = !n_rst | brk;
 
 	reg buzz;
 	assign buzzer = 1;
@@ -74,10 +75,9 @@ defparam tto.CLKPERBIT = 2604;
 	/* common control wires */
 	wire reqhalt;		// CPU halt requested
 //	wire halted;		// CPU is halted
-	wire brk;
 
 	/* backplane logic */
-	assign reqhalt = brk | rst /* | cpu_halt */;
+//	assign reqhalt = brk | rst /* | cpu_halt */;
 	assign running = !halted;
 
 	console console(
