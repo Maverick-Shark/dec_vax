@@ -1,4 +1,5 @@
 verilog work "tto.v"
 verilog work "tti.v"
+verilog work "sdram.v"
 verilog work "console.v"
 verilog work "sbi.v"
