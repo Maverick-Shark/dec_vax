@@ -90,7 +90,7 @@ module console(
 	input clk,
 	input rst,
 
-	output reg [1:15] conaddr,
+	output reg [`WBITS:0] conaddr,
 	output reg	  conwrite,
 	output reg [0:15] conwdata,
 	output reg	  conready,

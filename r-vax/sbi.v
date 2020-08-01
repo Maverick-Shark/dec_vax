@@ -79,9 +79,9 @@ defparam tto.CLKPERBIT = 2604;
 	assign running = !halted;
 
 	wire pmem_write, pmem_stb, pmem_ack;
-//	wire [18:0] pmem_addr;
-	wire [14:0] conaddr;
-	assign pmem_addr = { 3'b000, conaddr };
+	wire [22:0] pmem_addr;
+	wire [31:0] conaddr;
+	assign pmem_addr = conaddr[22:0];
 	wire [15:0] pmem_wdata, pmem_rdata;
 
 	sdram sdram(

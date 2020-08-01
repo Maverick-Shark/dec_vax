@@ -30,7 +30,7 @@ module sdram #(
 	output [1:0]	sdram_ba,
 	inout [15:0]	sdram_data,
 
-	input [18:0]	pmem_addr,
+	input [22:0]	pmem_addr,
 	input		pmem_write,
 	input [0:15]	pmem_wdata,
 	input		pmem_stb,
@@ -134,7 +134,7 @@ module sdram #(
 				/* Open row */
 				{ ras, cas, we } <= ACTIVATE;
 				bank <= pmem_addr[10:9];
-				{ a11, a10, addr } <= { 4'b0, pmem_addr[18:11] };
+				{ a11, a10, addr } <= pmem_addr[22:11];
 				state <= SETCAS;
 			end
 		end
