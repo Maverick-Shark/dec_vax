@@ -92,9 +92,9 @@ module console(
 
 	output reg [`WBITS:0] conaddr,
 	output reg	  conwrite,
-	output reg [0:15] conwdata,
+	output reg [`WBITS:0] conwdata,
 	output reg	  conready,
-	input [0:15]	  conrdata,
+	input [`WBITS:0]  conrdata,
 	input		  convalid,
 
 	output reg halt, output reg cont,

@@ -1,12 +1,11 @@
+/*	$Id$	*/
 /*
  * Simple SDRAM controller for the Hynix SDRAM chip, 2M * 4 bank * 16 bit.
  * Runs at 50MHz, CAS2, burst 1.
  *
- * Addressing is <row><bank><col> where row only uses 6 bits,
- * since Nova only addresses 128KW.
+ * Addressing is <row><bank><col>, longword only, using burst size of 2
+ * to only access longwords.  Everything else is handled by the cache.
  */
-
-
 
 
 module sdram #(
@@ -30,11 +29,11 @@ module sdram #(
 	output [1:0]	sdram_ba,
 	inout [15:0]	sdram_data,
 
-	input [22:0]	pmem_addr,
+	input [23:0]	pmem_addr,
 	input		pmem_write,
-	input [0:15]	pmem_wdata,
+	input [31:0]	pmem_wdata,
 	input		pmem_stb,
-	output [0:15]	pmem_rdata,
+	output [31:0]	pmem_rdata,
 	output		pmem_ack
 );
 
@@ -44,9 +43,9 @@ module sdram #(
 	reg [1:0]	bank;
 
 	reg		pack;
-	reg [15:0]	prdata;
+	reg [31:0]	prdata;
 
-	reg		need_refresh, setdout;
+	reg		need_refresh, setdout, setdout2;
 
 	/* RAS/CAS/WE command triple */
 	localparam	NOP = 3'b111,
@@ -80,7 +79,9 @@ module sdram #(
 			ISETTLE = 4'd9,
 			ICHARGE = 4'd10,
 			IREFRESH = 4'd11,
-			ISETMODE = 4'd12;
+			ISETMODE = 4'd12,
+			READ4 = 4'd13,
+			WRITE2 = 4'd14;
 
 	reg [15:0]	timer;
 
@@ -93,6 +94,7 @@ module sdram #(
 		a10 <= 0;
 		bank <= 0;
 		setdout <= 0;
+		setdout2 <= 0;
 		if (pmem_stb == 0)
 			pack <= 0;
 		{ ras, cas, we } <= NOP;
@@ -133,20 +135,19 @@ module sdram #(
 			end else if (pmem_stb) begin
 				/* Open row */
 				{ ras, cas, we } <= ACTIVATE;
-				bank <= pmem_addr[10:9];
-				{ a11, a10, addr } <= pmem_addr[22:11];
+				bank <= pmem_addr[11:10];
+				{ a11, a10, addr } <= pmem_addr[23:12];
 				state <= SETCAS;
 			end
 		end
 		SETCAS: begin
-			bank <= pmem_addr[10:9];
+			bank <= pmem_addr[11:10];
 			/* Note: precharge after use */
-			{ a11, a10, addr } <= { 3'b010, pmem_addr[8:0] };
+			{ a11, a10, addr } <= { 3'b010, pmem_addr[9:2], 1'b0 };
 			if (pmem_write) begin
 				{ ras, cas, we } <= WRITE;
 				setdout <= 1;
-				pack <= 1;
-				state <= REF2;
+				state <= WRITE2;
 			end else begin
 				{ ras, cas, we } <= READ;
 				state <= READ1;
@@ -155,7 +156,18 @@ module sdram #(
 		READ1: state <= READ2; /* CAS delay */
 		READ2: state <= READ3; /* One more for clock delay */
 		READ3: begin
-			prdata <= sdram_data;
+			prdata[15:0] <= sdram_data;
+			state <= READ4;
+		end
+		READ4: begin
+			prdata[31:16] <= sdram_data;
+			pack <= 1;
+			state <= REF2;
+		end
+
+		WRITE2: begin
+			setdout2 <= 1;
+			setdout <= 0;
 			pack <= 1;
 			state <= REF2;
 		end
@@ -186,7 +198,8 @@ module sdram #(
 	assign sdram_addr = { a11, a10, addr };
 	assign sdram_udqm = 0;
 	assign sdram_ldqm = 0;
-	assign sdram_data = setdout ? pmem_wdata : 16'bz;
+	assign sdram_data = setdout2 ? pmem_wdata[31:16] :
+	    setdout ? pmem_wdata[15:0] : 16'bz;
 	assign sdram_ba = bank;
 
 	assign pmem_rdata = prdata;

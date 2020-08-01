@@ -82,7 +82,7 @@ defparam tto.CLKPERBIT = 2604;
 	wire [22:0] pmem_addr;
 	wire [31:0] conaddr;
 	assign pmem_addr = conaddr[22:0];
-	wire [15:0] pmem_wdata, pmem_rdata;
+	wire [31:0] pmem_wdata, pmem_rdata;
 
 	sdram sdram(
 		.clk(clk),
