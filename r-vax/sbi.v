@@ -53,8 +53,8 @@ module sbi (
 );
 
 `ifdef HALFCLOCK
-defparam tti.CLKPERBIT = 2604;
-defparam tto.CLKPERBIT = 2604;
+defparam console.tti.CLKPERBIT = 2604;
+defparam console.tto.CLKPERBIT = 2604;
 	reg clk;
 	always @(posedge clkin)
 		clk <= !clk;
@@ -79,10 +79,11 @@ defparam tto.CLKPERBIT = 2604;
 	assign running = !halted;
 
 	wire pmem_write, pmem_stb, pmem_ack;
-	wire [22:0] pmem_addr;
+	wire [23:0] pmem_addr;
 	wire [31:0] conaddr;
-	assign pmem_addr = conaddr[22:0];
-	wire [31:0] pmem_wdata, pmem_rdata;
+	assign pmem_addr = conaddr[23:0];
+	wire [31:0] pmem_wdata;
+	wire [31:0] pmem_rdata;
 
 	sdram sdram(
 		.clk(clk),

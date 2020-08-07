@@ -3,10 +3,12 @@
  * Simple SDRAM controller for the Hynix SDRAM chip, 2M * 4 bank * 16 bit.
  * Runs at 50MHz, CAS2, burst 1.
  *
- * Addressing is <row><bank><col>, longword only, using burst size of 2
- * to only access longwords.  Everything else is handled by the cache.
+ * Addressing is <row><bank><col>.  Only addressed word-wise (16 bit),
+ * since burst mode makes it instable. (???)
+ *
  */
 
+`define	ONEWORD
 
 module sdram #(
 	parameter	CLOCK		= 50000000,
@@ -37,15 +39,22 @@ module sdram #(
 	output		pmem_ack
 );
 
+	/* Request that all registers for comm with sdram is in IOBs */
 
-	reg		ras, cas, we, cke, a11, a10, cs;
+	(* IOB = "TRUE" *)
+	reg		ras, cas, we, a11, a10, cs;
+	(* IOB = "TRUE" *)
 	reg [9:0]	addr;
+	(* IOB = "TRUE" *)
 	reg [1:0]	bank;
 
-	reg		pack;
-	reg [31:0]	prdata;
 
-	reg		need_refresh, setdout, setdout2;
+	reg [15:0]	sdata;
+	reg		pack;
+	reg [31:0]	prdata, xprdata;
+
+	reg		need_refresh, setdout, wnum;
+	wire [15:0]	indata;
 
 	/* RAS/CAS/WE command triple */
 	localparam	NOP = 3'b111,
@@ -59,10 +68,9 @@ module sdram #(
 `ifdef XILINX_ISIM
 	localparam	SETTLETIME = 20; /*  */
 	initial		state = 0;
-	initial		initstate = 0;
 	initial		timer = 0;
 `else
-	localparam	SETTLETIME = CLOCK/5000; /* 200us */
+	localparam	SETTLETIME = CLOCK/5000;   /* 200us */
 `endif
 
 	/* States for this SDRAM module.  */
@@ -81,7 +89,8 @@ module sdram #(
 			IREFRESH = 4'd11,
 			ISETMODE = 4'd12,
 			READ4 = 4'd13,
-			WRITE2 = 4'd14;
+			WRITE2 = 4'd14,
+			WRITE3 = 4'd15;
 
 	reg [15:0]	timer;
 
@@ -89,17 +98,18 @@ module sdram #(
 		timer <= timer + 1;
 		if (timer[7:0] == 8'b0)
 			need_refresh <= 1;
-		cke <= 1;
 		cs <= 0;
-		a10 <= 0;
+		{ a11, a10, addr } <= 0;	// default address 0
 		bank <= 0;
 		setdout <= 0;
-		setdout2 <= 0;
-		if (pmem_stb == 0)
+		if (pmem_stb == 0) begin
 			pack <= 0;
-		{ ras, cas, we } <= NOP;
+			wnum <= 0;
+		end
+		{ ras, cas, we } <= NOP;	// none set
 		if (rst) begin
 			state <= STARTUP;
+			wnum <= 0;
 		end else case (state)
 		STARTUP: begin
 			state <= ISETTLE;
@@ -123,64 +133,105 @@ module sdram #(
 		end
 		ISETMODE: begin
 			{ ras, cas, we } <= MODE;
-			/* Mode: CAS2, one word at a time, sequential */
+			/* Mode: CAS2, two word at a time, sequential */
+`ifdef ONEWORD
 			{ a11, a10, addr } <= 12'b000000100000;
+`else
+			{ a11, a10, addr } <= 12'b000000100001;
+`endif
 			state <= REF2; /* One cycle before idle */
 		end
+
+
+		/* default state */
 		IDLE: begin
 			if (need_refresh) begin
 				{ ras, cas, we } <= AUTO_REFRESH;
 				state <= REF1;
 				need_refresh <= 0;
 			end else if (pmem_stb) begin
-				/* Open row */
+				/* do something; open row */
 				{ ras, cas, we } <= ACTIVATE;
 				bank <= pmem_addr[11:10];
 				{ a11, a10, addr } <= pmem_addr[23:12];
+				xprdata <= pmem_wdata;
 				state <= SETCAS;
 			end
 		end
+
 		SETCAS: begin
 			bank <= pmem_addr[11:10];
-			/* Note: precharge after use */
-			{ a11, a10, addr } <= { 3'b010, pmem_addr[9:2], 1'b0 };
+			/* Note: precharge after use (closes row) */
+			{ a11, a10, addr } <= { 3'b010, pmem_addr[9:2], wnum };
 			if (pmem_write) begin
 				{ ras, cas, we } <= WRITE;
 				setdout <= 1;
+				if (wnum == 0)
+					sdata <= xprdata[15:0];
+				else
+					sdata <= xprdata[31:16];
+`ifdef ONEWORD
+				state <= REF2;
+				if (wnum)
+					pack <= 1;
+`else
 				state <= WRITE2;
+`endif
 			end else begin
 				{ ras, cas, we } <= READ;
 				state <= READ1;
 			end
 		end
 		READ1: state <= READ2; /* CAS delay */
-		READ2: state <= READ3; /* One more for clock delay */
+		READ2: state <= READ3; /* clock skew compensation */
 		READ3: begin
-			prdata[15:0] <= sdram_data;
-			state <= READ4;
-		end
-		READ4: begin
-			prdata[31:16] <= sdram_data;
-			pack <= 1;
+			if (wnum == 0)
+				prdata[15:0] <= indata;
+			else
+				prdata[31:16] <= indata;
+`ifdef ONEWORD
 			state <= REF2;
+			if (wnum)
+				pack <= 1;
+`else
+			state <= READ4;
+`endif
+		end
+
+`ifndef ONEWORD
+		READ4: begin
+			prdata[31:16] <= indata;
+			state <= REF2;
+			pack <= 1;
 		end
 
 		WRITE2: begin
-			setdout2 <= 1;
-			setdout <= 0;
-			pack <= 1;
+			setdout <= 1;
 			state <= REF2;
+			sdata <= xprdata[31:16];
+			pack <= 1;
 		end
+`endif
 
 		REF1: state <= REF2;
-		REF2: state <= REF3;
+		REF2: begin
+			if (pmem_stb)
+				wnum <= 1;
+			state <= REF3;
+		end
 		REF3: state <= IDLE;
 		default: state <= IDLE;
 		endcase
 	end
 
-	/* Seems popular to use DDR primitive to delay clock */
-	ODDR2 oddr2(
+	/*
+	 * Skew clock 180 degrees by using DDR2 registers.
+	 */
+	ODDR2 #(
+		.DDR_ALIGNMENT("NONE"),
+		.INIT(1'b0),
+		.SRTYPE("SYNC")
+	) oddr2 (
 		.Q(sdram_clk),
 		.C0(clk),
 		.C1(~clk),
@@ -188,18 +239,41 @@ module sdram #(
 		.R(1'b0),
 		.S(1'b0),
 		.D0(1'b0),
-		.D1(1'b1));
+		.D1(1'b1)
+	);
+
+`ifdef notdef
+genvar i;
+
+generate
+	for (i=0; i < 16; i = i + 1) begin : obuf
+		IOBUF #(
+			.DRIVE(12),
+			.IOSTANDARD("LVTTL"),
+			.SLEW("FAST")
+		) obuf_data (
+			.O(indata[i]),
+			.IO(sdram_data[i]),
+			.I(sdata[i]),
+			.T(!setdout)
+		);
+	end
+endgenerate
+`else
+ 	assign sdram_data = setdout ? sdata : 16'bz;
+	assign indata = sdram_data;
+
+`endif
+
 
 	assign sdram_ras = ras;
 	assign sdram_cas = cas;
 	assign sdram_we = we;
-	assign sdram_cke = cke;
+	assign sdram_cke = 1'b1; // clock always enabled
 	assign sdram_cs = cs;
 	assign sdram_addr = { a11, a10, addr };
-	assign sdram_udqm = 0;
-	assign sdram_ldqm = 0;
-	assign sdram_data = setdout2 ? pmem_wdata[31:16] :
-	    setdout ? pmem_wdata[15:0] : 16'bz;
+	assign sdram_udqm = 1'b0;
+	assign sdram_ldqm = 1'b0;
 	assign sdram_ba = bank;
 
 	assign pmem_rdata = prdata;
