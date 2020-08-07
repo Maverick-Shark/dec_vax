@@ -1,14 +1,15 @@
 /*
- * Simple console emulator.
+ * Simple hardware console.
  *
  * All commands can begin with a hex number.
- * 	/	Open a (virtual) memory cell
+ * 	/	Open a (direct) memory cell
  * 	P	Open a (physical) memory cell
+ * 	V	Open a (virtual) memory cell
+ *	L	Load from device
+ *	R	Open a general register
+ *	I	Open an internal register
  *	G	Continue at address
  *	S	Execute one insn, then jump back to the console
- *	L	Load from device
- *	R	Open a register
- *	I	Open an internal register
  */
 `define	WBITS		31
 
@@ -43,10 +44,6 @@
 `define	MEMREFS3	6'd25
 `define	MEMREFS4	6'd26
 `define	MEMREFS5	6'd27
-`define	AREFS		6'd28
-`define	AREFS2		6'd29
-`define	AREFS3		6'd30
-`define	AREFS4		6'd31
 `define	PUTCHAR21	6'd32
 `define	LOAD		6'd33
 `define	LOAD2		6'd34
@@ -54,15 +51,12 @@
 `define	WRITENUM52	6'd37
 
 `define	READNUM_NEXT_C4	2'd0
-`define	READNUM_NEXT_A4	2'd1
 `define	READNUM_NEXT_M4	2'd2
 
 `define	WRITNUM_NEXT_C2	2'd0
-`define	WRITNUM_NEXT_A2	2'd1
 `define	WRITNUM_NEXT_M2	2'd2
 
 `define	PUTCHAR_NEXT_C2	5'd0
-`define	PUTCHAR_NEXT_A3	5'd1
 `define	PUTCHAR_NEXT_M3	5'd2
 `define	PUTCHAR_NEXT_C3	5'd3
 `define	PUTCHAR_NXT_CL2	5'd4
@@ -73,7 +67,6 @@
 `define	PUTCHAR_NEXT_W5	5'd9
 `define	PUTCHAR_NEXT_W6	5'd10
 `define	PUTCHAR_NEXT_R3	5'd11
-`define	PUTCHAR_NEXT_A2	5'd12
 `define	PUTCHAR_NEXT_M2	5'd13
 `define PUTCHAR_NEXT_W51 5'd15
 `define PUTCHAR_NEXT_W52 5'd16
@@ -88,6 +81,12 @@ module console(
 	output reg	  conready,
 	input [`WBITS:0]  conrdata,
 	input		  convalid,
+
+	/* signals for what we want to reference */
+	output reg	con_mem,	// memory
+	output reg	con_reg,	// general reg
+	output reg	con_ipr,	// internal processor reg
+
 
 	output reg halt, output reg cont,
 	output reg refpc, output reg refac0, output reg refac1,
@@ -115,14 +114,13 @@ module console(
 	reg [1:0]	writenum_next;	/* three states */
 	reg [4:0]	putchar_next;
 	reg [`WBITS:0] 	innum, utnum;
-	reg [7:0] 	tmp, cmd;
+	reg [7:0] 	tmp;
 	reg		step, nodig;
-	reg [3:0] 	anum;
 	reg [4:0]	bootidx;
 
 	(*rom_style = "block" *) reg [15:0] romdata;
 
-	wire busy, done, ttibusy, ttobusy, ttidone, ttodone;
+	wire ttibusy, ttobusy, ttidone, ttodone;
 	wire [7:0] iodatain;
 	reg start, clear;
 	reg [7:0] iodataut;
@@ -130,8 +128,6 @@ module console(
 
 	reg seltti, seltto, ttodata;
 
-	assign busy = ttibusy | ttobusy;
-	assign done = ttidone | ttodone;
 	assign ttiintmsk = 1'b0;
 	assign ttointmsk = 1'b0;
 	assign intreq = ttiintreq | ttointreq;
@@ -239,13 +235,15 @@ module console(
 			refac1 <= 0;
 			refac2 <= 0;
 			refac3 <= 0;
+			con_mem <= 0;
+			con_reg <= 0;
+			con_ipr <= 0;
 		end
 		`CONSOLE3: begin
 			state <= `READNUM;
 			readnum_next <= `READNUM_NEXT_C4;
 		end
 		`CONSOLE4: begin
-			cmd <= tmp;
 			if (tmp == "G") begin
 				state <= `CONSOLE;
 				cont <= 1;
@@ -253,21 +251,23 @@ module console(
 				state <= `CONSOLE;
 				step <= 1;
 				cont <= 1;
-			end else if (tmp == "/") begin
-				conaddr <= innum;
-				conwrite <= 0;
-				conready <= 1;
-				state <= `MEMREFS;
 			end else if (tmp == "L") begin
 				switches <= innum;
 				bootidx <= 0;
 				state <= `LOAD;
-			end else if (tmp == "A") begin
-				state <= `AREFS;
 			end else begin
-				tmp <= "?";
-				state <= `PUTCHAR;
-				putchar_next <= `PUTCHAR_NEXT_C2;
+				/* Reference some cell */
+				conaddr <= innum;
+				conwrite <= 0;
+				conready <= 1;
+				state <= `MEMREFS;
+				if (tmp == "/") begin
+					con_mem <= 1;
+				end else begin
+					tmp <= "?";
+					state <= `PUTCHAR;
+					putchar_next <= `PUTCHAR_NEXT_C2;
+				end
 			end
 		end
 		/*
@@ -327,78 +327,9 @@ module console(
 			end else
 				state <= `LOAD;
 		end
-		/*
-		 * Read (and maybe write?) from an A register.
-		 */
-		`AREFS: begin
-			anum <= innum[3:0];
-			case (innum[3:0])
-			16'd0: utnum <= ac0;
-			16'd1: utnum <= ac1;
-			16'd2: utnum <= ac2;
-			16'd3: utnum <= ac3;
-			16'd4: utnum <= { 1'b0, pc };
-			16'o11: utnum <= { switches };
-			16'o12: utnum <= { 15'b0, C };
-			16'o13: utnum <= { 14'b0, hreason };
-			default: utnum <= 16'o177777;
-			endcase
-			writenum_next <= `WRITNUM_NEXT_A2;
-			state <= `WRITENUM;
-		end
-		`AREFS2: begin
-			tmp <= " ";
-			state <= `PUTCHAR;
-			putchar_next <= `PUTCHAR_NEXT_A3;
-		end
-		`AREFS3: begin
-			innum <= 0;
-			state <= `READNUM;
-			readnum_next <= `READNUM_NEXT_A4;
-		end
-		`AREFS4: begin
-			if (tmp == 8'd13) begin
-				if (nodig == 0) begin
-					case (anum[3:0])
-					4'd0: begin
-						conwdata <= innum;
-						conwrite <= 1;
-						refac0 <= 1;
-					end
-					4'd1: begin
-						conwdata <= innum;
-						conwrite <= 1;
-						refac1 <= 1;
-					end
-					4'd2: begin
-						conwdata <= innum;
-						conwrite <= 1;
-						refac2 <= 1;
-					end
-					4'd3: begin
-						conwdata <= innum;
-						conwrite <= 1;
-						refac3 <= 1;
-					end
-					4'd4: begin
-						conwdata <= innum[14:0];
-						conwrite <= 1;
-						refpc <= 1;
-					end
-					4'o11: switches <= innum;
-					default: conwdata <= 0;
-					endcase
-				end
-				state <= `CONSOLE2;
-			end else begin
-				tmp <= "?";
-				state <= `PUTCHAR;
-				putchar_next <= `PUTCHAR_NEXT_C2;
-			end
-		end
 
 		/*
-		 * Read (and maybe write?) from a memory location.
+		 * Read (and maybe write?) from a mem/reg location.
 		 */
 		`MEMREFS: if (convalid) begin
 			utnum <= conrdata;
@@ -444,7 +375,7 @@ module console(
 			seltti <= 1;
 			state <= `GETCHAR2;
 		end
-		`GETCHAR2: if (done) begin
+		`GETCHAR2: if (ttidone) begin
 			tmp <= iodatain;
 			clear <= 1;
 			state <= `GETCHAR3;
@@ -462,7 +393,7 @@ module console(
 			seltto <= 1;
 			state <= `PUTCHAR2;
 		end
-		`PUTCHAR2: if (busy == 0) begin
+		`PUTCHAR2: if (ttobusy == 0) begin
 			start <= 1;
 			ttodata <= 1;
 			iodataut <= tmp;
@@ -476,7 +407,6 @@ module console(
 			iodataut <= 0;
 			case (putchar_next)
 			`PUTCHAR_NEXT_C2: state <= `CONSOLE2;
-			`PUTCHAR_NEXT_A3: state <= `AREFS3;
 			`PUTCHAR_NEXT_M3: state <= `MEMREFS3;
 			`PUTCHAR_NEXT_C3: state <= `CONSOLE3;
 			`PUTCHAR_NXT_CL2: state <= `CRLFEXC2;
@@ -489,7 +419,6 @@ module console(
 			`PUTCHAR_NEXT_W52: state <= `WRITENUM52;
 			`PUTCHAR_NEXT_W6: state <= `WRITENUM6;
 			`PUTCHAR_NEXT_R3: state <= `READNUM3;
-			`PUTCHAR_NEXT_A2: state <= `AREFS2;
 			`PUTCHAR_NEXT_M2: state <= `MEMREFS2;
 			default: state <= `CONSOLE2;
 			endcase
@@ -556,7 +485,6 @@ module console(
 			(* full_case *)
 			case (writenum_next)
 			`WRITNUM_NEXT_C2: putchar_next <= `PUTCHAR_NEXT_C2;
-			`WRITNUM_NEXT_A2: putchar_next <= `PUTCHAR_NEXT_A2;
 			`WRITNUM_NEXT_M2: putchar_next <= `PUTCHAR_NEXT_M2;
 			endcase
 		end
@@ -589,7 +517,6 @@ module console(
 				(* full_case *)
 				case (readnum_next)
 				`READNUM_NEXT_C4: state <= `CONSOLE4;
-				`READNUM_NEXT_A4: state <= `AREFS4;
 				`READNUM_NEXT_M4: state <= `MEMREFS4;
 				endcase
 			end

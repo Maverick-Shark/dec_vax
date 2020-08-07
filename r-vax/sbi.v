@@ -78,12 +78,28 @@ defparam console.tto.CLKPERBIT = 2604;
 //	assign reqhalt = brk | rst /* | cpu_halt */;
 	assign running = !halted;
 
+
+	/* wires from mmu to direct mem */
+	wire [23:2] mmu_addr, mmu_wdata;
+	wire mmu_write, mmu_stb;
+
+	/* wires from console */
+	wire con_mem;	/* console references (direct) memory */
+	wire [31:0] con_addr, con_wdata;
+	wire con_write, con_stb;
+	
+	/* wires to/from direct mem */
 	wire pmem_write, pmem_stb, pmem_ack;
-	wire [23:0] pmem_addr;
-	wire [31:0] conaddr;
-	assign pmem_addr = conaddr[23:0];
-	wire [31:0] pmem_wdata;
-	wire [31:0] pmem_rdata;
+	wire [23:2] pmem_addr;
+	wire [31:0] pmem_wdata, pmem_rdata;
+
+	/* switch pmem input between console and mmu */
+	assign pmem_addr = con_mem ? con_addr[23:2] : mmu_addr;
+	assign pmem_write = con_mem ? con_write : mmu_write;
+	assign pmem_wdata = con_mem ? con_wdata : mmu_wdata;
+	assign pmem_stb = con_mem ? con_stb : mmu_stb;
+
+
 
 	sdram sdram(
 		.clk(clk),
@@ -101,7 +117,7 @@ defparam console.tto.CLKPERBIT = 2604;
 		.sdram_ba(sdram_ba),
 		.sdram_data(sdram_data),
 		
-		.pmem_addr(pmem_addr[23:2]),	// i
+		.pmem_addr(pmem_addr),		// i
 		.pmem_write(pmem_write),	// i
 		.pmem_wdata(pmem_wdata),	// i
 		.pmem_stb(pmem_stb),		// i
@@ -117,12 +133,14 @@ defparam console.tto.CLKPERBIT = 2604;
 		.halted_i(halted),	// Handle commands
 		.break_o(brk),	// want to halt
 
-		.conaddr(conaddr),	// 15 bits
-		.conwrite(pmem_write),
-		.conwdata(pmem_wdata),
-		.conready(pmem_stb),
+		.conaddr(con_addr),
+		.conwrite(con_write),
+		.conwdata(con_wdata),
+		.conready(con_stb),
 		.conrdata(pmem_rdata),
 		.convalid(pmem_ack),
+
+		.con_mem(con_mem),
 
 		.tti_rx(tti_rx),
 		.tto_tx(tto_tx)
