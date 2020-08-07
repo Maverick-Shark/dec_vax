@@ -50,7 +50,6 @@
 `define	PUTCHAR21	6'd32
 `define	LOAD		6'd33
 `define	LOAD2		6'd34
-`define	WRITENUM21	6'd35
 `define	WRITENUM51	6'd36
 `define	WRITENUM52	6'd37
 
@@ -76,7 +75,6 @@
 `define	PUTCHAR_NEXT_R3	5'd11
 `define	PUTCHAR_NEXT_A2	5'd12
 `define	PUTCHAR_NEXT_M2	5'd13
-`define PUTCHAR_NEXT_W21 5'd14
 `define PUTCHAR_NEXT_W51 5'd15
 `define PUTCHAR_NEXT_W52 5'd16
 
@@ -200,7 +198,7 @@ module console(
 
 	always @* begin
 		case (state)
-		`WRITENUM21: htoa = utnum[31:28];
+		`WRITENUM: htoa = utnum[31:28];
 		`WRITENUM2: htoa = utnum[27:24];
 		`WRITENUM3: htoa = utnum[23:20];
 		`WRITENUM4: htoa = utnum[19:16];
@@ -483,7 +481,6 @@ module console(
 			`PUTCHAR_NEXT_C3: state <= `CONSOLE3;
 			`PUTCHAR_NXT_CL2: state <= `CRLFEXC2;
 			`PUTCHAR_NXT_CL3: state <= `CRLFEXC3;
-			`PUTCHAR_NEXT_W21: state <= `WRITENUM21;
 			`PUTCHAR_NEXT_W2: state <= `WRITENUM2;
 			`PUTCHAR_NEXT_W3: state <= `WRITENUM3;
 			`PUTCHAR_NEXT_W4: state <= `WRITENUM4;
@@ -519,11 +516,6 @@ module console(
 		 * Print out num in utnum.
 		 */
 		`WRITENUM: begin
-			tmp <= 8'b00101101;
-			state <= `PUTCHAR;
-			putchar_next <= `PUTCHAR_NEXT_W21;
-		end
-		`WRITENUM21: begin
 			tmp <= hexd;
 			state <= `PUTCHAR;
 			putchar_next <= `PUTCHAR_NEXT_W2;

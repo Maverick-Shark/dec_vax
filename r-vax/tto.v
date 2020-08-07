@@ -3,17 +3,18 @@
  *
  */
 
-`define	TTOIDLE		0
-`define	TTOSTART	1
-`define	TTOB0		2
-`define	TTOB1		3
-`define	TTOB2		4
-`define	TTOB3		5
-`define	TTOB4		6
-`define	TTOB5		7
-`define	TTOB6		8
-`define	TTOB7		9
-`define	TTOSTOP		10
+`define	TTOINIT		0
+`define	TTOIDLE		1
+`define	TTOSTART	2
+`define	TTOB0		3
+`define	TTOB1		4
+`define	TTOB2		5
+`define	TTOB3		6
+`define	TTOB4		7
+`define	TTOB5		8
+`define	TTOB6		9
+`define	TTOB7		10
+`define	TTOSTOP		11
 
 module tto #(
 	parameter CLKPERBIT = 5208	// (50000000/9600)
@@ -66,7 +67,14 @@ module tto #(
 
 	always @(posedge clk) begin
 		if (iorst) begin
-			state <= `TTOIDLE;
+			state <= `TTOINIT;
+			clkcnt <= 0;
+		end else if (state == `TTOINIT) begin
+			/* wait some time with tx high to settle */
+			if (clkcnt == (CLKPERBIT*8))
+				state <= `TTOIDLE;
+			else
+				clkcnt <= clkcnt + 1;
 		end else if (state == `TTOIDLE) begin
 			devcomplete <= 0;
 			if (ffbusy && !devcomplete) begin
