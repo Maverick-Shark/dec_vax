@@ -101,7 +101,7 @@ defparam console.tto.CLKPERBIT = 2604;
 		.sdram_ba(sdram_ba),
 		.sdram_data(sdram_data),
 		
-		.pmem_addr(pmem_addr),		// i
+		.pmem_addr(pmem_addr[23:2]),	// i
 		.pmem_write(pmem_write),	// i
 		.pmem_wdata(pmem_wdata),	// i
 		.pmem_stb(pmem_stb),		// i

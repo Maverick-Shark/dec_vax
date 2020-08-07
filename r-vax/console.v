@@ -12,14 +12,8 @@
  */
 `define	WBITS		31
 
-
 `define	CPUHALT		5'd0
 `define	CPUFETCH2	5'd2
-`define	IODIA		3'b001
-`define	IODOA		3'b010
-
-`define DEVTTI		6'o10
-`define DEVTTO		6'o11
 
 `define	CONSOLE		6'd0
 `define	CONSOLE2	6'd1
@@ -130,13 +124,13 @@ module console(
 
 	(*rom_style = "block" *) reg [15:0] romdata;
 
-	reg [0:5] device;
 	wire busy, done, ttibusy, ttobusy, ttidone, ttodone;
 	wire [7:0] iodatain;
 	reg start, clear;
-	reg [0:2] ioreg;
 	reg [7:0] iodataut;
 	wire ttiintreq, ttointreq;
+
+	reg seltti, seltto, ttodata;
 
 	assign busy = ttibusy | ttobusy;
 	assign done = ttidone | ttodone;
@@ -150,8 +144,7 @@ module console(
 
 		.start(start),
 		.clear(clear),
-		.device(device),
-		.ioreg(ioreg),
+		.devsel(seltti),
 		.intmsk(ttiintmsk),
 
 		.busy(ttibusy),
@@ -169,8 +162,8 @@ module console(
 
 		.start(start),
 		.clear(clear),
-		.device(device),
-		.ioreg(ioreg),
+		.devsel(seltto),
+		.wdata(ttodata),
 		.intmsk(ttointmsk),
 
 		.busy(ttobusy),
@@ -450,8 +443,7 @@ module console(
 		 * Get char and put in tmp
 		 */
 		`GETCHAR: begin
-			device <= `DEVTTI;
-			ioreg <= `IODIA;
+			seltti <= 1;
 			state <= `GETCHAR2;
 		end
 		`GETCHAR2: if (done) begin
@@ -461,29 +453,28 @@ module console(
 		end
 		`GETCHAR3: state <= `GETCHAR4;
 		`GETCHAR4: begin
-			device <= 0;
+			seltti <= 0;
 			clear <= 0;
-			ioreg <= 0;
 			state <= `READNUM2;
 		end
 		/*
 		 * Print out char in tmp
 		 */
 		`PUTCHAR: begin
-			device <= `DEVTTO;
+			seltto <= 1;
 			state <= `PUTCHAR2;
 		end
 		`PUTCHAR2: if (busy == 0) begin
 			start <= 1;
-			ioreg <= `IODOA;
+			ttodata <= 1;
 			iodataut <= tmp;
 			state <= `PUTCHAR21;
 		end
 		`PUTCHAR21: state <= `PUTCHAR3;
 		`PUTCHAR3: begin
-			device <= 0;
+			seltto <= 0;
 			start <= 0;
-			ioreg <= 0;
+			ttodata <= 0;
 			iodataut <= 0;
 			case (putchar_next)
 			`PUTCHAR_NEXT_C2: state <= `CONSOLE2;

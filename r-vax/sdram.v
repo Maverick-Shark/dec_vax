@@ -6,6 +6,8 @@
  * Addressing is <row><bank><col>.  Only addressed word-wise (16 bit),
  * since burst mode makes it instable. (???)
  *
+ * Memory is read/written as 32-bit longwords. 
+ * Size is 16Mbyte, addressed as 4M longwords (22 bits).
  */
 
 `define	ONEWORD
@@ -31,7 +33,7 @@ module sdram #(
 	output [1:0]	sdram_ba,
 	inout [15:0]	sdram_data,
 
-	input [23:0]	pmem_addr,
+	input [23:2]	pmem_addr,	// note: longword addressing.
 	input		pmem_write,
 	input [31:0]	pmem_wdata,
 	input		pmem_stb,
@@ -89,8 +91,7 @@ module sdram #(
 			IREFRESH = 4'd11,
 			ISETMODE = 4'd12,
 			READ4 = 4'd13,
-			WRITE2 = 4'd14,
-			WRITE3 = 4'd15;
+			WRITE2 = 4'd14;
 
 	reg [15:0]	timer;
 

@@ -2,8 +2,6 @@
 /*
  *
  */
-`define DEVTTO          6'o11
-`define IODOA           3'b010
 
 `define	TTOIDLE		0
 `define	TTOSTART	1
@@ -24,8 +22,8 @@ module tto #(
 	input		iorst,
 	input		start,
 	input		clear,
-	input [0:5]	device,
-	input [0:2]	ioreg,
+	input		devsel,
+	input		wdata,
 	input		intmsk,
 	output 		busy,
 	output 		done,
@@ -41,13 +39,9 @@ module tto #(
 	reg devcomplete;
 	reg ffbusy, ffdone;
 
-	assign devsel = device == `DEVTTO;
 	assign busy = devsel ? ffbusy : 1'b0;
 	assign done = devsel ? ffdone : 1'b0;
 	assign intreq = intmsk ? 1'b0 : ffdone;
-
-//	iobd ttoiobd(clk, iorst, devsel, start, clear,
-//	    ffbusy, ffdone, devcomplete);
 
 	always @(posedge clk) begin
 		if (iorst) begin
@@ -65,7 +59,7 @@ module tto #(
 				ffbusy <= 1;
 				ffdone <= 0;
 			end
-			if (ioreg == `IODOA)
+			if (wdata)
 				utdata <= data;
 		end
 	end

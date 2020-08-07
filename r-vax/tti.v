@@ -9,9 +9,6 @@
  * a done/devcomplete signal.
  */
 
-`define		DEVTTI	6'o10
-`define		IODIA	3'b001
-
 module tti #(
 	parameter CLKPERBIT = 5208
 ) (
@@ -20,8 +17,7 @@ module tti #(
 
 	input		start,
 	input		clear,
-	input [0:5]	device,
-	input [0:2]	ioreg,
+	input		devsel,
 	input		intmsk,
 	output 		busy,
 	output 		done,
@@ -50,10 +46,9 @@ localparam TTISTOP=	4'd10;
 	reg [3:0] state;
 	reg ffbusy, ffdone;
 
-	assign devsel = device == `DEVTTI;
 	assign busy = devsel ? ffbusy : 1'b0;
 	assign done = devsel ? ffdone : 1'b0;
-	assign outdata = devsel && ioreg == `IODIA ? data : 0;
+	assign outdata = devsel ? data : 0;
 	assign intreq = intmsk ? 1'b0 : ffdone;
 
 	reg devcomplete;
