@@ -190,25 +190,19 @@ module console(
 	end
 
 	always @(posedge clk) begin
+		if (halted) begin
+			step <= 0;
+			cont <= 0;
+		end
 		if (rst) begin
 			state <= `CONSOLE;
 			cont <= 0;
-			step <= 0;
-//		end else if (halted) begin
-//			if (step) begin
-//				step <= 0;
-//			//	halt <= 1;
-//			end
-//			cont <= 0;
 		end else if (halted)
 		case (state)
 		`CONSOLE: begin
-			if (halted && !cont) begin
-			//	halt <= 0;
-				utnum <= pc;
-				writenum_next <= `WRITNUM_NEXT_C2;
-				state <= `WRITENUM;
-			end
+			utnum <= pc;
+			writenum_next <= `WRITNUM_NEXT_C2;
+			state <= `WRITENUM;
 		end
 		`CONSOLE2: begin
 			state <= `CRLFEXC;

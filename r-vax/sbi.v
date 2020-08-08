@@ -77,8 +77,17 @@ defparam console.tto.CLKPERBIT = 2604;
 
 
 	/* wires from mmu to direct mem */
-	wire [23:2] mmu_addr, mmu_wdata;
+	wire [23:2] mmu_addr;
+	wire [31:0] mmu_wdata;
 	wire mmu_write, mmu_stb;
+
+	/* XXX */
+	wire [31:0] cpu_addr, cpu_wdata;
+	wire cpu_write, cpu_stb;
+	assign mmu_addr = cpu_addr[23:2];
+	assign mmu_wdata = cpu_wdata;
+	assign mmu_write = cpu_write;
+	assign mmu_stb = cpu_stb;
 
 	/* wires from console */
 	wire con_mem;	/* console references (direct) memory */
@@ -118,6 +127,13 @@ defparam console.tto.CLKPERBIT = 2604;
 		.reg_stb(reg_stb),
 		.reg_rdata(reg_rdata),
 		.reg_ack(reg_ack),
+
+		.cpu_addr(cpu_addr),
+		.cpu_wdata(cpu_wdata),
+		.cpu_write(cpu_write),
+		.cpu_stb(cpu_stb),
+		.cpu_rdata(pmem_rdata),
+		.cpu_ack(pmem_ack),
 
 		.step(step),
 		.cont(cont),
