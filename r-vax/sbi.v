@@ -68,15 +68,12 @@ defparam console.tto.CLKPERBIT = 2604;
 
 	reg buzz;
 	assign buzzer = 1;
-	assign halted = 1;
 
 	/* common control wires */
 	wire reqhalt;		// CPU halt requested
-//	wire halted;		// CPU is halted
 
 	/* backplane logic */
 //	assign reqhalt = brk | rst /* | cpu_halt */;
-	assign running = !halted;
 
 
 	/* wires from mmu to direct mem */
@@ -85,8 +82,9 @@ defparam console.tto.CLKPERBIT = 2604;
 
 	/* wires from console */
 	wire con_mem;	/* console references (direct) memory */
-	wire [31:0] con_addr, con_wdata;
-	wire con_write, con_stb;
+	wire [31:0] con_addr, con_wdata, con_rdata;
+	wire con_write, con_stb, con_reg;
+	wire cont, step;
 	
 	/* wires to/from direct mem */
 	wire pmem_write, pmem_stb, pmem_ack;
@@ -99,7 +97,34 @@ defparam console.tto.CLKPERBIT = 2604;
 	assign pmem_wdata = con_mem ? con_wdata : mmu_wdata;
 	assign pmem_stb = con_mem ? con_stb : mmu_stb;
 
+	/* wires from CPU */
+	wire [31:0] reg_rdata, pc;
+	wire reg_ack;
+	wire halted;		// CPU is halted
 
+	assign reg_stb = con_reg ? con_stb : 0;
+
+	/* signals to console from mem or reg */
+	assign con_rdata = con_reg ? reg_rdata : pmem_rdata;
+	assign con_ack = con_reg ? reg_ack : pmem_ack;
+
+	cpu cpu(
+		.clk(clk),
+		.rst(rst),
+
+		.reg_addr(con_addr[3:0]),
+		.reg_wdata(con_wdata),
+		.reg_write(con_write),
+		.reg_stb(reg_stb),
+		.reg_rdata(reg_rdata),
+		.reg_ack(reg_ack),
+
+		.step(step),
+		.cont(cont),
+		.halted(halted),
+
+		.pc(pc)
+	);
 
 	sdram sdram(
 		.clk(clk),
@@ -130,17 +155,22 @@ defparam console.tto.CLKPERBIT = 2604;
 		.clk(clk),
 		.rst(rst),
 
-		.halted_i(halted),	// Handle commands
+		.halted(halted),	// Handle commands
 		.break_o(brk),	// want to halt
+		.cont(cont),
+		.step(step),
 
 		.conaddr(con_addr),
 		.conwrite(con_write),
 		.conwdata(con_wdata),
 		.conready(con_stb),
-		.conrdata(pmem_rdata),
-		.convalid(pmem_ack),
+		.conrdata(con_rdata),
+		.convalid(con_ack),
 
 		.con_mem(con_mem),
+		.con_reg(con_reg),
+
+		.pc(pc),
 
 		.tti_rx(tti_rx),
 		.tto_tx(tto_tx)

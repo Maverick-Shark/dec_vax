@@ -13,9 +13,6 @@
  */
 `define	WBITS		31
 
-`define	CPUHALT		5'd0
-`define	CPUFETCH2	5'd2
-
 `define	CONSOLE		6'd0
 `define	CONSOLE2	6'd1
 `define	CONSOLE3	6'd2
@@ -45,8 +42,6 @@
 `define	MEMREFS4	6'd26
 `define	MEMREFS5	6'd27
 `define	PUTCHAR21	6'd32
-`define	LOAD		6'd33
-`define	LOAD2		6'd34
 `define	WRITENUM51	6'd36
 `define	WRITENUM52	6'd37
 
@@ -88,22 +83,14 @@ module console(
 	output reg	con_ipr,	// internal processor reg
 
 
-	output reg halt, output reg cont,
-	output reg refpc, output reg refac0, output reg refac1,
-	output reg refac2, output reg refac3,
-	input [4:0] cpustate,
-	input [1:15] pc,
-	input [0:15] ac0,
-	input [0:15] ac1,
-	input [0:15] ac2,
-	input [0:15] ac3,
-	input C,
+	input [31:0]	pc,
 	input [1:0]	hreason,
-	output reg [0:15]	switches,
 
-	input halted_i,
+	output reg step, 
+	output reg cont,
+	input halted,
+
 	output break_o,
-
 	input tti_rx,
 	output tto_tx
 
@@ -115,10 +102,7 @@ module console(
 	reg [4:0]	putchar_next;
 	reg [`WBITS:0] 	innum, utnum;
 	reg [7:0] 	tmp;
-	reg		step, nodig;
-	reg [4:0]	bootidx;
-
-	(*rom_style = "block" *) reg [15:0] romdata;
+	reg		nodig;
 
 	wire ttibusy, ttobusy, ttidone, ttodone;
 	wire [7:0] iodatain;
@@ -210,19 +194,18 @@ module console(
 			state <= `CONSOLE;
 			cont <= 0;
 			step <= 0;
-		end else if (cpustate == `CPUFETCH2) begin
-			if (step) begin
-				step <= 0;
-				halt <= 1;
-			end
-			cont <= 0;
-		end else if (cpustate == `CPUHALT)
+//		end else if (halted) begin
+//			if (step) begin
+//				step <= 0;
+//			//	halt <= 1;
+//			end
+//			cont <= 0;
+		end else if (halted)
 		case (state)
 		`CONSOLE: begin
-			if (cpustate == `CPUHALT && !cont) begin
-				halt <= 0;
-		//		utnum <= { 1'b0, pc };
-				utnum <= 32'h7234abcd;
+			if (halted && !cont) begin
+			//	halt <= 0;
+				utnum <= pc;
 				writenum_next <= `WRITNUM_NEXT_C2;
 				state <= `WRITENUM;
 			end
@@ -230,11 +213,6 @@ module console(
 		`CONSOLE2: begin
 			state <= `CRLFEXC;
 			conwrite <= 0;
-			refpc <= 0;
-			refac0 <= 0;
-			refac1 <= 0;
-			refac2 <= 0;
-			refac3 <= 0;
 			con_mem <= 0;
 			con_reg <= 0;
 			con_ipr <= 0;
@@ -251,81 +229,22 @@ module console(
 				state <= `CONSOLE;
 				step <= 1;
 				cont <= 1;
-			end else if (tmp == "L") begin
-				switches <= innum;
-				bootidx <= 0;
-				state <= `LOAD;
 			end else begin
 				/* Reference some cell */
 				conaddr <= innum;
 				conwrite <= 0;
 				conready <= 1;
 				state <= `MEMREFS;
-				if (tmp == "/") begin
+				if (tmp == "/")
 					con_mem <= 1;
+				else if (tmp == "R") begin
+					con_reg <= 1;
 				end else begin
 					tmp <= "?";
 					state <= `PUTCHAR;
 					putchar_next <= `PUTCHAR_NEXT_C2;
 				end
 			end
-		end
-		/*
-		 * boot from given device.
-		 */
-		`LOAD: begin
-			conaddr <= { 11'b0, bootidx };
-			case (bootidx)
-			5'o00: romdata = 16'o062677;
-			5'o01: romdata = 16'o060477;
-			5'o02: romdata = 16'o024026;
-			5'o03: romdata = 16'o107400;
-			5'o04: romdata = 16'o124000;
-			5'o05: romdata = 16'o010014;
-			5'o06: romdata = 16'o010030;
-			5'o07: romdata = 16'o010032;
-			5'o10: romdata = 16'o125404;
-			5'o11: romdata = 16'o000005;
-			5'o12: romdata = 16'o030016;
-			5'o13: romdata = 16'o050377;
-			5'o14: romdata = 16'o060077;
-			5'o15: romdata = 16'o101102;
-			5'o16: romdata = 16'o000377;
-			5'o17: romdata = 16'o004030;
-			5'o20: romdata = 16'o101065;
-			5'o21: romdata = 16'o000017;
-			5'o22: romdata = 16'o004027;
-			5'o23: romdata = 16'o046026;
-			5'o24: romdata = 16'o010100;
-			5'o25: romdata = 16'o000022;
-			5'o26: romdata = 16'o000077;
-			5'o27: romdata = 16'o126420;
-			5'o30: romdata = 16'o063577;
-			5'o31: romdata = 16'o000030;
-			5'o32: romdata = 16'o060477;
-			5'o33: romdata = 16'o107363;
-			5'o34: romdata = 16'o000030;
-			5'o35: romdata = 16'o125300;
-			5'o36: romdata = 16'o001400;
-			5'o37: romdata = 16'o000000;
-			endcase
-			conwdata <= romdata;
-			conwrite <= 1;
-			conready <= 1;
-			state <= `LOAD2;
-		end
-		`LOAD2: if (convalid) begin
-			conready <= 0;
-			conwrite <= 0;
-			bootidx <= bootidx + 1;
-			if (bootidx == 5'o37) begin
-				state <= `CONSOLE;
-				cont <= 1;
-				conwdata <= 0;
-				conwrite <= 1;
-				refpc <= 1;
-			end else
-				state <= `LOAD;
 		end
 
 		/*
