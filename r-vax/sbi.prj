@@ -1,5 +1,6 @@
 verilog work "tto.v"
 verilog work "tti.v"
+verilog work "decode.v"
 verilog work "sdram.v"
 verilog work "cpu.v"
 verilog work "console.v"

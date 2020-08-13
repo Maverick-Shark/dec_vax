@@ -121,7 +121,7 @@ defparam console.tto.CLKPERBIT = 2604;
 		.clk(clk),
 		.rst(rst),
 
-		.reg_addr(con_addr[3:0]),
+		.reg_addr(con_addr[4:0]),
 		.reg_wdata(con_wdata),
 		.reg_write(con_write),
 		.reg_stb(reg_stb),
