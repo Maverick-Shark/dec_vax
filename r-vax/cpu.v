@@ -51,11 +51,13 @@ module cpu(
 	reg [0:0]	isreg[5:0];	// destination is reg
 	reg [31:0]	res;
 
-	wire [31:0] curpc, current_reg;
+	wire [31:0] curpc, cur_reg_val;
 	wire [1:0] curbyte;
+	wire [3:0] cur_reg_num;
 	assign curbyte = greg[15][1:0];
 	assign curpc = greg[15];
-	assign current_reg = greg[decib[3:0]];
+	assign cur_reg_num = decib[3:0];
+	assign cur_reg_val = greg[cur_reg_num];
 
 	/*
 	 * get current instruction byte based on pc.
@@ -118,8 +120,7 @@ module cpu(
 				/* put insbyte in decode reg */
 				savop <= optype[(`STATBITS*5)-1:`STATBITS];
 				insbyte <= decib;
-		//		greg[15] <= curpc + 1;
-				greg[15] <= greg[15] + 1;
+				greg[15] <= curpc + 1;
 				state <= optype[`STATBITS-1:0];
 				nargs <= 0;
 			end else begin
@@ -132,8 +133,7 @@ module cpu(
 		`S_RL: begin
 			if (isvalid) begin
 				case (decib[7:4])
-		//		`OPS_REG: arg[nargs] <= greg[decib[3:0]];
-				`OPS_REG: arg[nargs] <= current_reg;
+				`OPS_REG: arg[nargs] <= cur_reg_val;
 				default: arg[nargs] <= { 24'd0, decib };
 				endcase
 				nargs <= nargs + 1;
