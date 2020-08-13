@@ -32,8 +32,7 @@ module cpu(
 	output reg [31:0]	pc
 );
 
-	(* ram_style = "BLOCK" *)
-	reg [31:0]	greg[14:0];
+	reg [31:0]	greg[15:0];
 	reg [`STATBITS-1:0]	state, fillstate;
 
 	reg [31:0]	psl;
@@ -52,8 +51,13 @@ module cpu(
 	reg [0:0]	isreg[5:0];	// destination is reg
 	reg [31:0]	res;
 
+	wire [31:0] curpc;
+	assign curpc = greg[15];
+	/*
+	 * get current instruction byte based on pc.
+	 */
 	always @* begin
-		case (pc[1:0])
+		case (curpc[1:0])
 		2'b00: decib = inslword[7:0];
 		2'b01: decib = inslword[15:8];
 		2'b10: decib = inslword[23:16];
@@ -69,7 +73,7 @@ module cpu(
 	decode decode(decib, optype);
 
 	assign halted = state == `S_HALT;
-	assign isvalid = (itag[31:2] == pc[31:2]) && ivalid;
+	assign isvalid = (itag[31:2] == greg[15][31:2]) && ivalid;
 
 	always @(posedge clk) begin
 		if (rst)
@@ -78,13 +82,14 @@ module cpu(
 		case (state)
 		`S_HALT: begin
 			ivalid <= 0;
+			pc <= greg[15];
 			if (cont)
 				state <= `S_FETCH;
 			if (reg_stb) begin
 				if (reg_write) begin
-					if (reg_addr == 5'h0f)
-						pc <= reg_wdata;
-					else
+				//	if (reg_addr == 5'h0f)
+				//		pc <= reg_wdata;
+				//	else
 						greg[reg_addr] <= reg_wdata;
 				end else begin
 					if (reg_addr == 5'h1f)
@@ -93,9 +98,9 @@ module cpu(
 						reg_rdata <= state;
 					else if (reg_addr[4])
 						reg_rdata <= arg[reg_addr[2:0]];
-					else if (reg_addr == 5'h0f)
-						reg_rdata <= pc;
-					else
+				//	else if (reg_addr == 5'h0f)
+				//		reg_rdata <= pc;
+				//	else
 						reg_rdata <= greg[reg_addr];
 				end
 				reg_ack <= 1;
@@ -109,7 +114,7 @@ module cpu(
 				/* put insbyte in decode reg */
 				savop <= optype[(`STATBITS*5)-1:`STATBITS];
 				insbyte <= decib;
-				pc <= pc + 1;
+				greg[15] <= greg[15] + 1;
 				state <= optype[`STATBITS-1:0];
 				nargs <= 0;
 			end else begin
@@ -126,7 +131,7 @@ module cpu(
 				default: arg[nargs] <= { 24'd0, decib };
 				endcase
 				nargs <= nargs + 1;
-				pc <= pc + 1;
+				greg[15] <= greg[15] + 1;
 				state <= savop[`STATBITS-1:0];
 				savop <= nextsavop;
 			end else begin
@@ -156,7 +161,7 @@ module cpu(
 				default: arg[nargs] <= { 24'd0, decib };
 				endcase
 				nargs <= nargs + 1;
-				pc <= pc + 1;
+				greg[15] <= greg[15] + 1;
 				state <= savop[`STATBITS-1:0];
 				savop <= nextsavop;
 			end else begin
@@ -176,7 +181,7 @@ module cpu(
 				default: arg[nargs] <= { 24'd0, decib };
 				endcase
 				nargs <= nargs + 1;
-				pc <= pc + 1;
+				greg[15] <= greg[15] + 1;
 				state <= savop[`STATBITS-1:0];
 				savop <= nextsavop;
 			end else begin
@@ -194,11 +199,11 @@ module cpu(
 		end
 		`S_FILLUP: begin
 			/* Fetch new longword */
-			cpu_addr <= { pc[31:2], 2'b00 };
+			cpu_addr <= { greg[15][31:2], 2'b00 };
 			cpu_stb <= 1;
 			if (cpu_ack) begin
 				inslword <= cpu_rdata;
-				itag <= pc[31:2];
+				itag <= greg[15][31:2];
 				ivalid <= 1;
 				cpu_stb <= 0;
 				state <= fillstate;
