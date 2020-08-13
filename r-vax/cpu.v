@@ -1,4 +1,4 @@
-
+/*	$Id$	*/
 
 `include "states.vh"
 `include "opcodes.vh"
@@ -51,8 +51,12 @@ module cpu(
 	reg [0:0]	isreg[5:0];	// destination is reg
 	reg [31:0]	res;
 
-	wire [31:0] curpc;
+	wire [31:0] curpc, current_reg;
+	wire [1:0] curbyte;
+	assign curbyte = greg[15][1:0];
 	assign curpc = greg[15];
+	assign current_reg = greg[decib[3:0]];
+
 	/*
 	 * get current instruction byte based on pc.
 	 */
@@ -100,7 +104,7 @@ module cpu(
 						reg_rdata <= arg[reg_addr[2:0]];
 				//	else if (reg_addr == 5'h0f)
 				//		reg_rdata <= pc;
-				//	else
+					else
 						reg_rdata <= greg[reg_addr];
 				end
 				reg_ack <= 1;
@@ -114,6 +118,7 @@ module cpu(
 				/* put insbyte in decode reg */
 				savop <= optype[(`STATBITS*5)-1:`STATBITS];
 				insbyte <= decib;
+		//		greg[15] <= curpc + 1;
 				greg[15] <= greg[15] + 1;
 				state <= optype[`STATBITS-1:0];
 				nargs <= 0;
@@ -127,11 +132,12 @@ module cpu(
 		`S_RL: begin
 			if (isvalid) begin
 				case (decib[7:4])
-				`OPS_REG: arg[nargs] <= greg[decib[3:0]];
+		//		`OPS_REG: arg[nargs] <= greg[decib[3:0]];
+				`OPS_REG: arg[nargs] <= current_reg;
 				default: arg[nargs] <= { 24'd0, decib };
 				endcase
 				nargs <= nargs + 1;
-				greg[15] <= greg[15] + 1;
+				greg[15] <= curpc + 1;
 				state <= savop[`STATBITS-1:0];
 				savop <= nextsavop;
 			end else begin
@@ -181,7 +187,7 @@ module cpu(
 				default: arg[nargs] <= { 24'd0, decib };
 				endcase
 				nargs <= nargs + 1;
-				greg[15] <= greg[15] + 1;
+				greg[15] <= curpc + 1;
 				state <= savop[`STATBITS-1:0];
 				savop <= nextsavop;
 			end else begin
@@ -199,11 +205,11 @@ module cpu(
 		end
 		`S_FILLUP: begin
 			/* Fetch new longword */
-			cpu_addr <= { greg[15][31:2], 2'b00 };
+			cpu_addr <= { curpc[31:2], 2'b00 };
 			cpu_stb <= 1;
 			if (cpu_ack) begin
 				inslword <= cpu_rdata;
-				itag <= greg[15][31:2];
+				itag <= curpc[31:2];
 				ivalid <= 1;
 				cpu_stb <= 0;
 				state <= fillstate;
