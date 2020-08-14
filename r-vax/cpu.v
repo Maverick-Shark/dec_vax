@@ -43,10 +43,10 @@ module cpu(
 	reg [31:2]	itag;
 	reg [31:0]	inslword;
 	reg		ivalid;
-	reg [7:0]	insbyte;
+	reg [7:0]	cur_inst;
 	reg [7:0]	decib;
 
-	reg [31:0]	arg[5:0];	// storage for evaluated args
+	reg [31:0]	arg[5:0], argp[5:0];	// storage for evaluated args
 	reg [2:0]	nargs;		// current arg
 	reg [0:0]	isreg[5:0];	// destination is reg
 	reg [31:0]	res;
@@ -78,6 +78,11 @@ module cpu(
 
 	decode decode(decib, optype);
 
+
+	wire [4:0] op_size;
+	wire o_r, o_w, o_m, o_a, o_v;
+	opspec opspec(cur_inst, nargs, op_size, o_r, o_w, o_m, o_a, o_v);
+
 	assign halted = state == `S_HALT;
 	assign isvalid = (itag[31:2] == greg[15][31:2]) && ivalid;
 
@@ -93,10 +98,7 @@ module cpu(
 				state <= `S_FETCH;
 			if (reg_stb) begin
 				if (reg_write) begin
-				//	if (reg_addr == 5'h0f)
-				//		pc <= reg_wdata;
-				//	else
-						greg[reg_addr] <= reg_wdata;
+					greg[reg_addr] <= reg_wdata;
 				end else begin
 					if (reg_addr == 5'h1f)
 						reg_rdata <= 32'd0; // PSL
@@ -104,8 +106,6 @@ module cpu(
 						reg_rdata <= state;
 					else if (reg_addr[4])
 						reg_rdata <= arg[reg_addr[2:0]];
-				//	else if (reg_addr == 5'h0f)
-				//		reg_rdata <= pc;
 					else
 						reg_rdata <= greg[reg_addr];
 				end
@@ -119,7 +119,7 @@ module cpu(
 			if (isvalid) begin
 				/* put insbyte in decode reg */
 				savop <= optype[(`STATBITS*5)-1:`STATBITS];
-				insbyte <= decib;
+				cur_inst <= decib;
 				greg[15] <= curpc + 1;
 				state <= optype[`STATBITS-1:0];
 				nargs <= 0;
@@ -130,19 +130,42 @@ module cpu(
 		end
 
 		/* Read a longword and put into current arg reg */
-		`S_RL: begin
+		`S_ARG: begin
 			if (isvalid) begin
+				state <= savop[`STATBITS-1:0];
+				savop <= nextsavop;
 				case (decib[7:4])
-				`OPS_REG: arg[nargs] <= cur_reg_val;
+				`OPS_LIT: begin
+					if (o_r) begin
+						arg[nargs] <= { 24'b0, decib };
+					end else begin
+						// resadflt <= 1;
+						// state <= S_ENDINSN;
+						state <= `S_HALT;
+					end
+				end
+				`OPS_REG: begin
+					if (o_a) begin
+						// resadflt <= 1;
+						// state <= S_ENDINSN;
+						state <= `S_HALT;
+					end else begin
+						if (o_r | o_m | o_v)
+							arg[nargs] <= cur_reg_val;
+						if (o_m | o_w | o_v) begin
+							isreg[nargs] <= 1;
+							argp[nargs] <= cur_reg_num;
+						end
+					end
+				end
+
 				default: arg[nargs] <= { 24'd0, decib };
 				endcase
 				nargs <= nargs + 1;
 				greg[15] <= curpc + 1;
-				state <= savop[`STATBITS-1:0];
-				savop <= nextsavop;
 			end else begin
 				state <= `S_FILLUP;
-				fillstate <= `S_RL;
+				fillstate <= `S_ARG;
 			end
 		end
 `ifdef notyet

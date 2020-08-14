@@ -1,4 +1,4 @@
-
+/*	$Id$	*/
 
 `define	STATBITS	8
 `define	STATLINE	(`STATBITS*6)
@@ -9,6 +9,6 @@
 `define	S_FILLUP	3
 
 
-`define	S_RL		8'd10
+`define	S_ARG		8'd10
 `define	S_WL		8'd11
 `define	S_ADDL		8'd12

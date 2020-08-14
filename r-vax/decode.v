@@ -23,7 +23,7 @@ module decode(
 
 	always @* begin
 		case (insn)
-		`I_ADDL3: optype = { 16'd0, `S_ADDL, `S_WL, `S_RL, `S_RL };
+		`I_ADDL3: optype = { `S_ADDL, `S_WL, `S_ARG, `S_ARG };
 //		`I_MOVL: optype = `S_RL;
 //		8'h57: optype = 10'h32f; //= resinflt
 		default: optype = 0;
