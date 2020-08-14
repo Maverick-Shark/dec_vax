@@ -8,9 +8,8 @@
 
 
 /* Operand specifiers */
-`define	OPS_LIT	4'b00??
+`define	OPS_LIT	4'h0, 4'h1, 4'h2, 4'h3
 `define	OPS_REG	4'h5
-//`define	OPS_REG	4'h5
 
 /* opcodes */
 `define	I_ADDL2	8'hc0

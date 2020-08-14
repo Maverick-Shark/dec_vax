@@ -6,43 +6,50 @@
 /*
  * VAX instruction decoder.
  *
- * An instruction can have up to 5 arguments, hence for each instruction we
- * store both the decoding state for each arg and the arg type.
- *
- * input to the decode module is the opcode and argument number.
+ * There are two tables kept here.
+ * 1) A mapping table that gives an offset into the state table for each instruction
+ * 2) A state table that resturn the states that should be executed for an instruction.
  */
+
+`define	SIMPOFF2	8'd2
+`define	SIMPOFF3	8'd1
 
 module decode(
 	input [7:0] insn,
-//	input [2:0] argn,
-	output [`STATLINE-1:0] opdata
+	input [7:0] nstate,
+	output [7:0] stateoff,
+	output [7:0] opoff
 );
 
 	(* rom_style = "BLOCK" *)
-	reg [`STATLINE-1:0] optype;
+	reg [7:0] optbl;
+	(* rom_style = "BLOCK" *)
+	reg [7:0] statetbl;
 
 	always @* begin
-		case (insn)
-		`I_ADDL2: optype = { `S_SOP, `S_ARG, `S_ARG };
-		`I_ADDL3: optype = { `S_SOP, `S_ARG, `S_ARG, `S_ARG };
-//		`I_MOVL: optype = `S_RL;
-//		8'h57: optype = 10'h32f; //= resinflt
-		default: optype = 0;
+		case (nstate)
+		default: 	statetbl = `S_HALT;
+		8'd0:		statetbl = `S_HALT;
+		`SIMPOFF3:	statetbl = `S_ARG;
+		`SIMPOFF2:	statetbl = `S_ARG;
+		8'd3:		statetbl = `S_ARG;
+		8'd4:		statetbl = `S_SOP;
 		endcase
 	end
 
-	assign opdata = optype;
-
-`ifdef notyet
+	/*
+	 * get index into state table based on instruction.
+	 */
 	always @* begin
-		case (argn)
-		3'd0: opdata = optype[`STATBITS-1:0];
-		3'd0: opdata = optype[`STATBITS-1:0];
-		3'd0: opdata = optype[`STATBITS-1:0];
-		3'd0: opdata = optype[`STATBITS-1:0];
-		default: opdata = optype[`STATBITS-1:0];
+		case (insn)
+		default: optbl = 0;
+		`I_ADDL2: optbl = `SIMPOFF2;
+		`I_ADDL3: optbl = `SIMPOFF3;
+		endcase
 	end
-`endif
+
+	assign stateoff = statetbl;
+	assign opoff = optbl;
 
 endmodule
 

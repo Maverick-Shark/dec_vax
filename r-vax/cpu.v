@@ -75,12 +75,14 @@ module cpu(
 		endcase
 	end
 
-	wire [`STATLINE-1:0] optype;
-	reg [`STATLINE-1-`STATBITS:0] savop;
-	wire [`STATLINE-1-`STATBITS:0] nextsavop;
-	assign nextsavop = { `STATBITS'd0, savop[(`STATBITS*5)-1:`STATBITS] };
-
-	decode decode(decib, optype);
+	wire [7:0] opoff, stateoff, nstate;
+	reg [7:0] nxtoff;
+	assign nstate = state == `S_FETCH ? opoff : nxtoff;
+	decode decode(
+		.insn(decib),
+		.nstate(nstate),
+		.stateoff(stateoff),
+		.opoff(opoff));
 
 
 	wire [4:0] op_size;
@@ -107,8 +109,6 @@ module cpu(
 				end else begin
 					if (reg_addr == 5'h1f)
 						reg_rdata <= psl; // PSL
-					else if (reg_addr == 5'h1e)
-						reg_rdata <= state;
 					else if (reg_addr[4])
 						reg_rdata <= arg[reg_addr[2:0]];
 					else
@@ -123,10 +123,10 @@ module cpu(
 		`S_FETCH: begin
 			if (isvalid) begin
 				/* put insbyte in decode reg */
-				savop <= optype[(`STATBITS*5)-1:`STATBITS];
 				cur_inst <= decib;
 				greg[15] <= curpc + 1;
-				state <= optype[`STATBITS-1:0];
+				state <= stateoff;
+				nxtoff <= opoff + 1;
 				nargs <= 0;
 			end else begin
 				state <= `S_FILLUP;
@@ -137,8 +137,8 @@ module cpu(
 		/* Read a longword and put into current arg reg */
 		`S_ARG: begin
 			if (isvalid) begin
-				state <= savop[`STATBITS-1:0];
-				savop <= nextsavop;
+				state <= stateoff;
+				nxtoff <= nxtoff + 1;
 				case (decib[7:4])
 				`OPS_LIT: begin
 					if (o_r) begin
