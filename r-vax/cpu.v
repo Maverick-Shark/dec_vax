@@ -38,6 +38,10 @@ module cpu(
 	reg [31:0]	psl;
 	reg		Ctmp;
 
+	/* different traps/faults */
+	reg 	resinflt, 	/* reserved  instruction fault (FFFF) */
+		resadflt,	/* reserved addressing mode fault */
+		resopflt;	/* reserved operand fault */
 
 	/* instruction word "cache" */
 	reg [31:2]	itag;
@@ -85,6 +89,7 @@ module cpu(
 
 	assign halted = state == `S_HALT;
 	assign isvalid = (itag[31:2] == greg[15][31:2]) && ivalid;
+	assign anyfault = resinflt | resadflt | resopflt;
 
 	always @(posedge clk) begin
 		if (rst)
@@ -169,28 +174,6 @@ module cpu(
 			end
 		end
 
-`ifdef notdef
-		`S_WL: begin
-			if (isvalid) begin
-				isreg[nargs] <= 0;
-				case (decib[7:4])
-				`OPS_REG: begin
-					arg[nargs] <= { 28'd0, decib[3:0] };
-					isreg[nargs] <= 1;
-				end
-				default: arg[nargs] <= { 24'd0, decib };
-				endcase
-				nargs <= nargs + 1;
-				greg[15] <= curpc + 1;
-				state <= savop[`STATBITS-1:0];
-				savop <= nextsavop;
-			end else begin
-				state <= `S_FILLUP;
-				fillstate <= `S_WL;
-			end
-		end
-`endif
-
 		/*
 		 * Simple operations.  We cannot end up here if a fault occurred.
 		 */
@@ -211,16 +194,23 @@ module cpu(
 		 */
 		`S_ENDINST: begin
 			state <= `S_HALT;
-//			if (anyfault) begin
-
-//			end else begin
+			if (anyfault) begin
+				greg[4] <= anyfault; /* XXX */
+			end else begin
 				psl[`PSL_C] <= Ctmp;
-				greg[4] <= Ctmp;
+				psl[`PSL_V] <= 0;
+				psl[`PSL_N] <= arg[2][31];
+				psl[`PSL_Z] <= (|arg[2]) == 0;
+				if (cur_inst == `I_ADDL2 || cur_inst == `I_ADDL3) begin
+					if ((arg[0][31] == arg[1][31]) &&
+					    (arg[0][31] != arg[2][31]))
+						psl[`PSL_V] <= 1;
+				end
 				if (isreg[2]) 
 					greg[argp[2][3:0]] <= arg[2];
 				else
 					greg[arg[2][3:0]] <= 32'hf00fbabe;
-//			end
+			end
 		end
 
 
