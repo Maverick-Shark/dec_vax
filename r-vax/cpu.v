@@ -101,8 +101,8 @@ module cpu(
 					greg[reg_addr] <= reg_wdata;
 				end else begin
 					if (reg_addr == 5'h1f)
-						reg_rdata <= 32'd0; // PSL
-					if (reg_addr == 5'h1e)
+						reg_rdata <= psl; // PSL
+					else if (reg_addr == 5'h1e)
 						reg_rdata <= state;
 					else if (reg_addr[4])
 						reg_rdata <= arg[reg_addr[2:0]];
@@ -168,37 +168,8 @@ module cpu(
 				fillstate <= `S_ARG;
 			end
 		end
-`ifdef notyet
-		`S_ML: begin
-			if (isvalid) begin
-				isreg[nargs] <= 0;
-				case (decib[7:4])
-				4'b00??: begin	// literal
-					resadflt <= 1;
-					state <= S_IEXIT;
-				end
-				4'b1???: begin // displacement
-					case (decib[5:4])
-					2'b00: off <= greg[decib[3:0]];
-					2'b01: off <= 
-				end
-				`OPS_REG: begin
-					arg[nargs] <= { 28'd0, decib[3:0] };
-					isreg[nargs] <= 1;
-				
-				end
-				default: arg[nargs] <= { 24'd0, decib };
-				endcase
-				nargs <= nargs + 1;
-				greg[15] <= greg[15] + 1;
-				state <= savop[`STATBITS-1:0];
-				savop <= nextsavop;
-			end else begin
-				state <= `S_FILLUP;
-				fillstate <= `S_WL;
-			end
-		end
-`endif
+
+`ifdef notdef
 		`S_WL: begin
 			if (isvalid) begin
 				isreg[nargs] <= 0;
@@ -218,14 +189,41 @@ module cpu(
 				fillstate <= `S_WL;
 			end
 		end
-		`S_ADDL: begin
-			if (isreg[2])
-				{ psl[`PSL_C], greg[arg[2][3:0]]  } <=
-				    { 1'b0, arg[0] } + { 1'b0, arg[1] };
-			else
-				greg[arg[2][3:0]] <= 32'hf00fbabe;
-			state <= `S_HALT;
+`endif
+
+		/*
+		 * Simple operations.  We cannot end up here if a fault occurred.
+		 */
+		`S_SOP: begin
+			state <= `S_ENDINST;
+			case (cur_inst)
+			`I_ADDL2, `I_ADDL3:
+				{ Ctmp, arg[2]  } <= { 1'b0, arg[0] } + { 1'b0, arg[1] };
+			endcase
+			if (nargs == 2) begin
+				argp[2] <= argp[1];
+				isreg[2] <= isreg[1];
+			end
 		end
+		/*
+		 * Write back value.  Set flags. If any fault occurred take action.
+		 * Resulting value is always in arg[2].
+		 */
+		`S_ENDINST: begin
+			state <= `S_HALT;
+//			if (anyfault) begin
+
+//			end else begin
+				psl[`PSL_C] <= Ctmp;
+				greg[4] <= Ctmp;
+				if (isreg[2]) 
+					greg[argp[2][3:0]] <= arg[2];
+				else
+					greg[arg[2][3:0]] <= 32'hf00fbabe;
+//			end
+		end
+
+
 		`S_FILLUP: begin
 			/* Fetch new longword */
 			cpu_addr <= { curpc[31:2], 2'b00 };

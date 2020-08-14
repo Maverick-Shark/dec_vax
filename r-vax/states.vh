@@ -7,8 +7,8 @@
 `define	S_FETCH		1
 `define	S_DECODE	2
 `define	S_FILLUP	3
+`define	S_ENDINST	4
 
 
 `define	S_ARG		8'd10
-`define	S_WL		8'd11
-`define	S_ADDL		8'd12
+`define	S_SOP		8'd12

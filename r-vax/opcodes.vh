@@ -1,10 +1,10 @@
 
 
 /* bit number in PSL */
-`define	PSL_C	0
-`define	PSL_V	1
-`define	PSL_Z	2
-`define	PSL_N	3
+`define	PSL_C	5'd0
+`define	PSL_V	5'd1
+`define	PSL_Z	5'd2
+`define	PSL_N	5'd3
 
 
 /* Operand specifiers */
