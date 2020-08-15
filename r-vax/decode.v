@@ -13,6 +13,7 @@
 
 `define	SIMPOFF3	8'd1
 `define	SIMPOFF2	8'd2
+`define	SIMPOFF1	8'd3
 `define	BROFF		8'd5
 
 module decode(
@@ -33,7 +34,7 @@ module decode(
 		8'd0:		statetbl = `S_HALT;
 		`SIMPOFF3:	statetbl = `S_ARG;
 		`SIMPOFF2:	statetbl = `S_ARG;
-		8'd3:		statetbl = `S_ARG;
+		`SIMPOFF1:	statetbl = `S_ARG;
 		8'd4:		statetbl = `S_SOP;
 		`BROFF:		statetbl = `S_BR;
 		endcase
@@ -46,9 +47,15 @@ module decode(
 		case (insn)
 		default:	optbl = 0;
 		`I_BRB:		optbl = `BROFF;		// 11
+
 		`I_BRW:		optbl = `BROFF;		// 31
+
+		`I_BISPSW:	optbl = `SIMPOFF1;	// b8
+		`I_BICPSW:	optbl = `SIMPOFF1;	// b9
+
 		`I_ADDL2:	optbl = `SIMPOFF2;	// c0
 		`I_ADDL3:	optbl = `SIMPOFF3;	// c1
+
 		`I_MOVL:	optbl = `SIMPOFF2;	// d0
 		endcase
 	end

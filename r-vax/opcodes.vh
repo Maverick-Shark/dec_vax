@@ -24,6 +24,9 @@
 
 `define	I_BRW	8'h31
 
+`define	I_BISPSW	8'hb8
+`define	I_BICPSW	8'hb9
+
 `define	I_ADDL2	8'hc0
 `define	I_ADDL3	8'hc1
 `define	I_SUBL2	8'hc2

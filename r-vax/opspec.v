@@ -14,6 +14,7 @@
 `define	OP_RL_WL	8'd4
 `define	OP_BB		8'd6
 `define	OP_BW		8'd7
+`define	OP_RW		8'd8
 
 module opspec(
 	input [7:0] insn,
@@ -35,8 +36,9 @@ module opspec(
 		`OP_RL_RL_WL:	statetbl = { `O_LONG, `O_R };
 		`OP_RL_WL:	statetbl = { `O_LONG, `O_R };
 		8'd5:		statetbl = { `O_LONG, `O_W };
-		`OP_BB:		statetbl = { `O_BYTE, `O_R };
-		`OP_BW:		statetbl = { `O_WORD, `O_R };
+		`OP_BB:		statetbl = { `O_BYTE, `O_R };	// branch arg
+		`OP_BW:		statetbl = { `O_WORD, `O_R };	// branch arg
+		`OP_RW:		statetbl = { `O_WORD, `O_R };
 		endcase
 	end
 
@@ -44,9 +46,15 @@ module opspec(
 		case (insn)
 		default:	optbl = 0;
 		`I_BRB:		optbl = `OP_BB;
+
 		`I_BRW:		optbl = `OP_BW;
+
+		`I_BISPSW:	optbl = `OP_RW;
+		`I_BICPSW:	optbl = `OP_RW;
+
 		`I_ADDL2:	optbl = `OP_RL_ML;
 		`I_ADDL3:	optbl = `OP_RL_RL_WL;
+
 		`I_MOVL:	optbl = `OP_RL_WL;
 		endcase
 	end

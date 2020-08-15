@@ -188,6 +188,18 @@ module cpu(
 			`I_ADDL2, `I_ADDL3:
 				{ Ctmp, arg[2]  } <= { 1'b0, arg[0] } + { 1'b0, arg[1] };
 			`I_MOVL: arg[2] <= arg[0];
+			`I_BISPSW, `I_BICPSW: begin
+				if (|arg[0][15:8]) begin
+					// resopflt <= 1;
+					// state <= S_ENDINSN;
+					state <= `S_HALT;
+				end else begin
+					if (cur_inst[0]) // bicpsw
+						psl[3:0] <= psl[3:0] & ~arg[0][3:0];
+					else  // bispsw
+						psl[3:0] <= psl[3:0] | arg[0][3:0];
+				end
+			end
 			endcase
 			if (nargs == 2) begin
 				argp[2] <= argp[1];
@@ -228,7 +240,8 @@ module cpu(
 				state <= `S_HALT;
 			end else if (cur_inst == `I_BRB || cur_inst == `I_BRW) begin
 				greg[15] <= curpc + arg[0];
-			end else begin
+			end else if (cur_inst == `I_ADDL2 || cur_inst == `I_ADDL3 ||
+			    cur_inst == `I_MOVL) begin
 				psl[`PSL_C] <= Ctmp;
 				psl[`PSL_V] <= 0;
 				psl[`PSL_N] <= arg[2][31];
