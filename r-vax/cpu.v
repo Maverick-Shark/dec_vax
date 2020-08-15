@@ -39,8 +39,8 @@ module cpu(
 	reg		Ctmp;
 
 	/* different traps/faults */
-	reg 	resinflt, 	/* reserved  instruction fault (FFFF) */
-		resadflt,	/* reserved addressing mode fault */
+	reg 	resinflt, 	/* reserved instruction fault (FFFF) */
+		resadflt,	/* reserved addressing mode fault (movl r0,$3) */
 		resopflt;	/* reserved operand fault */
 
 	/* instruction word "cache" */
@@ -194,6 +194,29 @@ module cpu(
 				isreg[2] <= isreg[1];
 			end
 		end
+
+		/*
+		 * Branch instruction.
+		 */
+		`S_BR: begin
+			if (isvalid) begin
+				greg[15] <= curpc + 1;
+				nargs <= nargs + 1;
+				if (nargs == 0) begin
+					/* get first (or only) byte */
+					arg[0] <= { {24{decib[7]}}, decib };
+					if (op_size[0] == 1) // byte offset
+						state <= `S_ENDINST;
+				end else begin // nargs == 1
+					arg[0] <= { {16{decib[7]}}, decib, arg[0][7:0] };
+					state <= `S_ENDINST;
+				end
+			end else begin
+				state <= `S_FILLUP;
+				fillstate <= `S_BR;
+			end
+		end
+
 		/*
 		 * Write back value.  Set flags. If any fault occurred take action.
 		 * Resulting value is always in arg[2].
@@ -203,6 +226,8 @@ module cpu(
 			if (anyfault) begin
 				greg[15] <= oldpc;
 				state <= `S_HALT;
+			end else if (cur_inst == `I_BRB || cur_inst == `I_BRW) begin
+				greg[15] <= curpc + arg[0];
 			end else begin
 				psl[`PSL_C] <= Ctmp;
 				psl[`PSL_V] <= 0;

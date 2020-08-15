@@ -11,8 +11,9 @@
  * 2) A state table that resturn the states that should be executed for an instruction.
  */
 
-`define	SIMPOFF2	8'd2
 `define	SIMPOFF3	8'd1
+`define	SIMPOFF2	8'd2
+`define	BROFF		8'd5
 
 module decode(
 	input [7:0] insn,
@@ -34,6 +35,7 @@ module decode(
 		`SIMPOFF2:	statetbl = `S_ARG;
 		8'd3:		statetbl = `S_ARG;
 		8'd4:		statetbl = `S_SOP;
+		`BROFF:		statetbl = `S_BR;
 		endcase
 	end
 
@@ -43,6 +45,8 @@ module decode(
 	always @* begin
 		case (insn)
 		default:	optbl = 0;
+		`I_BRB:		optbl = `BROFF;		// 11
+		`I_BRW:		optbl = `BROFF;		// 31
 		`I_ADDL2:	optbl = `SIMPOFF2;	// c0
 		`I_ADDL3:	optbl = `SIMPOFF3;	// c1
 		`I_MOVL:	optbl = `SIMPOFF2;	// d0

@@ -12,3 +12,4 @@
 
 `define	S_ARG		8'd10
 `define	S_SOP		8'd12
+`define	S_BR		8'd13

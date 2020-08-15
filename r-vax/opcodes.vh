@@ -20,6 +20,10 @@
 `define	I_LDPCTX	8'h06
 `define	I_SVPCTX	8'h07
 
+`define	I_BRB	8'h11
+
+`define	I_BRW	8'h31
+
 `define	I_ADDL2	8'hc0
 `define	I_ADDL3	8'hc1
 `define	I_SUBL2	8'hc2
