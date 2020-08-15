@@ -27,6 +27,7 @@ module opspec(
 		case (insn)
 `I_ADDL2: optype = { 30'b0, `O_LONG, `O_M, `O_LONG, `O_R };
 `I_ADDL3: optype = { 20'b0, `O_LONG, `O_W, `O_LONG, `O_R, `O_LONG, `O_R };
+`I_MOVL: optype = { 30'b0, `O_LONG, `O_W, `O_LONG, `O_R };
 		default: optype = 0;
 		endcase
 	end

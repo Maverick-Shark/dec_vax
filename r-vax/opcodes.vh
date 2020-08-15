@@ -12,8 +12,22 @@
 `define	OPS_REG	4'h5
 
 /* opcodes */
+`define	I_HALT	8'h00
+`define	I_NOP	8'h01
+`define	I_REI	8'h02
+`define	I_BPT	8'h03
+`define	I_RET	8'h04
+`define	I_LDPCTX	8'h06
+`define	I_SVPCTX	8'h07
+
 `define	I_ADDL2	8'hc0
 `define	I_ADDL3	8'hc1
+`define	I_SUBL2	8'hc2
+`define	I_SUBL3	8'hc3
+`define	I_MULL2	8'hc4
+`define	I_MULL3	8'hc5
+`define	I_DIVL2	8'hc6
+`define	I_DIVL3	8'hc7
 
 `define	I_MOVL	8'hd0
 

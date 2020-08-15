@@ -42,9 +42,10 @@ module decode(
 	 */
 	always @* begin
 		case (insn)
-		default: optbl = 0;
-		`I_ADDL2: optbl = `SIMPOFF2;
-		`I_ADDL3: optbl = `SIMPOFF3;
+		default:	optbl = 0;
+		`I_ADDL2:	optbl = `SIMPOFF2;	// c0
+		`I_ADDL3:	optbl = `SIMPOFF3;	// c1
+		`I_MOVL:	optbl = `SIMPOFF2;	// d0
 		endcase
 	end
 

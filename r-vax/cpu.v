@@ -180,9 +180,11 @@ module cpu(
 		 */
 		`S_SOP: begin
 			state <= `S_ENDINST;
+			Ctmp <= psl[`PSL_C];
 			case (cur_inst)
 			`I_ADDL2, `I_ADDL3:
 				{ Ctmp, arg[2]  } <= { 1'b0, arg[0] } + { 1'b0, arg[1] };
+			`I_MOVL: arg[2] <= arg[0];
 			endcase
 			if (nargs == 2) begin
 				argp[2] <= argp[1];
