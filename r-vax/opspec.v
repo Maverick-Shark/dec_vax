@@ -9,6 +9,9 @@
  * The upper 5 bits keep the operand size in bytes, the lower 5 bits has
  * the access type.
  */
+`define	OP_RL_ML	8'd1
+`define	OP_RL_RL_WL	8'd3
+`define	OP_RL_WL	8'd4
 
 module opspec(
 	input [7:0] insn,
@@ -16,34 +19,36 @@ module opspec(
 	output [4:0] size,
 	output o_r, o_w, o_m, o_a, o_v
 );
-
 	(* rom_style = "BLOCK" *)
-	reg [49:0] optype;
+	reg [7:0] optbl;
+	(* rom_style = "BLOCK" *)
+	reg [9:0] statetbl;
+	wire [7:0] nstate;
 
-	reg [4:0] odata;
-	reg [4:0] oacc;
+	always @* begin
+		case (nstate+narg) /* XXX avoid add in combinatorial path */
+		default:	statetbl = 0;
+		`OP_RL_ML:	statetbl = { `O_LONG, `O_R };
+		8'd2:		statetbl = { `O_LONG, `O_M };
+		`OP_RL_RL_WL:	statetbl = { `O_LONG, `O_R };
+		`OP_RL_WL:	statetbl = { `O_LONG, `O_R };
+		8'd5:		statetbl = { `O_LONG, `O_W };
+		endcase
+	end
 
 	always @* begin
 		case (insn)
-`I_ADDL2: optype = { 30'b0, `O_LONG, `O_M, `O_LONG, `O_R };
-`I_ADDL3: optype = { 20'b0, `O_LONG, `O_W, `O_LONG, `O_R, `O_LONG, `O_R };
-`I_MOVL: optype = { 30'b0, `O_LONG, `O_W, `O_LONG, `O_R };
-		default: optype = 0;
+		default:	optbl = 0;
+		`I_ADDL2:	optbl = `OP_RL_ML;
+		`I_ADDL3:	optbl = `OP_RL_RL_WL;
+		`I_MOVL:	optbl = `OP_RL_WL;
 		endcase
 	end
 
-	assign size = odata;
-	assign { o_r, o_w, o_m, o_a, o_v } = oacc;
+	assign size = statetbl[9:5];
+	assign { o_r, o_w, o_m, o_a, o_v } = statetbl[4:0];
 
-	always @* begin
-		case (narg)
-		3'd0: begin odata = optype[9:5]; oacc = optype[4:0]; end
-		3'd1: begin odata = optype[19:15]; oacc = optype[14:10]; end
-		3'd2: begin odata = optype[29:25]; oacc = optype[24:20]; end
-		3'd3: begin odata = optype[39:35]; oacc = optype[34:30]; end
-		default: begin odata = optype[49:45]; oacc = optype[44:40]; end
-		endcase
-	end
+	assign nstate = optbl;
 
 endmodule
 

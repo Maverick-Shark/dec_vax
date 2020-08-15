@@ -165,7 +165,10 @@ module cpu(
 					end
 				end
 
-				default: arg[nargs] <= { 24'd0, decib };
+				default: begin
+					arg[nargs] <= { 24'd0, decib };
+					state <= `S_HALT;
+				end
 				endcase
 				nargs <= nargs + 1;
 				greg[15] <= curpc + 1;
