@@ -53,7 +53,7 @@ module cpu(
 	reg [31:0]	arg[5:0], argp[5:0];	// storage for evaluated args
 	reg [2:0]	nargs;		// current arg
 	reg [0:0]	isreg[5:0];	// destination is reg
-	reg [31:0]	res;
+	reg [31:0]	oldpc;		// saved pc in case of fault
 
 	wire [31:0] curpc, cur_reg_val;
 	wire [1:0] curbyte;
@@ -124,6 +124,7 @@ module cpu(
 			if (isvalid) begin
 				/* put insbyte in decode reg */
 				cur_inst <= decib;
+				oldpc <= greg[15];
 				greg[15] <= curpc + 1;
 				state <= stateoff;
 				nxtoff <= opoff + 1;
@@ -193,9 +194,10 @@ module cpu(
 		 * Resulting value is always in arg[2].
 		 */
 		`S_ENDINST: begin
-			state <= `S_HALT;
+			state <= `S_FETCH;
 			if (anyfault) begin
-				greg[4] <= anyfault; /* XXX */
+				greg[15] <= oldpc;
+				state <= `S_HALT;
 			end else begin
 				psl[`PSL_C] <= Ctmp;
 				psl[`PSL_V] <= 0;
@@ -211,6 +213,8 @@ module cpu(
 				else
 					greg[arg[2][3:0]] <= 32'hf00fbabe;
 			end
+			if (step)
+				state <= `S_HALT;
 		end
 
 

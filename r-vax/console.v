@@ -191,7 +191,6 @@ module console(
 
 	always @(posedge clk) begin
 		if (halted) begin
-			step <= 0;
 			cont <= 0;
 		end
 		if (rst) begin
@@ -218,6 +217,7 @@ module console(
 		`CONSOLE4: begin
 			if (tmp == "G") begin
 				state <= `CONSOLE;
+				step <= 0;
 				cont <= 1;
 			end else if (tmp == "S") begin
 				state <= `CONSOLE;
