@@ -45,9 +45,23 @@ module opspec(
 	always @* begin
 		case (insn)
 		default:	optbl = 0;
-		`I_BRB:		optbl = `OP_BB;
+		`I_BRB:		optbl = `OP_BB;		// 11
 
-		`I_BRW:		optbl = `OP_BW;
+		`I_BNEQ:	optbl = `OP_BB;		// 12
+		`I_BEQL:	optbl = `OP_BB;		// 13
+		`I_BGTR:	optbl = `OP_BB;		// 14
+		`I_BLEQ:	optbl = `OP_BB;		// 15
+
+		`I_BGEQ:	optbl = `OP_BB;		// 18
+		`I_BLSS:	optbl = `OP_BB;		// 19
+		`I_BGTRU:	optbl = `OP_BB;		// 1a
+		`I_BLEQU:	optbl = `OP_BB;		// 1b
+		`I_BVC:		optbl = `OP_BB;		// 1c
+		`I_BVS:		optbl = `OP_BB;		// 1d
+		`I_BCC:		optbl = `OP_BB;		// 1e
+		`I_BCS:		optbl = `OP_BB;		// 1f
+
+		`I_BRW:		optbl = `OP_BW;		// 31
 
 		`I_BISPSW:	optbl = `OP_RW;
 		`I_BICPSW:	optbl = `OP_RW;

@@ -47,6 +47,20 @@ module decode(
 		case (insn)
 		default:	optbl = 0;
 		`I_BRB:		optbl = `BROFF;		// 11
+		`I_BNEQ:	optbl = `BROFF;		// 12
+		`I_BEQL:	optbl = `BROFF;		// 13
+		`I_BGTR:	optbl = `BROFF;		// 14
+		`I_BLEQ:	optbl = `BROFF;		// 15
+
+		`I_BGEQ:	optbl = `BROFF;		// 18
+		`I_BLSS:	optbl = `BROFF;		// 19
+		`I_BGTRU:	optbl = `BROFF;		// 1a
+		`I_BLEQU:	optbl = `BROFF;		// 1b
+		`I_BVC:		optbl = `BROFF;		// 1c
+		`I_BVS:		optbl = `BROFF;		// 1d
+		`I_BCC:		optbl = `BROFF;		// 1e
+		`I_BCS:		optbl = `BROFF;		// 1f
+
 
 		`I_BRW:		optbl = `BROFF;		// 31
 

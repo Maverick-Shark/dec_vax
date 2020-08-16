@@ -109,6 +109,8 @@ module cpu(
 				end else begin
 					if (reg_addr == 5'h1f)
 						reg_rdata <= psl; // PSL
+					else if (reg_addr == 5'h1e)
+						reg_rdata <= oldpc;
 					else if (reg_addr[4])
 						reg_rdata <= arg[reg_addr[2:0]];
 					else
@@ -208,7 +210,7 @@ module cpu(
 		end
 
 		/*
-		 * Branch instruction.
+		 * Branch instruction argument.
 		 */
 		`S_BR: begin
 			if (isvalid) begin
@@ -238,10 +240,28 @@ module cpu(
 			if (anyfault) begin
 				greg[15] <= oldpc;
 				state <= `S_HALT;
-			end else if (cur_inst == `I_BRB || cur_inst == `I_BRW) begin
+				greg[4] <= 3;
+			end else begin
+			case (cur_inst)
+			`I_BRB, `I_BRW: greg[15] <= curpc + arg[0];
+
+			`I_BNEQ: if (psl[`PSL_Z] == 0) greg[15] <= curpc + arg[0];
+			`I_BEQL: if (psl[`PSL_Z] == 1) greg[15] <= curpc + arg[0];
+			`I_BGTR: if (psl[3:2] == 2'b00) greg[15] <= curpc + arg[0];
+			`I_BLEQ: if (psl[3:2] == 2'b11) greg[15] <= curpc + arg[0];
+
+			`I_BGEQ: if (psl[`PSL_N] == 0) greg[15] <= curpc + arg[0];
+			`I_BLSS: if (psl[`PSL_N] == 1) greg[15] <= curpc + arg[0];
+			`I_BGTRU: if ((psl[`PSL_Z]|psl[`PSL_C]) == 0)
 				greg[15] <= curpc + arg[0];
-			end else if (cur_inst == `I_ADDL2 || cur_inst == `I_ADDL3 ||
-			    cur_inst == `I_MOVL) begin
+			`I_BLEQU: if ((psl[`PSL_Z]|psl[`PSL_C]) == 1)
+				greg[15] <= curpc + arg[0];
+			`I_BVC: if (psl[`PSL_V] == 0) greg[15] <= curpc + arg[0];
+			`I_BVS: if (psl[`PSL_V] == 1) greg[15] <= curpc + arg[0];
+			`I_BCC: if (psl[`PSL_C] == 0) greg[15] <= curpc + arg[0];
+			`I_BCS: if (psl[`PSL_C] == 1) greg[15] <= curpc + arg[0];
+
+			`I_ADDL2, `I_ADDL3, `I_MOVL: begin
 				psl[`PSL_C] <= Ctmp;
 				psl[`PSL_V] <= 0;
 				psl[`PSL_N] <= arg[2][31];
@@ -256,8 +276,14 @@ module cpu(
 				else
 					greg[arg[2][3:0]] <= 32'hf00fbabe;
 			end
-			if (step)
+			`I_BISPSW, `I_BICPSW: ;
+			default: begin state <= `S_HALT; greg[4] <= 1; greg[5] <= cur_inst; end
+			endcase
+			if (step) begin
 				state <= `S_HALT;
+				greg[4] <= 2;
+			end
+			end
 		end
 
 

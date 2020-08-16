@@ -21,6 +21,19 @@
 `define	I_SVPCTX	8'h07
 
 `define	I_BRB	8'h11
+`define	I_BNEQ	8'h12
+`define	I_BEQL	8'h13
+`define	I_BGTR	8'h14
+`define	I_BLEQ	8'h15
+
+`define	I_BGEQ	8'h18
+`define	I_BLSS	8'h19
+`define	I_BGTRU	8'h1a
+`define	I_BLEQU	8'h1b
+`define	I_BVC	8'h1c
+`define	I_BVS	8'h1d
+`define	I_BCC	8'h1e
+`define	I_BCS	8'h1f
 
 `define	I_BRW	8'h31
 
