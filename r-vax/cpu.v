@@ -85,9 +85,17 @@ module cpu(
 		.opoff(opoff));
 
 
+	wire [7:0] arg_opoff, arg_nstate;
+	reg [7:0] arg_nxtoff;
 	wire [4:0] op_size;
 	wire o_r, o_w, o_m, o_a, o_v;
-	opspec opspec(cur_inst, nargs, op_size, o_r, o_w, o_m, o_a, o_v);
+	assign arg_nstate = arg_nxtoff;
+	opspec opspec(
+		.insn(decib),
+		.nstate(arg_nstate),
+		.opoff(arg_opoff),
+		.size(op_size),
+		.o_r(o_r), .o_w(o_w), .o_m(o_m), .o_a(o_a), .o_v(o_v));
 
 	assign halted = state == `S_HALT;
 	assign isvalid = (itag[31:2] == greg[15][31:2]) && ivalid;
@@ -130,6 +138,7 @@ module cpu(
 				greg[15] <= curpc + 1;
 				state <= stateoff;
 				nxtoff <= opoff + 1;
+				arg_nxtoff <= arg_opoff; /* XXX */
 				nargs <= 0;
 			end else begin
 				state <= `S_FILLUP;
@@ -142,7 +151,7 @@ module cpu(
 			if (isvalid) begin
 				state <= stateoff;
 				nxtoff <= nxtoff + 1;
-				case (decib[7:4])
+				casez (decib[7:4])
 				`OPS_LIT: begin
 					if (o_r) begin
 						arg[nargs] <= { 24'b0, decib };
@@ -173,6 +182,7 @@ module cpu(
 				end
 				endcase
 				nargs <= nargs + 1;
+				arg_nxtoff <= arg_nxtoff + 1;
 				greg[15] <= curpc + 1;
 			end else begin
 				state <= `S_FILLUP;
@@ -216,6 +226,7 @@ module cpu(
 			if (isvalid) begin
 				greg[15] <= curpc + 1;
 				nargs <= nargs + 1;
+				arg_nxtoff <= arg_nxtoff + 1;
 				if (nargs == 0) begin
 					/* get first (or only) byte */
 					arg[0] <= { {24{decib[7]}}, decib };

@@ -6,10 +6,19 @@
 `define	PSL_Z	5'd2
 `define	PSL_N	5'd3
 
+/* pc */
+`define	REG_PC		4'hf
 
 /* Operand specifiers */
-`define	OPS_LIT	4'h0, 4'h1, 4'h2, 4'h3
-`define	OPS_REG	4'h5
+`define	OPS_LIT		4'b00??
+`define	OPS_REG		4'b0101
+`define	OPS_DISP	4'b11??, 4'b101?
+`define	OPS_BDISP	4'ha
+`define	OPS_BDISPD	4'hb
+`define	OPS_WDISP	4'hc
+`define	OPS_WDISPD	4'hd
+`define	OPS_LDISP	4'he
+`define	OPS_LDISPD	4'hf
 
 /* opcodes */
 `define	I_HALT	8'h00
@@ -37,6 +46,10 @@
 
 `define	I_BRW	8'h31
 
+`define I_CLRB	8'h94
+
+`define I_CLRW	8'hb4
+
 `define	I_BISPSW	8'hb8
 `define	I_BICPSW	8'hb9
 
@@ -50,6 +63,8 @@
 `define	I_DIVL3	8'hc7
 
 `define	I_MOVL	8'hd0
+
+`define I_CLRL	8'hd4
 
 /* operand data type */
 `define	O_BYTE	5'b00001

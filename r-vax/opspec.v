@@ -18,7 +18,8 @@
 
 module opspec(
 	input [7:0] insn,
-	input [2:0] narg,
+	input [7:0] nstate,
+	output [7:0] opoff,
 	output [4:0] size,
 	output o_r, o_w, o_m, o_a, o_v
 );
@@ -26,10 +27,9 @@ module opspec(
 	reg [7:0] optbl;
 	(* rom_style = "BLOCK" *)
 	reg [9:0] statetbl;
-	wire [7:0] nstate;
 
 	always @* begin
-		case (nstate+narg) /* XXX avoid add in combinatorial path */
+		case (nstate)
 		default:	statetbl = 0;
 		`OP_RL_ML:	statetbl = { `O_LONG, `O_R };
 		8'd2:		statetbl = { `O_LONG, `O_M };
@@ -76,7 +76,7 @@ module opspec(
 	assign size = statetbl[9:5];
 	assign { o_r, o_w, o_m, o_a, o_v } = statetbl[4:0];
 
-	assign nstate = optbl;
+	assign opoff = optbl;
 
 endmodule
 
