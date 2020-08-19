@@ -95,28 +95,14 @@ defparam console.tto.CLKPERBIT = 2604;
 	wire con_write, con_stb, con_reg;
 	wire cont, step;
 	
-	/* wires to/from direct mem */
-	wire pmem_write, pmem_stb, pmem_ack;
-	wire [23:2] pmem_addr;
-	wire [31:0] pmem_wdata, pmem_rdata;
-
-	/* switch pmem input between console and mmu */
-	assign pmem_addr = con_mem ? con_addr[23:2] : mmu_addr;
-	assign pmem_write = con_mem ? con_write : mmu_write;
-	assign pmem_wdata = con_mem ? con_wdata : mmu_wdata;
-	assign pmem_stb = con_mem ? con_stb : mmu_stb;
-
 	/* wires from CPU */
 	wire [31:0] reg_rdata, pc;
 	wire reg_ack;
 	wire halted;		// CPU is halted
 
 	assign reg_stb = con_reg ? con_stb : 0;
-
-	/* signals to console from mem or reg */
-	assign con_rdata = con_reg ? reg_rdata : pmem_rdata;
-	assign con_ack = con_reg ? reg_ack : pmem_ack;
-
+wire [31:0] cpu_rdata;
+wire cpu_ack;
 	cpu cpu(
 		.clk(clk),
 		.rst(rst),
@@ -132,8 +118,8 @@ defparam console.tto.CLKPERBIT = 2604;
 		.cpu_wdata(cpu_wdata),
 		.cpu_write(cpu_write),
 		.cpu_stb(cpu_stb),
-		.cpu_rdata(pmem_rdata),
-		.cpu_ack(pmem_ack),
+		.cpu_rdata(cpu_rdata),
+		.cpu_ack(cpu_ack),
 
 		.step(step),
 		.cont(cont),
@@ -141,6 +127,28 @@ defparam console.tto.CLKPERBIT = 2604;
 
 		.pc(pc)
 	);
+	/* wires between mem and pcache */
+	wire pc_to_sw_write, pc_to_sw_stb, sw_to_mem_write, sw_to_mem_stb;
+	wire mem_to_pc_ack;
+	wire [23:2] pc_to_sw_addr, sw_to_mem_addr;
+	wire [31:0] pc_to_sw_wdata, sw_to_mem_wdata, mem_to_pc_rdata;
+
+assign cpu_rdata = mem_to_pc_rdata;
+assign cpu_ack = mem_to_pc_ack;
+
+	/* switch mem input between console and pcache */
+	assign sw_to_mem_addr = con_mem ? con_addr[23:2] : mmu_addr;
+	assign sw_to_mem_write = con_mem ? con_write : mmu_write;
+	assign sw_to_mem_wdata = con_mem ? con_wdata : mmu_wdata;
+	assign sw_to_mem_stb = con_mem ? con_stb : mmu_stb;
+
+	/* signals to console somewhere */
+	assign con_rdata = con_reg ? reg_rdata :
+			con_mem ? mem_to_pc_rdata :
+			32'b0;
+	assign con_ack = con_reg ? reg_ack :
+			con_mem ? mem_to_pc_ack :
+			32'b0;
 
 	sdram sdram(
 		.clk(clk),
@@ -158,12 +166,12 @@ defparam console.tto.CLKPERBIT = 2604;
 		.sdram_ba(sdram_ba),
 		.sdram_data(sdram_data),
 		
-		.pmem_addr(pmem_addr),		// i
-		.pmem_write(pmem_write),	// i
-		.pmem_wdata(pmem_wdata),	// i
-		.pmem_stb(pmem_stb),		// i
-		.pmem_rdata(pmem_rdata),	// o
-		.pmem_ack(pmem_ack)		// o
+		.pmem_addr(sw_to_mem_addr),		// i
+		.pmem_write(sw_to_mem_write),		// i
+		.pmem_wdata(sw_to_mem_wdata),		// i
+		.pmem_stb(sw_to_mem_stb),		// i
+		.pmem_rdata(mem_to_pc_rdata),		// o
+		.pmem_ack(mem_to_pc_ack)		// o
 	);
 
 
@@ -184,6 +192,8 @@ defparam console.tto.CLKPERBIT = 2604;
 		.convalid(con_ack),
 
 		.con_mem(con_mem),
+		.con_pmem(con_pmem),
+		.con_vmem(con_vmem),
 		.con_reg(con_reg),
 
 		.pc(pc),
