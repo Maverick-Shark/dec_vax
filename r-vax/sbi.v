@@ -90,7 +90,7 @@ defparam console.tto.CLKPERBIT = 2604;
 	assign mmu_stb = cpu_stb;
 
 	/* wires from console */
-	wire con_mem;	/* console references (direct) memory */
+	wire con_mem, con_vmem, con_pmem;
 	wire [31:0] con_addr, con_wdata, con_rdata;
 	wire con_write, con_stb, con_reg;
 	wire cont, step;
@@ -127,20 +127,68 @@ wire cpu_ack;
 
 		.pc(pc)
 	);
+
+	/* wires between mmu and pcache */
+	wire mmu_to_sw_write, mmu_to_sw_stb, sw_to_pc_write, sw_to_pc_stb;
+	wire pc_to_mmu_ack;
+	wire [23:2] mmu_to_sw_addr, sw_to_pc_addr;
+	wire [31:0] mmu_to_sw_wdata, sw_to_pc_wdata, pc_to_mmu_rdata;
+	wire [1:0] sw_to_pc_size, mmu_to_sw_size;
+
+
+`ifdef notdef
+
+`else   
+	assign mmu_to_sw_size = 2'b11;
+`endif  
+
+	/* switch pcache input between console and mmu */
+	assign sw_to_pc_addr = con_pmem ? con_addr : mmu_addr;
+	assign sw_to_pc_write = con_pmem ? con_write : mmu_write;
+	assign sw_to_pc_wdata = con_pmem ? con_wdata : mmu_wdata;
+	assign sw_to_pc_stb = con_pmem ? con_stb : mmu_stb;
+	assign sw_to_pc_size = con_pmem ? con_addr[31:30] : mmu_to_sw_size;
+
 	/* wires between mem and pcache */
 	wire pc_to_sw_write, pc_to_sw_stb, sw_to_mem_write, sw_to_mem_stb;
 	wire mem_to_pc_ack;
 	wire [23:2] pc_to_sw_addr, sw_to_mem_addr;
 	wire [31:0] pc_to_sw_wdata, sw_to_mem_wdata, mem_to_pc_rdata;
 
-assign cpu_rdata = mem_to_pc_rdata;
-assign cpu_ack = mem_to_pc_ack;
+`ifdef notdef
+	pcache pcache(
+		.clk(clk),
+		.rst(rst),
+
+		.f_mmu_addr(sw_to_pc_addr),
+		.f_mmu_wdata(sw_to_pc_wdata),
+		.f_mmu_write(sw_to_pc_write),
+		.f_mmu_stb(sw_to_pc_stb),
+		.f_mmu_rdata(pc_to_mmu_rdata),
+		.f_mmu_ack(pc_to_mmu_ack),
+		.f_mmu_sz(sw_to_pc_size),
+
+		.t_mem_addr(pc_to_sw_addr),
+		.t_mem_wdata(pc_to_sw_wdata),
+		.t_mem_write(pc_to_sw_write),
+		.t_mem_stb(pc_to_sw_stb),
+		.t_mem_rdata(mem_to_pc_rdata),
+		.t_mem_ack(mem_to_pc_ack)
+	);
+`else
+	assign pc_to_sw_addr = sw_to_pc_addr[23:2];
+	assign pc_to_sw_wdata = sw_to_pc_wdata;
+	assign pc_to_sw_write = sw_to_pc_write;
+	assign pc_to_sw_stb = sw_to_pc_stb;
+	assign cpu_rdata = mem_to_pc_rdata;
+	assign cpu_ack = mem_to_pc_ack;
+`endif
 
 	/* switch mem input between console and pcache */
-	assign sw_to_mem_addr = con_mem ? con_addr[23:2] : mmu_addr;
-	assign sw_to_mem_write = con_mem ? con_write : mmu_write;
-	assign sw_to_mem_wdata = con_mem ? con_wdata : mmu_wdata;
-	assign sw_to_mem_stb = con_mem ? con_stb : mmu_stb;
+	assign sw_to_mem_addr = con_mem ? con_addr[23:2] : pc_to_sw_addr;
+	assign sw_to_mem_write = con_mem ? con_write : pc_to_sw_write;
+	assign sw_to_mem_wdata = con_mem ? con_wdata : pc_to_sw_wdata;
+	assign sw_to_mem_stb = con_mem ? con_stb : pc_to_sw_stb;
 
 	/* signals to console somewhere */
 	assign con_rdata = con_reg ? reg_rdata :
