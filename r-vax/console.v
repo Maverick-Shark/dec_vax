@@ -78,7 +78,9 @@ module console(
 	input		  convalid,
 
 	/* signals for what we want to reference */
-	output reg	con_mem,	// memory
+	output reg	con_mem,	// raw memory
+	output reg	con_pmem,	// phys memory
+	output reg	con_vmem,	// virt memory
 	output reg	con_reg,	// general reg
 	output reg	con_ipr,	// internal processor reg
 
@@ -208,6 +210,7 @@ module console(
 			conwrite <= 0;
 			con_mem <= 0;
 			con_reg <= 0;
+			con_pmem <= 0;
 			con_ipr <= 0;
 		end
 		`CONSOLE3: begin
@@ -233,6 +236,10 @@ module console(
 					con_mem <= 1;
 				else if (tmp == "R") begin
 					con_reg <= 1;
+				end else if (tmp == "P") begin
+					con_pmem <= 1;
+				end else if (tmp == "V") begin
+					con_vmem <= 1;
 				end else begin
 					tmp <= "?";
 					state <= `PUTCHAR;
