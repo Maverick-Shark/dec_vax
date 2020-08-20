@@ -77,14 +77,12 @@ defparam console.tto.CLKPERBIT = 2604;
 
 
 	/* wires from mmu to direct mem */
-	wire [23:2] mmu_addr;
 	wire [31:0] mmu_wdata;
 	wire mmu_write;
 
 	/* XXX */
 	wire [31:0] cpu_addr, cpu_wdata;
 	wire cpu_write, cpu_stb;
-	assign mmu_addr = cpu_addr[23:2];
 	assign mmu_wdata = cpu_wdata;
 	assign mmu_write = cpu_write;
 
@@ -135,6 +133,8 @@ wire cpu_ack;
 		.pc(pc)
 	);
 
+	/* switch mmu input between console and cpu */
+	assign sw_to_mmu_addr = con_vmem ? con_addr : cpu_addr;
 	assign sw_to_mmu_stb = con_vmem ? con_stb : cpu_stb;
 
 	/* wires between mmu and pcache */
@@ -147,6 +147,7 @@ wire cpu_ack;
 `ifdef notdef
 
 `else
+	assign mmu_to_sw_addr = sw_to_mmu_addr[23:2];
 	assign mmu_to_sw_stb = sw_to_mmu_stb;
 	assign cpu_rdata = pc_to_mmu_rdata;
 	assign cpu_ack = pc_to_mmu_ack;
@@ -154,7 +155,7 @@ wire cpu_ack;
 `endif
 
 	/* switch pcache input between console and mmu */
-	assign sw_to_pc_addr = con_pmem ? con_addr : mmu_addr;
+	assign sw_to_pc_addr = con_pmem ? con_addr[23:2] : mmu_to_sw_addr;
 	assign sw_to_pc_write = con_pmem ? con_write : mmu_write;
 	assign sw_to_pc_wdata = con_pmem ? con_wdata : mmu_wdata;
 	assign sw_to_pc_stb = con_pmem ? con_stb : mmu_to_sw_stb;
@@ -187,7 +188,7 @@ wire cpu_ack;
 		.t_mem_ack(mem_to_pc_ack)
 	);
 `else
-	assign pc_to_sw_addr = sw_to_pc_addr[23:2];
+	assign pc_to_sw_addr = sw_to_pc_addr;
 	assign pc_to_sw_wdata = sw_to_pc_wdata;
 	assign pc_to_sw_write = sw_to_pc_write;
 	assign pc_to_sw_stb = sw_to_pc_stb;
