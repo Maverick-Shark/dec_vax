@@ -79,7 +79,7 @@ defparam console.tto.CLKPERBIT = 2604;
 	/* wires from mmu to direct mem */
 	wire [23:2] mmu_addr;
 	wire [31:0] mmu_wdata;
-	wire mmu_write, mmu_stb;
+	wire mmu_write;
 
 	/* XXX */
 	wire [31:0] cpu_addr, cpu_wdata;
@@ -87,7 +87,6 @@ defparam console.tto.CLKPERBIT = 2604;
 	assign mmu_addr = cpu_addr[23:2];
 	assign mmu_wdata = cpu_wdata;
 	assign mmu_write = cpu_write;
-	assign mmu_stb = cpu_stb;
 
 	/* wires from console */
 	wire con_mem, con_vmem, con_pmem;
@@ -103,6 +102,14 @@ defparam console.tto.CLKPERBIT = 2604;
 	assign reg_stb = con_reg ? con_stb : 0;
 wire [31:0] cpu_rdata;
 wire cpu_ack;
+
+	/* mmu wires */
+	wire sw_to_mmu_write, sw_to_mmu_stb;
+	wire [31:0] sw_to_mmu_addr;
+	wire [31:0] sw_to_mmu_wdata;
+//	wire [1:0] sw_to_pc_size, mmu_to_sw_size;
+
+
 	cpu cpu(
 		.clk(clk),
 		.rst(rst),
@@ -128,6 +135,8 @@ wire cpu_ack;
 		.pc(pc)
 	);
 
+	assign sw_to_mmu_stb = con_vmem ? con_stb : cpu_stb;
+
 	/* wires between mmu and pcache */
 	wire mmu_to_sw_write, mmu_to_sw_stb, sw_to_pc_write, sw_to_pc_stb;
 	wire pc_to_mmu_ack;
@@ -135,18 +144,20 @@ wire cpu_ack;
 	wire [31:0] mmu_to_sw_wdata, sw_to_pc_wdata, pc_to_mmu_rdata;
 	wire [1:0] sw_to_pc_size, mmu_to_sw_size;
 
-
 `ifdef notdef
 
-`else   
+`else
+	assign mmu_to_sw_stb = sw_to_mmu_stb;
+	assign cpu_rdata = pc_to_mmu_rdata;
+	assign cpu_ack = pc_to_mmu_ack;
 	assign mmu_to_sw_size = 2'b11;
-`endif  
+`endif
 
 	/* switch pcache input between console and mmu */
 	assign sw_to_pc_addr = con_pmem ? con_addr : mmu_addr;
 	assign sw_to_pc_write = con_pmem ? con_write : mmu_write;
 	assign sw_to_pc_wdata = con_pmem ? con_wdata : mmu_wdata;
-	assign sw_to_pc_stb = con_pmem ? con_stb : mmu_stb;
+	assign sw_to_pc_stb = con_pmem ? con_stb : mmu_to_sw_stb;
 	assign sw_to_pc_size = con_pmem ? con_addr[31:30] : mmu_to_sw_size;
 
 	/* wires between mem and pcache */
@@ -180,8 +191,8 @@ wire cpu_ack;
 	assign pc_to_sw_wdata = sw_to_pc_wdata;
 	assign pc_to_sw_write = sw_to_pc_write;
 	assign pc_to_sw_stb = sw_to_pc_stb;
-	assign cpu_rdata = mem_to_pc_rdata;
-	assign cpu_ack = mem_to_pc_ack;
+	assign pc_to_mmu_rdata = mem_to_pc_rdata;
+	assign pc_to_mmu_ack = mem_to_pc_ack;
 `endif
 
 	/* switch mem input between console and pcache */
@@ -193,10 +204,12 @@ wire cpu_ack;
 	/* signals to console somewhere */
 	assign con_rdata = con_reg ? reg_rdata :
 			con_mem ? mem_to_pc_rdata :
-			32'b0;
+			con_pmem ? pc_to_mmu_rdata :
+			con_vmem ? cpu_rdata : 32'b0;
 	assign con_ack = con_reg ? reg_ack :
 			con_mem ? mem_to_pc_ack :
-			32'b0;
+			con_pmem ? pc_to_mmu_ack :
+			con_vmem ? cpu_ack : 1'b0;
 
 	sdram sdram(
 		.clk(clk),

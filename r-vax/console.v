@@ -211,6 +211,7 @@ module console(
 			con_mem <= 0;
 			con_reg <= 0;
 			con_pmem <= 0;
+			con_vmem <= 0;
 			con_ipr <= 0;
 		end
 		`CONSOLE3: begin
