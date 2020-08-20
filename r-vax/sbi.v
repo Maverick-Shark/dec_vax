@@ -20,12 +20,8 @@
 //
 //////////////////////////////////////////////////////////////////////////////////
 /*
- * The memory address bus is 30 bit, 32 bit wide.
- * It is shared with IPR addressing, only difference is that the strobe
- * signal is separate, the rest is the same.
+ * The memory address bus is 32 bit, 32 bit wide.
  */
-
-// `include "ipr.v"
 
 module sbi (
 	input		clkin,
@@ -62,6 +58,18 @@ defparam console.tto.CLKPERBIT = 2604;
 	wire clk;
 	assign clk = clkin;
 `endif
+	/*
+	 * Wiring:
+	 * - cpu
+	 * cpu_* -> data from cpu to mmu (before conditional)
+	 * mmu_f_cpu_* -> data to mmu from cpu (after conditional)
+	 * - mmu
+	 * mmu_2_pc_* -> data from mmu to pcache (before conditional)
+	 * pc_f_mmu_* -> data to pcache from mmu (after conditional)
+	 * - pcache
+	 * pc_2_mem_* -> data from pcache to memory (before conditional)
+	 * mem_f_pc_* -> data to memory from pcache (after conditional)
+	 */
 
 	wire brk;
 	assign rst = !n_rst | brk;
@@ -76,15 +84,8 @@ defparam console.tto.CLKPERBIT = 2604;
 //	assign reqhalt = brk | rst /* | cpu_halt */;
 
 
-	/* wires from mmu to direct mem */
-	wire [31:0] mmu_wdata;
-	wire mmu_write;
-
-	/* XXX */
-	wire [31:0] cpu_addr, cpu_wdata;
-	wire cpu_write, cpu_stb;
-	assign mmu_wdata = cpu_wdata;
-	assign mmu_write = cpu_write;
+	wire [31:0] cpu_addr, cpu_wdata, cpu_rdata;
+	wire cpu_write, cpu_stb, cpu_ack;
 
 	/* wires from console */
 	wire con_mem, con_vmem, con_pmem;
@@ -98,8 +99,6 @@ defparam console.tto.CLKPERBIT = 2604;
 	wire halted;		// CPU is halted
 
 	assign reg_stb = con_reg ? con_stb : 0;
-wire [31:0] cpu_rdata;
-wire cpu_ack;
 
 	/* mmu wires */
 	wire sw_to_mmu_write, sw_to_mmu_stb;
@@ -135,6 +134,8 @@ wire cpu_ack;
 
 	/* switch mmu input between console and cpu */
 	assign sw_to_mmu_addr = con_vmem ? con_addr : cpu_addr;
+	assign sw_to_mmu_write = con_vmem ? con_write : cpu_write;
+	assign sw_to_mmu_wdata = con_vmem ? con_wdata : cpu_wdata;
 	assign sw_to_mmu_stb = con_vmem ? con_stb : cpu_stb;
 
 	/* wires between mmu and pcache */
@@ -148,6 +149,8 @@ wire cpu_ack;
 
 `else
 	assign mmu_to_sw_addr = sw_to_mmu_addr[23:2];
+	assign mmu_to_sw_wdata = sw_to_mmu_wdata;
+	assign mmu_to_sw_write = sw_to_mmu_write;
 	assign mmu_to_sw_stb = sw_to_mmu_stb;
 	assign cpu_rdata = pc_to_mmu_rdata;
 	assign cpu_ack = pc_to_mmu_ack;
@@ -156,8 +159,8 @@ wire cpu_ack;
 
 	/* switch pcache input between console and mmu */
 	assign sw_to_pc_addr = con_pmem ? con_addr[23:2] : mmu_to_sw_addr;
-	assign sw_to_pc_write = con_pmem ? con_write : mmu_write;
-	assign sw_to_pc_wdata = con_pmem ? con_wdata : mmu_wdata;
+	assign sw_to_pc_write = con_pmem ? con_write : mmu_to_sw_write;
+	assign sw_to_pc_wdata = con_pmem ? con_wdata : mmu_to_sw_wdata;
 	assign sw_to_pc_stb = con_pmem ? con_stb : mmu_to_sw_stb;
 	assign sw_to_pc_size = con_pmem ? con_addr[31:30] : mmu_to_sw_size;
 
