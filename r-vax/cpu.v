@@ -24,6 +24,7 @@ module cpu(
 	output reg	cpu_stb,
 	output reg	cpu_write,
 	input 		cpu_ack,
+//	output reg [1:0] cpu_rw_size,
 
 	input		cont,
 	input		step,
@@ -34,6 +35,7 @@ module cpu(
 
 	reg [31:0]	greg[15:0];
 	reg [`STATBITS-1:0]	state, fillstate;
+	reg [7:0]	haltpos;
 
 	reg [31:0]	psl;
 	reg		Ctmp;
@@ -79,10 +81,10 @@ module cpu(
 	reg [7:0] nxtoff;
 	assign nstate = state == `S_FETCH ? opoff : nxtoff;
 	decode decode(
-		.insn(decib),
-		.nstate(nstate),
-		.stateoff(stateoff),
-		.opoff(opoff));
+		.insn(decib),		// instruction input
+		.nstate(nstate),	// state offset input
+		.stateoff(stateoff),	// next state output
+		.opoff(opoff));		// first offset for insn arg output
 
 
 	wire [7:0] arg_opoff, arg_nstate;
@@ -119,6 +121,8 @@ module cpu(
 						reg_rdata <= psl; // PSL
 					else if (reg_addr == 5'h1e)
 						reg_rdata <= oldpc;
+					else if (reg_addr == 5'h1d)
+						reg_rdata <= haltpos;
 					else if (reg_addr[4])
 						reg_rdata <= arg[reg_addr[2:0]];
 					else
@@ -158,6 +162,7 @@ module cpu(
 					end else begin
 						// resadflt <= 1;
 						// state <= S_ENDINSN;
+						haltpos <= 2;
 						state <= `S_HALT;
 					end
 				end
@@ -165,6 +170,7 @@ module cpu(
 					if (o_a) begin
 						// resadflt <= 1;
 						// state <= S_ENDINSN;
+						haltpos <= 3;
 						state <= `S_HALT;
 					end else begin
 						if (o_r | o_m | o_v)
@@ -176,8 +182,31 @@ module cpu(
 					end
 				end
 
+				`OPS_REGD, `OPS_ADEC: begin  // register deferred and
+							     // auto decrement
+					isreg[nargs] <= 0;
+				//	savedreg[cur_reg_num] <= cur_reg_val; // trap
+					if (decib[4]) begin
+						greg[cur_reg_num] <= cur_reg_val - op_size;
+						argp[nargs] <= cur_reg_val - op_size;
+					end else
+						argp[nargs] <= cur_reg_val;
+					if (o_r | o_m | o_v) begin
+						/* must read val */
+						if (decib[4])
+							cpu_addr <= cur_reg_val - op_size;
+						else
+							cpu_addr <= cur_reg_val;
+						cpu_stb <= 1;
+						state <= `S_READVAL;
+						fillstate <= stateoff;
+			//			cpu_rw_size <= 2'b11; // XXX long
+					end
+				end
+
 				default: begin
 					arg[nargs] <= { 24'd0, decib };
+					haltpos <= 1;
 					state <= `S_HALT;
 				end
 				endcase
@@ -188,6 +217,15 @@ module cpu(
 				state <= `S_FILLUP;
 				fillstate <= `S_ARG;
 			end
+		end
+
+		/*
+		 * Read a value and put in (previous) arg register.
+		 */
+		`S_READVAL: if (cpu_ack) begin
+			arg[nargs-1] <= cpu_rdata;
+			cpu_stb <= 0;
+			state <= fillstate;
 		end
 
 		/*
@@ -204,6 +242,7 @@ module cpu(
 				if (|arg[0][15:8]) begin
 					// resopflt <= 1;
 					// state <= S_ENDINSN;
+					haltpos <= 4;
 					state <= `S_HALT;
 				end else begin
 					if (cur_inst[0]) // bicpsw
@@ -250,8 +289,8 @@ module cpu(
 			state <= `S_FETCH;
 			if (anyfault) begin
 				greg[15] <= oldpc;
+				haltpos <= 5;
 				state <= `S_HALT;
-				greg[4] <= 3;
 			end else begin
 			case (cur_inst)
 			`I_BRB, `I_BRW: greg[15] <= curpc + arg[0];
@@ -292,7 +331,7 @@ module cpu(
 			endcase
 			if (step) begin
 				state <= `S_HALT;
-				greg[4] <= 2;
+				haltpos <= 6;
 			end
 			end
 		end
@@ -310,7 +349,7 @@ module cpu(
 				state <= fillstate;
 			end
 		end
-		default: state <= `S_HALT;
+		default: begin state <= `S_HALT; haltpos <= 7; end
 		endcase
 	end
 

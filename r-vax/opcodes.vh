@@ -10,9 +10,13 @@
 `define	REG_PC		4'hf
 
 /* Operand specifiers */
-`define	OPS_LIT		4'b00??
-`define	OPS_REG		4'b0101
-`define	OPS_DISP	4'b11??, 4'b101?
+`define	OPS_LIT		4'b00??			// 0-3
+`define	OPS_REG		4'b0101			// 5
+`define	OPS_REGD	4'b0110			// 6
+`define	OPS_ADEC	4'b0111			// 7
+`define	OPS_AINC	4'b1000			// 8
+`define	OPS_AINCD	4'b1001			// 9
+`define	OPS_DISP	4'b11??, 4'b101?	// 10-15
 `define	OPS_BDISP	4'ha
 `define	OPS_BDISPD	4'hb
 `define	OPS_WDISP	4'hc
