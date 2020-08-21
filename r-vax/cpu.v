@@ -182,18 +182,21 @@ module cpu(
 					end
 				end
 
-				`OPS_REGD, `OPS_ADEC: begin  // register deferred and
-							     // auto decrement
+				`OPS_REGD,		// register deferred
+				`OPS_AINC,		// auto increment
+				`OPS_ADEC: begin	// auto decrement
 					isreg[nargs] <= 0;
 				//	savedreg[cur_reg_num] <= cur_reg_val; // trap
-					if (decib[4]) begin
+					if (decib[7:4] == `OPS_ADEC) begin
 						greg[cur_reg_num] <= cur_reg_val - op_size;
 						argp[nargs] <= cur_reg_val - op_size;
 					end else
 						argp[nargs] <= cur_reg_val;
+					if (decib[7:4] == `OPS_AINC)
+						greg[cur_reg_num] <= cur_reg_val + op_size;
 					if (o_r | o_m | o_v) begin
 						/* must read val */
-						if (decib[4])
+						if (decib[7:4] == `OPS_ADEC)
 							cpu_addr <= cur_reg_val - op_size;
 						else
 							cpu_addr <= cur_reg_val;
