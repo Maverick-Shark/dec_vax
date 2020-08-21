@@ -53,7 +53,7 @@ module cpu(
 	reg [7:0]	decib;
 
 	reg [31:0]	arg[5:0], argp[5:0];	// storage for evaluated args
-	reg [2:0]	nargs;		// current arg
+	reg [2:0]	nargs, prev_nargs;	// current /previous arg number.
 	reg [0:0]	isreg[5:0];	// destination is reg
 	reg [31:0]	oldpc;		// saved pc in case of fault
 
@@ -233,6 +233,7 @@ module cpu(
 				end
 				endcase
 				nargs <= nargs + 1;
+				prev_nargs <= nargs;
 				arg_nxtoff <= arg_nxtoff + 1;
 				greg[15] <= curpc + 1;
 			end else begin
@@ -245,7 +246,7 @@ module cpu(
 		 * Read a value and put in (previous) arg register.
 		 */
 		`S_READVAL: if (cpu_ack) begin
-			arg[nargs-1] <= cpu_rdata;
+			arg[prev_nargs] <= cpu_rdata;
 			cpu_stb <= 0;
 			state <= fillstate;
 		end
@@ -254,7 +255,7 @@ module cpu(
 		 * get an indirect arg.
 		 */
 		`S_READVAL1: if (cpu_ack) begin
-			argp[nargs-1] <= cpu_rdata;
+			argp[prev_nargs] <= cpu_rdata;
 			cpu_stb <= 0;
 			if (doread) begin
 				cpu_addr <= cpu_rdata;
