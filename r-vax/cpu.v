@@ -57,6 +57,7 @@ module cpu(
 	reg [0:0]	isreg[5:0];	// destination is reg
 	reg [31:0]	oldpc;		// saved pc in case of fault
 
+	wire [31:0] cur_reg_val_subsz, cur_reg_val_addsz, cur_reg_val_add4;
 	wire [31:0] curpc, cur_reg_val;
 	wire [1:0] curbyte;
 	wire [3:0] cur_reg_num;
@@ -64,6 +65,7 @@ module cpu(
 	assign curpc = greg[15];
 	assign cur_reg_num = decib[3:0];
 	assign cur_reg_val = greg[cur_reg_num];
+	assign cur_reg_val_add4 = cur_reg_val + 4;
 
 	/*
 	 * get current instruction byte based on pc.
@@ -92,6 +94,9 @@ module cpu(
 	wire [4:0] op_size;
 	wire o_r, o_w, o_m, o_a, o_v;
 	assign arg_nstate = arg_nxtoff;
+	assign cur_reg_val_subsz = cur_reg_val - op_size;
+	assign cur_reg_val_addsz = cur_reg_val + op_size;
+
 	reg doread;
 	opspec opspec(
 		.insn(decib),
@@ -189,16 +194,17 @@ module cpu(
 					isreg[nargs] <= 0;
 				//	savedreg[cur_reg_num] <= cur_reg_val; // trap
 					if (decib[7:4] == `OPS_ADEC) begin
-						greg[cur_reg_num] <= cur_reg_val - op_size;
+						greg[cur_reg_num] <= cur_reg_val_subsz;
 						argp[nargs] <= cur_reg_val - op_size;
 					end else
 						argp[nargs] <= cur_reg_val;
-					if (decib[7:4] == `OPS_AINC)
-						greg[cur_reg_num] <= cur_reg_val + op_size;
+					if (decib[7:4] == `OPS_AINC) begin
+						greg[cur_reg_num] <= cur_reg_val_addsz;
+					end
 					if (o_r | o_m | o_v) begin
 						/* must read val */
 						if (decib[7:4] == `OPS_ADEC)
-							cpu_addr <= cur_reg_val - op_size;
+							cpu_addr <= cur_reg_val_subsz;
 						else
 							cpu_addr <= cur_reg_val;
 						cpu_stb <= 1;
@@ -211,7 +217,7 @@ module cpu(
 				`OPS_AINCD: begin	// auto increment deferred
 					isreg[nargs] <= 0;
 				//	savedreg[cur_reg_num] <= cur_reg_val; // trap
-					greg[cur_reg_num] <= cur_reg_val + 4;
+					greg[cur_reg_num] <= cur_reg_val_add4;
 					cpu_addr <= cur_reg_val;
 					cpu_stb <= 1;
 					doread <= o_r | o_m | o_v;
