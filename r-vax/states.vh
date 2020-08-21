@@ -10,6 +10,10 @@
 `define	S_READVAL	5
 `define	S_READVAL1	6
 `define	S_READVAL2	7
+`define	S_BYTEDISP	8
+`define	S_BYTEDISP2	9
+
+
 
 
 `define	S_ARG		8'd10

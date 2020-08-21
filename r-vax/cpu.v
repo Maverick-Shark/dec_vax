@@ -34,7 +34,7 @@ module cpu(
 );
 
 	reg [31:0]	greg[15:0];
-	reg [`STATBITS-1:0]	state, fillstate;
+	reg [`STATBITS-1:0]	state, fillstate, nextstate;
 	reg [7:0]	haltpos;
 
 	reg [31:0]	psl;
@@ -56,6 +56,7 @@ module cpu(
 	reg [2:0]	nargs, prev_nargs;	// current /previous arg number.
 	reg [0:0]	isreg[5:0];	// destination is reg
 	reg [31:0]	oldpc;		// saved pc in case of fault
+	reg [3:0]	regnum;
 
 	wire [31:0] cur_reg_val_subsz, cur_reg_val_addsz, cur_reg_val_add4;
 	wire [31:0] curpc, cur_reg_val;
@@ -161,6 +162,7 @@ module cpu(
 			if (isvalid) begin
 				state <= stateoff;
 				nxtoff <= nxtoff + 1;
+				doread <= o_r | o_m | o_v;
 				casez (decib[7:4])
 				`OPS_LIT: begin
 					if (o_r) begin
@@ -209,7 +211,7 @@ module cpu(
 							cpu_addr <= cur_reg_val;
 						cpu_stb <= 1;
 						state <= `S_READVAL;
-						fillstate <= stateoff;
+						nextstate <= stateoff;
 			//			cpu_rw_size <= 2'b11; // XXX long
 					end
 				end
@@ -220,10 +222,15 @@ module cpu(
 					greg[cur_reg_num] <= cur_reg_val_add4;
 					cpu_addr <= cur_reg_val;
 					cpu_stb <= 1;
-					doread <= o_r | o_m | o_v;
 					state <= `S_READVAL1;
-					fillstate <= stateoff;
+					nextstate <= stateoff;
 			//		cpu_rw_size <= 2'b11; // XXX long
+				end
+				`OPS_BDISP/* , `OPS_BDISPD */: begin
+					state <= `S_BYTEDISP;
+					regnum <= cur_reg_num;
+					nextstate <= stateoff;
+			//		isdefer <= decib[4];
 				end
 
 				default: begin
@@ -243,12 +250,36 @@ module cpu(
 		end
 
 		/*
+		 * get displacement
+		 */
+		`S_BYTEDISP: begin
+			if (isvalid) begin
+				argp[prev_nargs] <= { {24{decib[7]}}, decib };
+				greg[15] <= curpc + 1;
+				state <= `S_BYTEDISP2;
+			end else begin
+				state <= `S_FILLUP;
+				fillstate <= `S_BYTEDISP;
+			end
+		end
+
+		`S_BYTEDISP2: begin
+			argp[prev_nargs] <= argp[prev_nargs] + greg[regnum];
+			if (doread) begin
+				cpu_addr <= argp[prev_nargs] + greg[regnum];
+				cpu_stb <= 1;
+				state <= `S_READVAL;
+			end else
+				state <= nextstate;
+		end
+
+		/*
 		 * Read a value and put in (previous) arg register.
 		 */
 		`S_READVAL: if (cpu_ack) begin
 			arg[prev_nargs] <= cpu_rdata;
 			cpu_stb <= 0;
-			state <= fillstate;
+			state <= nextstate;
 		end
 
 		/*
@@ -261,7 +292,7 @@ module cpu(
 				cpu_addr <= cpu_rdata;
 				state <= `S_READVAL2;
 			end else
-				state <= fillstate;
+				state <= nextstate;
 		end
 
 		/*
