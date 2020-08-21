@@ -92,6 +92,7 @@ module cpu(
 	wire [4:0] op_size;
 	wire o_r, o_w, o_m, o_a, o_v;
 	assign arg_nstate = arg_nxtoff;
+	reg doread;
 	opspec opspec(
 		.insn(decib),
 		.nstate(arg_nstate),
@@ -207,6 +208,18 @@ module cpu(
 					end
 				end
 
+				`OPS_AINCD: begin	// auto increment deferred
+					isreg[nargs] <= 0;
+				//	savedreg[cur_reg_num] <= cur_reg_val; // trap
+					greg[cur_reg_num] <= cur_reg_val + 4;
+					cpu_addr <= cur_reg_val;
+					cpu_stb <= 1;
+					doread <= o_r | o_m | o_v;
+					state <= `S_READVAL1;
+					fillstate <= stateoff;
+			//		cpu_rw_size <= 2'b11; // XXX long
+				end
+
 				default: begin
 					arg[nargs] <= { 24'd0, decib };
 					haltpos <= 1;
@@ -229,6 +242,27 @@ module cpu(
 			arg[nargs-1] <= cpu_rdata;
 			cpu_stb <= 0;
 			state <= fillstate;
+		end
+
+		/*
+		 * get an indirect arg.
+		 */
+		`S_READVAL1: if (cpu_ack) begin
+			argp[nargs-1] <= cpu_rdata;
+			cpu_stb <= 0;
+			if (doread) begin
+				cpu_addr <= cpu_rdata;
+				state <= `S_READVAL2;
+			end else
+				state <= fillstate;
+		end
+
+		/*
+		 * cooldown for last "transmission".
+		 */
+		`S_READVAL2: if (cpu_ack == 0) begin
+			cpu_stb <= 1;
+			state <= `S_READVAL;
 		end
 
 		/*

@@ -8,6 +8,8 @@
 `define	S_FILLUP	3
 `define	S_ENDINST	4
 `define	S_READVAL	5
+`define	S_READVAL1	6
+`define	S_READVAL2	7
 
 
 `define	S_ARG		8'd10
