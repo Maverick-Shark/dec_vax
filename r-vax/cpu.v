@@ -142,6 +142,8 @@ module cpu(
 
 		/* get next instruction from input stream */
 		`S_FETCH: begin
+			if (cpu_ack)
+				cpu_stb <= 0;
 			if (isvalid) begin
 				/* put insbyte in decode reg */
 				cur_inst <= decib;
@@ -398,8 +400,15 @@ module cpu(
 				end
 				if (isreg[2]) 
 					greg[argp[2][3:0]] <= arg[2];
-				else
-					greg[arg[2][3:0]] <= 32'hf00fbabe;
+				else begin
+					cpu_addr <= argp[2];
+					cpu_wdata <= arg[2];
+					cpu_write <= 1;
+					cpu_stb <= 1;
+					state <= `S_WAIT;
+					greg[6] <= argp[2];
+					greg[7] <= arg[2];
+				end
 			end
 			`I_BISPSW, `I_BICPSW: ;
 			default: begin state <= `S_HALT; greg[4] <= 1; greg[5] <= cur_inst; end
@@ -411,10 +420,16 @@ module cpu(
 			end
 		end
 
+		`S_WAIT: if (cpu_ack) begin
+			cpu_stb <= 0;
+			cpu_write <= 0;
+			state <= `S_FETCH;
+		end
 
 		`S_FILLUP: begin
 			/* Fetch new longword */
 			cpu_addr <= { curpc[31:2], 2'b00 };
+			cpu_write <= 0;
 			cpu_stb <= 1;
 			if (cpu_ack) begin
 				inslword <= cpu_rdata;
