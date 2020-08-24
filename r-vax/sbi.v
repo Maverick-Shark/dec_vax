@@ -19,6 +19,10 @@
 // Additional Comments: 
 //
 //////////////////////////////////////////////////////////////////////////////////
+`define VCACHE
+// `define HALFCLOCK
+`define	BLOCKRAM
+
 /*
  * The memory address bus is 32 bit, 32 bit wide.
  */
@@ -104,7 +108,7 @@ defparam console.tto.CLKPERBIT = 2604;
 	wire sw_to_mmu_write, sw_to_mmu_stb;
 	wire [31:0] sw_to_mmu_addr;
 	wire [31:0] sw_to_mmu_wdata;
-//	wire [1:0] sw_to_pc_size, mmu_to_sw_size;
+	wire [1:0] sw_to_mmu_size;
 
 
 	cpu cpu(
@@ -124,6 +128,7 @@ defparam console.tto.CLKPERBIT = 2604;
 		.cpu_stb(cpu_stb),
 		.cpu_rdata(cpu_rdata),
 		.cpu_ack(cpu_ack),
+//		.cpu_size(cpu_size),
 
 		.step(step),
 		.cont(cont),
@@ -137,15 +142,35 @@ defparam console.tto.CLKPERBIT = 2604;
 	assign sw_to_mmu_write = con_vmem ? con_write : cpu_write;
 	assign sw_to_mmu_wdata = con_vmem ? con_wdata : cpu_wdata;
 	assign sw_to_mmu_stb = con_vmem ? con_stb : cpu_stb;
+	assign sw_to_mmu_size = con_vmem ? con_addr[31:30] : 2'b11;
 
 	/* wires between mmu and pcache */
 	wire mmu_to_sw_write, mmu_to_sw_stb, sw_to_pc_write, sw_to_pc_stb;
 	wire pc_to_mmu_ack;
-	wire [23:2] mmu_to_sw_addr, sw_to_pc_addr;
+	wire [21:0] mmu_to_sw_addr, sw_to_pc_addr;
 	wire [31:0] mmu_to_sw_wdata, sw_to_pc_wdata, pc_to_mmu_rdata;
-	wire [1:0] sw_to_pc_size, mmu_to_sw_size;
 
-`ifdef notdef
+`ifdef VCACHE
+	vcache vcache(
+		.clk(clk),
+		.rst(rst),
+
+		.in_addr(sw_to_mmu_addr),
+		.in_wdata(sw_to_mmu_wdata),
+		.in_write(sw_to_mmu_write),
+		.in_stb(sw_to_mmu_stb),
+		.in_rdata(cpu_rdata),
+		.in_ack(cpu_ack),
+		.in_sz(sw_to_mmu_size),
+
+		.ut_addr(mmu_to_sw_addr),
+		.ut_wdata(mmu_to_sw_wdata),
+		.ut_write(mmu_to_sw_write),
+		.ut_stb(mmu_to_sw_stb),
+		.ut_rdata(pc_to_mmu_rdata),
+		.ut_ack(pc_to_mmu_ack)
+	);
+
 
 `else
 	assign mmu_to_sw_addr = sw_to_mmu_addr[23:2];
@@ -154,7 +179,6 @@ defparam console.tto.CLKPERBIT = 2604;
 	assign mmu_to_sw_stb = sw_to_mmu_stb;
 	assign cpu_rdata = pc_to_mmu_rdata;
 	assign cpu_ack = pc_to_mmu_ack;
-	assign mmu_to_sw_size = 2'b11;
 `endif
 
 	/* switch pcache input between console and mmu */
@@ -162,12 +186,11 @@ defparam console.tto.CLKPERBIT = 2604;
 	assign sw_to_pc_write = con_pmem ? con_write : mmu_to_sw_write;
 	assign sw_to_pc_wdata = con_pmem ? con_wdata : mmu_to_sw_wdata;
 	assign sw_to_pc_stb = con_pmem ? con_stb : mmu_to_sw_stb;
-	assign sw_to_pc_size = con_pmem ? con_addr[31:30] : mmu_to_sw_size;
 
 	/* wires between mem and pcache */
 	wire pc_to_sw_write, pc_to_sw_stb, sw_to_mem_write, sw_to_mem_stb;
 	wire mem_to_pc_ack;
-	wire [23:2] pc_to_sw_addr, sw_to_mem_addr;
+	wire [21:0] pc_to_sw_addr, sw_to_mem_addr;
 	wire [31:0] pc_to_sw_wdata, sw_to_mem_wdata, mem_to_pc_rdata;
 
 `ifdef notdef
@@ -181,7 +204,6 @@ defparam console.tto.CLKPERBIT = 2604;
 		.f_mmu_stb(sw_to_pc_stb),
 		.f_mmu_rdata(pc_to_mmu_rdata),
 		.f_mmu_ack(pc_to_mmu_ack),
-		.f_mmu_sz(sw_to_pc_size),
 
 		.t_mem_addr(pc_to_sw_addr),
 		.t_mem_wdata(pc_to_sw_wdata),
@@ -215,6 +237,24 @@ defparam console.tto.CLKPERBIT = 2604;
 			con_pmem ? pc_to_mmu_ack :
 			con_vmem ? cpu_ack : 1'b0;
 
+`ifdef BLOCKRAM
+	blkram blkram(
+		.clk(clk),
+		.rst(rst),
+
+		.pmem_addr(sw_to_mem_addr),		// i
+		.pmem_write(sw_to_mem_write),		// i
+		.pmem_wdata(sw_to_mem_wdata),		// i
+		.pmem_stb(sw_to_mem_stb),		// i
+		.pmem_rdata(mem_to_pc_rdata),		// o
+		.pmem_ack(mem_to_pc_ack)		// o
+	);
+	wire [31:0] mem_32_fake;
+	wire mem_1_fakeack;
+`endif
+	/*
+	 * Ram 16MB (4MLW).  22 bits addr (21-0) * 32 bits data.
+	 */
 	sdram sdram(
 		.clk(clk),
 		.rst(rst),
@@ -231,14 +271,22 @@ defparam console.tto.CLKPERBIT = 2604;
 		.sdram_ba(sdram_ba),
 		.sdram_data(sdram_data),
 		
+`ifdef BLOCKRAM
+		.pmem_addr(22'b0),		// i
+		.pmem_write(1'b0),		// i
+		.pmem_wdata(32'b0),		// i
+		.pmem_stb(1'b0),		// i
+		.pmem_rdata(mem_32_fake),		// o
+		.pmem_ack(mem_1_fakeack)		// o
+`else
 		.pmem_addr(sw_to_mem_addr),		// i
 		.pmem_write(sw_to_mem_write),		// i
 		.pmem_wdata(sw_to_mem_wdata),		// i
 		.pmem_stb(sw_to_mem_stb),		// i
 		.pmem_rdata(mem_to_pc_rdata),		// o
 		.pmem_ack(mem_to_pc_ack)		// o
+`endif
 	);
-
 
 	console console(
 		.clk(clk),

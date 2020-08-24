@@ -12,10 +12,11 @@
 `define	S_READVAL2	7
 `define	S_BYTEDISP	8
 `define	S_BYTEDISP2	9
+`define	S_WAIT		10
 
 
 
 
-`define	S_ARG		8'd10
-`define	S_SOP		8'd12
-`define	S_BR		8'd13
+`define	S_ARG		8'd20
+`define	S_SOP		8'd22
+`define	S_BR		8'd23
