@@ -90,6 +90,7 @@ defparam console.tto.CLKPERBIT = 2604;
 
 	wire [31:0] cpu_addr, cpu_wdata, cpu_rdata;
 	wire cpu_write, cpu_stb, cpu_ack;
+	wire [1:0] cpu_size;
 
 	/* wires from console */
 	wire con_mem, con_vmem, con_pmem;
@@ -128,7 +129,7 @@ defparam console.tto.CLKPERBIT = 2604;
 		.cpu_stb(cpu_stb),
 		.cpu_rdata(cpu_rdata),
 		.cpu_ack(cpu_ack),
-//		.cpu_size(cpu_size),
+		.cpu_size(cpu_size),
 
 		.step(step),
 		.cont(cont),
@@ -142,7 +143,7 @@ defparam console.tto.CLKPERBIT = 2604;
 	assign sw_to_mmu_write = con_vmem ? con_write : cpu_write;
 	assign sw_to_mmu_wdata = con_vmem ? con_wdata : cpu_wdata;
 	assign sw_to_mmu_stb = con_vmem ? con_stb : cpu_stb;
-	assign sw_to_mmu_size = con_vmem ? con_addr[31:30] : 2'b11;
+	assign sw_to_mmu_size = con_vmem ? con_addr[31:30] : cpu_size;
 
 	/* wires between mmu and pcache */
 	wire mmu_to_sw_write, mmu_to_sw_stb, sw_to_pc_write, sw_to_pc_stb;

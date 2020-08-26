@@ -20,25 +20,25 @@ module opspec(
 	input [7:0] insn,
 	input [7:0] nstate,
 	output [7:0] opoff,
-	output [4:0] size,
+	output [1:0] sizel2,
 	output o_r, o_w, o_m, o_a, o_v
 );
 	(* rom_style = "BLOCK" *)
 	reg [7:0] optbl;
 	(* rom_style = "BLOCK" *)
-	reg [9:0] statetbl;
+	reg [6:0] argtbl; /* 2 size + 5 op */
 
 	always @* begin
 		case (nstate)
-		default:	statetbl = 0;
-		`OP_RL_ML:	statetbl = { `O_LONG, `O_R };
-		8'd2:		statetbl = { `O_LONG, `O_M };
-		`OP_RL_RL_WL:	statetbl = { `O_LONG, `O_R };
-		`OP_RL_WL:	statetbl = { `O_LONG, `O_R };
-		8'd5:		statetbl = { `O_LONG, `O_W };
-		`OP_BB:		statetbl = { `O_BYTE, `O_R };	// branch arg
-		`OP_BW:		statetbl = { `O_WORD, `O_R };	// branch arg
-		`OP_RW:		statetbl = { `O_WORD, `O_R };
+		default:	argtbl = 0;
+		`OP_RL_ML:	argtbl = { `O_LONG, `O_R };
+		8'd2:		argtbl = { `O_LONG, `O_M };
+		`OP_RL_RL_WL:	argtbl = { `O_LONG, `O_R };
+		`OP_RL_WL:	argtbl = { `O_LONG, `O_R };
+		8'd5:		argtbl = { `O_LONG, `O_W };
+		`OP_BB:		argtbl = { `O_BYTE, `O_R };	// branch arg
+		`OP_BW:		argtbl = { `O_WORD, `O_R };	// branch arg
+		`OP_RW:		argtbl = { `O_WORD, `O_R };
 		endcase
 	end
 
@@ -73,8 +73,8 @@ module opspec(
 		endcase
 	end
 
-	assign size = statetbl[9:5];
-	assign { o_r, o_w, o_m, o_a, o_v } = statetbl[4:0];
+	assign sizel2 = argtbl[6:5];
+	assign { o_r, o_w, o_m, o_a, o_v } = argtbl[4:0];
 
 	assign opoff = optbl;
 

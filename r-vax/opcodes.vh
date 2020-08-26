@@ -11,6 +11,7 @@
 
 /* Operand specifiers */
 `define	OPS_LIT		4'b00??			// 0-3
+`define	OPS_INDEX	4'b0100			// 4
 `define	OPS_REG		4'b0101			// 5
 `define	OPS_REGD	4'b0110			// 6
 `define	OPS_ADEC	4'b0111			// 7
@@ -70,12 +71,12 @@
 
 `define I_CLRL	8'hd4
 
-/* operand data type */
-`define	O_BYTE	5'b00001
-`define	O_WORD	5'b00010
-`define	O_LONG	5'b00100
-`define	O_QUAD	5'b01000
-`define	O_OCTA	5'b10000
+/* operand data size */
+`define	O_BYTE	2'd0
+`define	O_WORD	2'd1
+`define	O_LONG	2'd2
+`define	O_QUAD	2'd3
+// `define	O_OCTA	3'd0
 
 /* operand access type */
 `define	O_R	5'b10000

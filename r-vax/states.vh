@@ -7,12 +7,13 @@
 `define	S_DECODE	2
 `define	S_FILLUP	3
 `define	S_ENDINST	4
-`define	S_READVAL	5
-`define	S_READVAL1	6
-`define	S_READVAL2	7
-`define	S_BYTEDISP	8
-`define	S_BYTEDISP2	9
-`define	S_WAIT		10
+`define	S_READMEM	5
+`define	S_RDCDATA	6
+`define	S_OAREAD	7
+`define	S_READMEM2	8
+`define	S_WRITEMEM	9
+`define	S_WRITEMEM2	10
+`define	S_ARGRDATA	11
 
 
 
