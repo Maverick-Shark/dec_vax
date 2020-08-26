@@ -225,6 +225,7 @@ module cpu(
 				cur_reg_num_save <= decib[3:0];
 				cur_arg_op_sav <= decib[7:4];
 				op_size_save <= op_size_ary;
+				isreg[nargs] <= 0;
 
 				casez (decib[7:4])
 				`OPS_LIT: begin
@@ -285,12 +286,12 @@ module cpu(
 				end
 
 				`OPS_DISP: begin // 10-15
-					if (decib[5])
-						regnum <= 4'b0001;
-					if (decib[6])
-						regnum <= 4'b0011;
-					if (decib[6:5] == 2'b11)
-						regnum <= 4'b1111;
+					(* full_case *)
+					case (decib[6:5])
+					2'b01: regnum <= 4'b0001;
+					2'b10: regnum <= 4'b0011;
+					2'b11: regnum <= 4'b1111;
+					endcase
 					state <= `S_RDCDATA;
 				end
 
@@ -326,15 +327,16 @@ module cpu(
 					regnum[3] <= 0;
 				end else begin
 					if (cur_arg_op_sav[0]) begin // indirect
-						cpu_addr <= OA + curpc;
+						cpu_addr <= OA + greg[cur_reg_num_save];
 						cpu_size <= `MEM_LONG;
 						fillstate <= `S_OAREAD;
 						state <= `S_READMEM;
 					end else begin
-						OA <= OA + curpc;
+						OA <= OA + greg[cur_reg_num_save];
 						state <= `S_OAREAD;
 					end
 				end
+				greg[`REG_PC] <= curpc + 1;
 			end else begin
 				state <= `S_FILLUP;
 				fillstate <= `S_RDCDATA;
@@ -357,7 +359,7 @@ module cpu(
 					cpu_addr <= OA + BOA;
 				end else
 					cpu_addr <= OA;
-				cpu_size <= `MEM_LONG; // XXX uses only needed data.
+				cpu_size <= `MEM_LONG; // XXX
 				fillstate <= `S_ARGRDATA;
 				state <= `S_READMEM;
 			end else
