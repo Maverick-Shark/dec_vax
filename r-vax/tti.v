@@ -96,7 +96,7 @@ localparam TTISTOP=	4'd10;
 			end else
 				clkcnt <= clkcnt + 1;
 		end else begin
-			if (clkcnt == CLKPERBIT) begin
+			if (clkcnt == CLKPERBIT-1) begin
 				if (state == TTISTOP) begin
 					if (tti_rx == 0)
 						gotbreak <= 1;
