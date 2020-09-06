@@ -10,7 +10,7 @@ TANAME=${TSUBDIR}/Vnvax__ALL.a
 VPATH=..
 DEST=nvax
 TDEST=nvax_trace
-OBJS=nvax.o ttotest.o verilated.o
+OBJS=nvax.o ttotest.o ttitest.o verilated.o
 CFLAGS=-g
 
 TOP=sbi.v
@@ -27,6 +27,7 @@ verilated.o: ${SYSINC}/verilated.cpp
 .cpp.o:
 	clang++ -I ${SUBDIR} -I ${SYSINC} ${CFLAGS} -c $<
 
+${OBJS}: ${ANAME}
 
 ${TDEST}: nvax.cpp ${TANAME}
 	clang++ -DUSETRACE -I ${TSUBDIR} -I ${SYSINC} nvax.cpp ${VERCPP} ${TANAME} \

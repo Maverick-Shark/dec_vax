@@ -1,26 +1,23 @@
 /*	$Id$	*/
 
 #include <stdlib.h>
+
 #include "Vnvax.h"
 #include "verilated.h"
 
+#include "nvax.h"
+
 unsigned long nticks;
-
-extern int tto_active;
-
-void ttoexec(Vnvax *tb);
-void tick(Vnvax *tb);
-
 
 int main(int argc, char **argv)
 {
-	// Initialize Verilators variables
 	Verilated::commandArgs(argc, argv);
-
-	// Create an instance of our module under test
 	Vnvax *tb = new Vnvax;
 
-	// reset
+	ttiinit();
+
+	tb->tti_rx = 1;
+
 	tb->n_rst = 0;
 	tick(tb);
 	tb->n_rst = 1;
@@ -29,6 +26,9 @@ int main(int argc, char **argv)
 
 		if (tto_active || tb->tto_tx == 0)
 			ttoexec(tb);
+
+		if (tti_active || ttisig)
+			ttiexec(tb);
 
 		tick(tb);
 	}

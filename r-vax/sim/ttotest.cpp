@@ -4,10 +4,9 @@
 #include "Vnvax.h"
 #include "verilated.h"
 
-int tto_active;
+#include "nvax.h"
 
-void ttoexec(Vnvax *tb);
-void tick(Vnvax *tb);
+int tto_active;
 
 /*
  * Receive a char from serial line, expected each 20 tick.

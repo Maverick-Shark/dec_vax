@@ -12,7 +12,11 @@
  */
 
 module tti #(
+`ifdef VERILATOR
+	parameter CLKPERBIT = 20        // no need to wait long in simulation
+`else
 	parameter CLKPERBIT = 5208
+`endif
 ) (
 	input		clk,
 	input		iorst,
