@@ -1,4 +1,5 @@
 /*	$Id$	*/
+`timescale 1ns / 1ps
 /*
  *
  */
@@ -17,7 +18,11 @@
 `define	TTOSTOP		11
 
 module tto #(
+`ifdef VERILATOR
+	parameter CLKPERBIT = 20	// no need to wait long in simulation
+`else
 	parameter CLKPERBIT = 5208	// (50000000/9600)
+`endif
 ) (
 	input		clk,
 	input		iorst,
@@ -96,18 +101,18 @@ module tto #(
 
 	always @* begin
 		case (state)
-		`TTOIDLE: tto_tx <= 1;
-		`TTOSTART: tto_tx <= 0;
-		`TTOB0: tto_tx <= utdata[0];
-		`TTOB1: tto_tx <= utdata[1];
-		`TTOB2: tto_tx <= utdata[2];
-		`TTOB3: tto_tx <= utdata[3];
-		`TTOB4: tto_tx <= utdata[4];
-		`TTOB5: tto_tx <= utdata[5];
-		`TTOB6: tto_tx <= utdata[6];
-		`TTOB7: tto_tx <= utdata[7];
-		`TTOSTOP: tto_tx <= 1;
-		default: tto_tx <= 1;
+		`TTOIDLE: tto_tx = 1;
+		`TTOSTART: tto_tx = 0;
+		`TTOB0: tto_tx = utdata[0];
+		`TTOB1: tto_tx = utdata[1];
+		`TTOB2: tto_tx = utdata[2];
+		`TTOB3: tto_tx = utdata[3];
+		`TTOB4: tto_tx = utdata[4];
+		`TTOB5: tto_tx = utdata[5];
+		`TTOB6: tto_tx = utdata[6];
+		`TTOB7: tto_tx = utdata[7];
+		`TTOSTOP: tto_tx = 1;
+		default: tto_tx = 1;
 		endcase
 	end
 endmodule

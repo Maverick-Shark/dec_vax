@@ -1,4 +1,5 @@
 /*	$Id$	*/
+`timescale 1ns / 1ps
 
 `include "states.vh"
 `include "opcodes.vh"
@@ -40,14 +41,15 @@ module cpu(
 	reg [31:0]	greg[15:0];
 	reg [`STATBITS-1:0]	state, fillstate, next_state;
 	reg [7:0]	haltpos;
-	reg [31:0]	read_val;
 
+/* verilator lint_off UNDRIVEN */
 	reg [31:0]	psl;
 
 	/* different traps/faults */
 	reg 	resinflt, 	/* reserved instruction fault (FFFF) */
 		resadflt,	/* reserved addressing mode fault (movl r0,$3) */
 		resopflt;	/* reserved operand fault */
+/* verilator lint_on UNDRIVEN */
 
 	/* instruction word "cache" */
 	reg [31:2]	itag;
@@ -67,10 +69,12 @@ module cpu(
 
 	wire [31:0] cur_reg_val_subsz, cur_reg_val_addsz, cur_reg_val_add4;
 	wire [31:0] curpc, cur_reg_val;
-	wire [1:0] curbyte;
+//	wire [1:0] curbyte;
 	wire [3:0] cur_reg_num;
+/* verilator lint_off UNUSED */
 	reg [3:0] cur_reg_num_save, cur_arg_op_sav;
-	assign curbyte = greg[15][1:0];
+/* verilator lint_on UNUSED */
+//	assign curbyte = greg[15][1:0];
 	assign curpc = greg[15];
 	assign cur_reg_num = decib[3:0];
 	assign cur_reg_val = greg[cur_reg_num];
@@ -112,21 +116,23 @@ module cpu(
 
 	wire [7:0] arg_opoff, arg_nstate;
 	reg [7:0] arg_nxtoff;
-	reg [3:0] op_size_save;
+//	reg [3:0] op_size_save;
 	reg [3:0] op_size_ary;
 	wire [1:0] op_size_l2;
 	wire o_r, o_w, o_m, o_a, o_v;
-	wire [31:0] arg0_arg1_add;
+//	wire [31:0] arg0_arg1_add;
 	reg Ctmp;
 	assign arg_nstate = arg_nxtoff;
-	assign cur_reg_val_subsz = cur_reg_val - op_size_ary;
-	assign cur_reg_val_addsz = cur_reg_val + op_size_ary;
+	assign cur_reg_val_subsz = cur_reg_val - { 28'b0, op_size_ary };
+	assign cur_reg_val_addsz = cur_reg_val + { 28'b0, op_size_ary };
 //	assign { Ctmp, arg0_arg1_add } = { 1'b0, arg[0] } + { 1'b0, arg[1] };
 
+`ifdef notdef
 	/*
 	 * Arguments having displacement modes.
 	 */
 	reg [31:0] cur_arg_res;
+	reg [31:0]	read_val;
 	always @* begin
 		case (cur_arg_op_sav[2:1])
 		2'b00: cur_arg_res = cur_reg_val;
@@ -135,6 +141,7 @@ module cpu(
 		2'b11: cur_arg_res = read_val + cur_reg_val;
 		endcase
 	end
+`endif
 
 	always @* begin
 		case (op_size_l2)
@@ -153,6 +160,7 @@ module cpu(
 		.sizel2(op_size_l2),
 		.o_r(o_r), .o_w(o_w), .o_m(o_m), .o_a(o_a), .o_v(o_v));
 
+	wire isvalid, anyfault;
 	assign halted = state == `S_HALT;
 	assign isvalid = (itag[31:2] == greg[15][31:2]) && ivalid;
 	assign anyfault = resinflt | resadflt | resopflt;
@@ -169,20 +177,20 @@ module cpu(
 				state <= `S_FETCH;
 			if (reg_stb) begin
 				if (reg_write) begin
-					greg[reg_addr] <= reg_wdata;
+					greg[reg_addr[3:0]] <= reg_wdata;
 				end else begin
 					if (reg_addr == 5'h1f)
 						reg_rdata <= psl; // PSL
 					else if (reg_addr == 5'h1e)
 						reg_rdata <= oldpc;
 					else if (reg_addr == 5'h1d)
-						reg_rdata <= haltpos;
+						reg_rdata <= { 24'b0, haltpos };
 					else if (reg_addr[4:3] == 2'b11)
 						reg_rdata <= argp[reg_addr[2:0]];
 					else if (reg_addr[4:3] == 2'b10)
 						reg_rdata <= arg[reg_addr[2:0]];
 					else
-						reg_rdata <= greg[reg_addr];
+						reg_rdata <= greg[reg_addr[3:0]];
 				end
 				reg_ack <= 1;
 			end else
@@ -224,7 +232,7 @@ module cpu(
 				greg[`REG_PC] <= curpc + 1;
 				cur_reg_num_save <= decib[3:0];
 				cur_arg_op_sav <= decib[7:4];
-				op_size_save <= op_size_ary;
+//				op_size_save <= op_size_ary;
 				isreg[nargs] <= 0;
 
 				casez (decib[7:4])
@@ -259,7 +267,7 @@ module cpu(
 							arg[nargs] <= cur_reg_val;
 						if (o_m | o_w | o_v) begin
 							isreg[nargs] <= 1;
-							argp[nargs] <= decib[3:0];
+							argp[nargs] <= { 28'b0, decib[3:0] };
 						end
 					end
 				end
@@ -281,18 +289,19 @@ module cpu(
 
 				`OPS_ADEC: begin // 7
 					greg[cur_reg_num] <= cur_reg_val_subsz;
-					OA <= cur_reg_val - op_size_ary;
+					OA <= cur_reg_val - { 28'b0, op_size_ary};
 					state <= `S_OAREAD;
 				end
 
 				`OPS_DISP: begin // 10-15
+					state <= `S_RDCDATA;
 					(* full_case *)
 					case (decib[6:5])
 					2'b01: regnum <= 4'b0001;
 					2'b10: regnum <= 4'b0011;
 					2'b11: regnum <= 4'b1111;
+					default: begin state <= `S_HALT; haltpos <= 14; end
 					endcase
-					state <= `S_RDCDATA;
 				end
 
 				default: begin
@@ -398,6 +407,7 @@ module cpu(
 						psl[3:0] <= psl[3:0] | arg[0][3:0];
 				end
 			end
+			default: begin state <= `S_HALT; haltpos <= 13; end
 			endcase
 			if (nargs == 2) begin
 				argp[2] <= argp[1];

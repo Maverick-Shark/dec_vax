@@ -1,3 +1,5 @@
+/*	$Id$	*/
+`timescale 1ns / 1ps
 /*
  * Simple hardware console.
  *
@@ -11,7 +13,7 @@
  *	G	Continue at address
  *	S	Execute one insn, then jump back to the console
  */
-`define	WBITS		31
+`define	WBITS		32
 
 `define	CONSOLE		6'd0
 `define	CONSOLE2	6'd1
@@ -70,12 +72,13 @@ module console(
 	input clk,
 	input rst,
 
-	output reg [`WBITS:0] conaddr,
-	output reg	  conwrite,
-	output reg [`WBITS:0] conwdata,
-	output reg	  conready,
-	input [`WBITS:0]  conrdata,
-	input		  convalid,
+	output reg	  	CYC_O,
+	output reg [`WBITS-1:0]	ADR_O,
+	output reg	  	WE_O,
+	output reg [`WBITS-1:0] DAT_O,
+	output reg	  	STB_O,
+	input [`WBITS-1:0]	DAT_I,
+	input		  	ACK_I,
 
 	/* signals for what we want to reference */
 	output reg	con_mem,	// raw memory
@@ -86,7 +89,7 @@ module console(
 
 
 	input [31:0]	pc,
-	input [1:0]	hreason,
+//	input [1:0]	hreason,
 
 	output reg step, 
 	output reg cont,
@@ -102,11 +105,13 @@ module console(
 	reg [1:0] 	readnum_next;	/* three states */
 	reg [1:0]	writenum_next;	/* three states */
 	reg [4:0]	putchar_next;
-	reg [`WBITS:0] 	innum, utnum;
+	reg [`WBITS-1:0] 	innum, utnum;
 	reg [7:0] 	tmp;
 	reg		nodig;
 
+	/* verilator lint_off UNUSED */
 	wire ttibusy, ttobusy, ttidone, ttodone;
+	/* verilator lint_on UNUSED */
 	wire [7:0] iodatain;
 	reg start, clear;
 	reg [7:0] iodataut;
@@ -114,6 +119,9 @@ module console(
 
 	reg seltti, seltto, ttodata;
 
+	/* verilator lint_off UNUSED */
+	wire ttiintmsk, ttointmsk, intreq;
+	/* verilator lint_on UNUSED */
 	assign ttiintmsk = 1'b0;
 	assign ttointmsk = 1'b0;
 	assign intreq = ttiintreq | ttointreq;
@@ -199,6 +207,7 @@ module console(
 			state <= `CONSOLE;
 			cont <= 0;
 		end else if (halted)
+		/* verilator lint_off CASEINCOMPLETE */
 		case (state)
 		`CONSOLE: begin
 			utnum <= pc;
@@ -207,7 +216,6 @@ module console(
 		end
 		`CONSOLE2: begin
 			state <= `CRLFEXC;
-			conwrite <= 0;
 			con_mem <= 0;
 			con_reg <= 0;
 			con_pmem <= 0;
@@ -229,9 +237,10 @@ module console(
 				cont <= 1;
 			end else begin
 				/* Reference some cell */
-				conaddr <= innum;
-				conwrite <= 0;
-				conready <= 1;
+				ADR_O <= innum;
+				WE_O <= 0;
+				STB_O <= 1;
+				CYC_O <= 1;
 				state <= `MEMREFS;
 				if (tmp == "/")
 					con_mem <= 1;
@@ -245,6 +254,7 @@ module console(
 					tmp <= "?";
 					state <= `PUTCHAR;
 					putchar_next <= `PUTCHAR_NEXT_C2;
+					CYC_O <= 0;
 				end
 			end
 		end
@@ -252,13 +262,14 @@ module console(
 		/*
 		 * Read (and maybe write?) from a mem/reg location.
 		 */
-		`MEMREFS: if (convalid) begin
-			utnum <= conrdata;
+		`MEMREFS: if (ACK_I) begin
+			utnum <= DAT_I;
+			STB_O <= 0;
+			CYC_O <= 0;
 			writenum_next <= `WRITNUM_NEXT_M2;
 			state <= `WRITENUM;
 		end
 		`MEMREFS2: begin
-			conready <= 0;
 			tmp <= " ";
 			state <= `PUTCHAR;
 			putchar_next <= `PUTCHAR_NEXT_M3;
@@ -271,9 +282,10 @@ module console(
 		`MEMREFS4: begin
 			if (tmp == 8'd13) begin
 				if (nodig == 0) begin
-					conwdata <= innum;
-					conwrite <= 1;
-					conready <= 1;
+					DAT_O <= innum;
+					WE_O <= 1;
+					STB_O <= 1;
+					CYC_O <= 1;
 					state <= `MEMREFS5;
 				end else
 					state <= `CONSOLE2;
@@ -283,9 +295,10 @@ module console(
 				putchar_next <= `PUTCHAR_NEXT_C2;
 			end
 		end
-		`MEMREFS5: if (convalid) begin
-			conready <= 0;
-			conwrite <= 0;
+		`MEMREFS5: if (ACK_I) begin
+			STB_O <= 0;
+			CYC_O <= 0;
+			WE_O <= 0;
 			state <= `CONSOLE2;
 		end
 
@@ -403,11 +416,13 @@ module console(
 		`WRITENUM6: begin
 			tmp <= hexd;
 			state <= `PUTCHAR;
+			/* verilator lint_off CASEINCOMPLETE */
 			(* full_case *)
 			case (writenum_next)
 			`WRITNUM_NEXT_C2: putchar_next <= `PUTCHAR_NEXT_C2;
 			`WRITNUM_NEXT_M2: putchar_next <= `PUTCHAR_NEXT_M2;
 			endcase
+			/* verilator lint_on CASEINCOMPLETE */
 		end
 		/*
 		 * read in digits until no more digit into innum.
@@ -430,19 +445,22 @@ module console(
 			end else if (tmp >= 8'd65 && tmp <= 8'd70) begin
 				nodig <= 0;
 				innum <= { innum[27:0], 4'd0 } + 
-				    tmp - 8'd55;
+				    { 24'b0, tmp - 8'd55 };
 				state <= `GETCHAR;
 			end else begin
 				if (tmp[6])
 					tmp[5] <= 0;
+				/* verilator lint_off CASEINCOMPLETE */
 				(* full_case *)
 				case (readnum_next)
 				`READNUM_NEXT_C4: state <= `CONSOLE4;
 				`READNUM_NEXT_M4: state <= `MEMREFS4;
 				endcase
+				/* verilator lint_on CASEINCOMPLETE */
 			end
 		end
 		endcase
+		/* verilator lint_on CASEINCOMPLETE */
 	end
 
 endmodule

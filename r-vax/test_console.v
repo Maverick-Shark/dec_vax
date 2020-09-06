@@ -88,6 +88,8 @@ module test_console;
 	reg [7:0] ch;
 	always begin
 		#20;
+
+		#1000;
 		tti_rx = 0; // start bit
 		#20;
 		ch = "0";
@@ -96,6 +98,11 @@ module test_console;
 			ch = { 1'b0, ch[7:1] };
 			#20;
 		end
+		tti_rx = 1; // stop
+		#40;
+
+		tti_rx = 0; // start bit
+		#20;
 
 		ch = "/";
 		for (i = 0; i < 8; i = i + 1) begin
@@ -103,6 +110,7 @@ module test_console;
 			ch = { 1'b0, ch[7:1] };
 			#20;
 		end
+		tti_rx = 1; // stop
 
 `ifdef notdef
 		tti_rx = 1; // LSB bit in 'A' high
@@ -115,7 +123,11 @@ module test_console;
 		#20;
 `endif
 		tti_rx = 1; // stop bit + rest high
-		#1000;
+		#10000;
+	end
+
+	always @(negedge tto_tx) begin
+
 	end
 
 
@@ -127,7 +139,7 @@ module test_console;
 		convalid = 0;
 		pc = 0;
 		hreason = 0;
-		halted = 0;
+		halted = 1;
 		tti_rx = 1;
 
 		#3;

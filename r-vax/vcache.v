@@ -1,4 +1,6 @@
 
+`timescale 1ns / 1ps
+
 /*
  * simple virtual cache, which also converts unaligned accesses to aligned.
  */
@@ -18,7 +20,9 @@ module vcache(
 	input		clk,
 	input		rst,
 
+/* verilator lint_off UNUSED */
 	input [31:0]	in_addr,
+/* verilator lint_on UNUSED */
 	input [31:0]	in_wdata,
 	input		in_write,
 	input		in_stb,

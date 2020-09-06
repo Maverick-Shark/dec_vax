@@ -21,7 +21,7 @@
 //////////////////////////////////////////////////////////////////////////////////
 `define VCACHE
 // `define HALFCLOCK
-`define	BLOCKRAM
+// `define	BLOCKRAM
 
 /*
  * The memory address bus is 32 bit, 32 bit wide.
@@ -75,18 +75,10 @@ defparam console.tto.CLKPERBIT = 2604;
 	 * mem_f_pc_* -> data to memory from pcache (after conditional)
 	 */
 
-	wire brk;
+	wire brk, rst;
 	assign rst = !n_rst | brk;
 
-	reg buzz;
 	assign buzzer = 1;
-
-	/* common control wires */
-	wire reqhalt;		// CPU halt requested
-
-	/* backplane logic */
-//	assign reqhalt = brk | rst /* | cpu_halt */;
-
 
 	wire [31:0] cpu_addr, cpu_wdata, cpu_rdata;
 	wire cpu_write, cpu_stb, cpu_ack;
@@ -95,12 +87,14 @@ defparam console.tto.CLKPERBIT = 2604;
 	/* wires from console */
 	wire con_mem, con_vmem, con_pmem;
 	wire [31:0] con_addr, con_wdata, con_rdata;
-	wire con_write, con_stb, con_reg;
+/* verilator lint_off UNUSED */
+	wire con_write, con_stb, con_reg, con_ack, con_cyc;
+/* verilator lint_on UNUSED */
 	wire cont, step;
 	
 	/* wires from CPU */
 	wire [31:0] reg_rdata, pc;
-	wire reg_ack;
+	wire reg_ack, reg_stb;
 	wire halted;		// CPU is halted
 
 	assign reg_stb = con_reg ? con_stb : 0;
@@ -289,6 +283,10 @@ defparam console.tto.CLKPERBIT = 2604;
 `endif
 	);
 
+/* verilator lint_off UNUSED */
+wire cyc_o, con_ipr;
+/* verilator lint_on UNUSED */
+
 	console console(
 		.clk(clk),
 		.rst(rst),
@@ -298,13 +296,15 @@ defparam console.tto.CLKPERBIT = 2604;
 		.cont(cont),
 		.step(step),
 
-		.conaddr(con_addr),
-		.conwrite(con_write),
-		.conwdata(con_wdata),
-		.conready(con_stb),
-		.conrdata(con_rdata),
-		.convalid(con_ack),
+		.CYC_O(con_cyc),
+		.ADR_O(con_addr),
+		.WE_O(con_write),
+		.DAT_O(con_wdata),
+		.STB_O(con_stb),
+		.DAT_I(con_rdata),
+		.ACK_I(con_ack),
 
+		.con_ipr(con_ipr),
 		.con_mem(con_mem),
 		.con_pmem(con_pmem),
 		.con_vmem(con_vmem),

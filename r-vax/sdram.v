@@ -1,4 +1,5 @@
 /*	$Id$	*/
+`timescale 1ns / 1ps
 /*
  * Simple SDRAM controller for the Hynix SDRAM chip, 2M * 4 bank * 16 bit.
  * Runs at 50MHz, CAS2, burst 1.
@@ -72,7 +73,7 @@ module sdram #(
 	initial		state = 0;
 	initial		timer = 0;
 `else
-	localparam	SETTLETIME = CLOCK/5000;   /* 200us */
+	localparam	SETTLETIME = 16'd10000;	/* (CLOCK/5000), 200us */
 `endif
 
 	/* States for this SDRAM module.  */
@@ -225,6 +226,7 @@ module sdram #(
 		endcase
 	end
 
+`ifdef XILINX
 	/*
 	 * Skew clock 180 degrees by using DDR2 registers.
 	 */
@@ -242,6 +244,9 @@ module sdram #(
 		.D0(1'b0),
 		.D1(1'b1)
 	);
+`else
+	assign	sdram_clk = clk;
+`endif
 
 `ifdef notdef
 genvar i;

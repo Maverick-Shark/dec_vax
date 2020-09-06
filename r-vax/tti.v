@@ -1,3 +1,5 @@
+/*	$Id$	*/
+`timescale 1ns / 1ps
 /*
  * TTI - Resembles (somewhat) a DG 4077 controller.
  *
