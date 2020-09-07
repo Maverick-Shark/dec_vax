@@ -34,7 +34,7 @@ module sdram #(
 	output [1:0]	sdram_ba,
 	inout [15:0]	sdram_data,
 
-	input [23:2]	pmem_addr,	// note: longword addressing.
+	input [21:0]	pmem_addr,	// note: longword addressing.
 	input		pmem_write,
 	input [31:0]	pmem_wdata,
 	input		pmem_stb,
@@ -154,17 +154,17 @@ module sdram #(
 			end else if (pmem_stb) begin
 				/* do something; open row */
 				{ ras, cas, we } <= ACTIVATE;
-				bank <= pmem_addr[11:10];
-				{ a11, a10, addr } <= pmem_addr[23:12];
+				bank <= pmem_addr[9:8];
+				{ a11, a10, addr } <= pmem_addr[21:10];
 				xprdata <= pmem_wdata;
 				state <= SETCAS;
 			end
 		end
 
 		SETCAS: begin
-			bank <= pmem_addr[11:10];
+			bank <= pmem_addr[9:8];
 			/* Note: precharge after use (closes row) */
-			{ a11, a10, addr } <= { 3'b010, pmem_addr[9:2], wnum };
+			{ a11, a10, addr } <= { 3'b010, pmem_addr[7:0], wnum };
 			if (pmem_write) begin
 				{ ras, cas, we } <= WRITE;
 				setdout <= 1;
@@ -245,7 +245,7 @@ module sdram #(
 		.D1(1'b1)
 	);
 `else
-	assign	sdram_clk = clk;
+	assign	sdram_clk = ~clk;
 `endif
 
 `ifdef notdef

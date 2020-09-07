@@ -13,6 +13,7 @@ int main(int argc, char **argv)
 {
 	Verilated::commandArgs(argc, argv);
 	Vnvax *tb = new Vnvax;
+	int needeval;
 
 	ttiinit();
 
@@ -23,12 +24,18 @@ int main(int argc, char **argv)
 	tb->n_rst = 1;
 
 	while(!Verilated::gotFinish()) {
+		needeval = 0;
 
 		if (tto_active || tb->tto_tx == 0)
 			ttoexec(tb);
 
-		if (tti_active || ttisig)
+		if (tti_active || ttisig) {
 			ttiexec(tb);
+			needeval++;
+		}
+
+		if (needeval)
+			tb->eval();
 
 		tick(tb);
 	}
@@ -41,11 +48,10 @@ tick(Vnvax *tb)
 {
 	nticks++;
 
-	tb->clkin = 0;
-	tb->eval();
-
 	tb->clkin = 1;
 	tb->eval();
+
+	sdramexec(tb);
 
 	tb->clkin = 0;
 	tb->eval();

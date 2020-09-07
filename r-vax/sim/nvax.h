@@ -2,6 +2,7 @@
 
 #define	SERIAL_TICKCNT	20	/* use a slightly higher speed logic when simulating */
 
+void sdramexec(Vnvax *tb);
 void ttoexec(Vnvax *tb);
 void ttiexec(Vnvax *tb);
 void ttiinit(void);
