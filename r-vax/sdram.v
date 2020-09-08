@@ -11,7 +11,9 @@
  * Size is 16Mbyte, addressed as 4M longwords (22 bits).
  */
 
-`define	ONEWORD
+`ifndef VERILATOR
+`define XILINX
+`endif
 
 module sdram #(
 	parameter	CLOCK		= 50000000,
@@ -136,11 +138,7 @@ module sdram #(
 		ISETMODE: begin
 			{ ras, cas, we } <= MODE;
 			/* Mode: CAS2, two word at a time, sequential */
-`ifdef ONEWORD
-			{ a11, a10, addr } <= 12'b000000100000;
-`else
-			{ a11, a10, addr } <= 12'b000000100001;
-`endif
+			{ a11, a10, addr } <= 12'b001000100001;
 			state <= REF2; /* One cycle before idle */
 		end
 
@@ -172,13 +170,9 @@ module sdram #(
 					sdata <= xprdata[15:0];
 				else
 					sdata <= xprdata[31:16];
-`ifdef ONEWORD
 				state <= REF2;
 				if (wnum)
 					pack <= 1;
-`else
-				state <= WRITE2;
-`endif
 			end else begin
 				{ ras, cas, we } <= READ;
 				state <= READ1;
@@ -187,26 +181,17 @@ module sdram #(
 		READ1: state <= READ2; /* CAS delay */
 		READ2: state <= READ3; /* clock skew compensation */
 		READ3: begin
-			if (wnum == 0)
-				prdata[15:0] <= indata;
-			else
-				prdata[31:16] <= indata;
-`ifdef ONEWORD
-			state <= REF2;
-			if (wnum)
-				pack <= 1;
-`else
+			prdata[15:0] <= indata;
 			state <= READ4;
-`endif
 		end
 
-`ifndef ONEWORD
 		READ4: begin
 			prdata[31:16] <= indata;
 			state <= REF2;
 			pack <= 1;
 		end
 
+`ifdef notdef
 		WRITE2: begin
 			setdout <= 1;
 			state <= REF2;
@@ -248,30 +233,26 @@ module sdram #(
 	assign	sdram_clk = ~clk;
 `endif
 
-`ifdef notdef
+`ifdef XILINX
 genvar i;
 
 generate
-	for (i=0; i < 16; i = i + 1) begin : obuf
-		IOBUF #(
-			.DRIVE(12),
-			.IOSTANDARD("LVTTL"),
-			.SLEW("FAST")
-		) obuf_data (
+	for (i=0; i < 16; i = i + 1) begin : ibuf
+		IBUF #(
+			.IBUF_DELAY_VALUE("6"),
+			.IFD_DELAY_VALUE("AUTO"),
+			.IOSTANDARD("DEFAULT")
+		) ibuf_data (
 			.O(indata[i]),
-			.IO(sdram_data[i]),
-			.I(sdata[i]),
-			.T(!setdout)
+			.I(sdram_data[i])
 		);
 	end
 endgenerate
 `else
- 	assign sdram_data = setdout ? sdata : 16'bz;
 	assign indata = sdram_data;
-
 `endif
 
-
+ 	assign sdram_data = setdout ? sdata : 16'bz;
 	assign sdram_ras = ras;
 	assign sdram_cas = cas;
 	assign sdram_we = we;
