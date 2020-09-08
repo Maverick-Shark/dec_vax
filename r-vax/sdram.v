@@ -58,7 +58,7 @@ module sdram #(
 	reg		pack;
 	reg [31:0]	prdata, xprdata;
 
-	reg		need_refresh, setdout, wnum;
+	reg		need_refresh, setdout;
 	wire [15:0]	indata;
 
 	/* RAS/CAS/WE command triple */
@@ -108,12 +108,10 @@ module sdram #(
 		setdout <= 0;
 		if (pmem_stb == 0) begin
 			pack <= 0;
-			wnum <= 0;
 		end
 		{ ras, cas, we } <= NOP;	// none set
 		if (rst) begin
 			state <= STARTUP;
-			wnum <= 0;
 		end else case (state)
 		STARTUP: begin
 			state <= ISETTLE;
@@ -138,7 +136,7 @@ module sdram #(
 		ISETMODE: begin
 			{ ras, cas, we } <= MODE;
 			/* Mode: CAS2, two word at a time, sequential */
-			{ a11, a10, addr } <= 12'b001000100001;
+			{ a11, a10, addr } <= 12'b000000100001;
 			state <= REF2; /* One cycle before idle */
 		end
 
@@ -162,17 +160,12 @@ module sdram #(
 		SETCAS: begin
 			bank <= pmem_addr[9:8];
 			/* Note: precharge after use (closes row) */
-			{ a11, a10, addr } <= { 3'b010, pmem_addr[7:0], wnum };
+			{ a11, a10, addr } <= { 3'b010, pmem_addr[7:0], 1'b0 };
 			if (pmem_write) begin
 				{ ras, cas, we } <= WRITE;
 				setdout <= 1;
-				if (wnum == 0)
 					sdata <= xprdata[15:0];
-				else
-					sdata <= xprdata[31:16];
-				state <= REF2;
-				if (wnum)
-					pack <= 1;
+				state <= WRITE2;
 			end else begin
 				{ ras, cas, we } <= READ;
 				state <= READ1;
@@ -191,21 +184,15 @@ module sdram #(
 			pack <= 1;
 		end
 
-`ifdef notdef
 		WRITE2: begin
 			setdout <= 1;
 			state <= REF2;
 			sdata <= xprdata[31:16];
 			pack <= 1;
 		end
-`endif
 
 		REF1: state <= REF2;
-		REF2: begin
-			if (pmem_stb)
-				wnum <= 1;
-			state <= REF3;
-		end
+		REF2: state <= REF3;
 		REF3: state <= IDLE;
 		default: state <= IDLE;
 		endcase
