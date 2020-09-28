@@ -79,8 +79,9 @@
 // `define	O_OCTA	3'd0
 
 /* operand access type */
-`define	O_R	5'b10000
-`define	O_W	5'b01000
-`define	O_M	5'b00100
-`define	O_A	5'b00010
-`define	O_V	5'b00001
+`define	O_R	3'b100
+`define	O_W	3'b010
+`define	O_M	3'b110
+`define	O_A	3'b001
+`define	O_B	3'b011
+

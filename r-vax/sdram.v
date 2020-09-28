@@ -226,7 +226,7 @@ genvar i;
 generate
 	for (i=0; i < 16; i = i + 1) begin : ibuf
 		IBUF #(
-			.IBUF_DELAY_VALUE("6"),
+			.IBUF_DELAY_VALUE("9"),
 			.IFD_DELAY_VALUE("AUTO"),
 			.IOSTANDARD("DEFAULT")
 		) ibuf_data (

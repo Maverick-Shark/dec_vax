@@ -7,76 +7,126 @@
 /*
  * VAX instruction decoder.
  *
- * There are two tables kept here.
- * 1) A mapping table that gives an offset into the state table for each instruction
- * 2) A state table that resturn the states that should be executed for an instruction.
+ * The table kept here tells which argument(s) and in which order they
+ * should be evaluated.  Also the number of args for an instruction is here.
+ *
+ * An instruction may have 0-6 arguments.  Each argument may be of type
+ * Read, Write, Modify, Address and Branch.  This is encoded in three bits;
+ *	read:	100
+ *	write	010
+ *	modify:	110
+ *	addr:	001
+ *	branch:	011
+ *
+ *	The size of the arg is in two bits;
+ *	byte	00
+ *	word	01
+ *	long	10
+ *	quad	11
  */
 
-`define	SIMPOFF3	8'd1
-`define	SIMPOFF2	8'd2
-`define	SIMPOFF1	8'd3
-`define	BROFF		8'd5
+
 
 module decode(
-	input [7:0] insn,
-	input [7:0] nstate,
-	output [7:0] stateoff,
-	output [7:0] opoff
+	input [7:0]	insn,
+	input [2:0]	current_arg,
+
+	output [2:0]	num_args,
+	output		arg_R,
+	output		arg_W,
+	output		arg_A,
+	output [1:0]	arg_size
 );
 
 	(* rom_style = "BLOCK" *)
-	reg [7:0] optbl;
+	reg [29:0] argtbl;
 	(* rom_style = "BLOCK" *)
-	reg [7:0] statetbl;
+	reg [2:0] numarg;
 
+	/*
+	 * Argument size table.
+	 */
 	always @* begin
-		case (nstate)
-		default: 	statetbl = `S_HALT;
-		8'd0:		statetbl = `S_HALT;
-		`SIMPOFF3:	statetbl = `S_ARG;
-		`SIMPOFF2:	statetbl = `S_ARG;
-		`SIMPOFF1:	statetbl = `S_ARG;
-		8'd4:		statetbl = `S_SOP;
-		`BROFF:		statetbl = `S_BR;
+		case (insn)
+		default: numarg = 2'd0;
+		`I_BRB: numarg = 2'd1;		// 11
+		`I_BNEQ: numarg = 2'd1;		// 12
+		`I_BEQL: numarg = 2'd1;		// 13
+		`I_BGTR: numarg = 2'd1;		// 14
+		`I_BLEQ: numarg = 2'd1;		// 15
+
+		`I_BGEQ: numarg = 2'd1;		// 18
+		`I_BLSS: numarg = 2'd1;		// 19
+		`I_BGTRU: numarg = 2'd1;	// 1a
+		`I_BLEQU: numarg = 2'd1;	// 1b
+		`I_BVC:	 numarg = 2'd1;		// 1c
+		`I_BVS:	 numarg = 2'd1;		// 1d
+		`I_BCC:	 numarg = 2'd1;		// 1e
+		`I_BCS:	 numarg = 2'd1;		// 1f
+
+		`I_BRW:	 numarg = 2'd1;		// 31
+
+		`I_BISPSW: 	numarg = 2'd1;	// b8
+		`I_BICPSW: 	numarg = 2'd1;	// b9
+
+		`I_ADDL2: numarg = 2'd2;	// c0
+		`I_ADDL3: numarg = 2'd3;	// c1
+
+		`I_MOVL: numarg = 2'd2;	// d0
 		endcase
 	end
 
 	/*
-	 * get index into state table based on instruction.
+	 * Argument state table.
 	 */
 	always @* begin
 		case (insn)
-		default:	optbl = 0;
-		`I_BRB:		optbl = `BROFF;		// 11
-		`I_BNEQ:	optbl = `BROFF;		// 12
-		`I_BEQL:	optbl = `BROFF;		// 13
-		`I_BGTR:	optbl = `BROFF;		// 14
-		`I_BLEQ:	optbl = `BROFF;		// 15
+		default: argtbl = 30'b0;
+		`I_BRB: argtbl = { 25'b0, `O_BYTE, `O_B };	// 11
+		`I_BNEQ: argtbl = { 25'b0, `O_BYTE, `O_B };	// 12
+		`I_BEQL: argtbl = { 25'b0, `O_BYTE, `O_B };	// 13
+		`I_BGTR: argtbl = { 25'b0, `O_BYTE, `O_B };	// 14
+		`I_BLEQ: argtbl = { 25'b0, `O_BYTE, `O_B };	// 15
 
-		`I_BGEQ:	optbl = `BROFF;		// 18
-		`I_BLSS:	optbl = `BROFF;		// 19
-		`I_BGTRU:	optbl = `BROFF;		// 1a
-		`I_BLEQU:	optbl = `BROFF;		// 1b
-		`I_BVC:		optbl = `BROFF;		// 1c
-		`I_BVS:		optbl = `BROFF;		// 1d
-		`I_BCC:		optbl = `BROFF;		// 1e
-		`I_BCS:		optbl = `BROFF;		// 1f
+		`I_BGEQ: argtbl = { 25'b0, `O_BYTE, `O_B };	// 18
+		`I_BLSS: argtbl = { 25'b0, `O_BYTE, `O_B };	// 19
+		`I_BGTRU: argtbl = { 25'b0, `O_BYTE, `O_B };	// 1a
+		`I_BLEQU: argtbl = { 25'b0, `O_BYTE, `O_B };	// 1b
+		`I_BVC:	 argtbl = { 25'b0, `O_BYTE, `O_B };	// 1c
+		`I_BVS:	 argtbl = { 25'b0, `O_BYTE, `O_B };	// 1d
+		`I_BCC:	 argtbl = { 25'b0, `O_BYTE, `O_B };	// 1e
+		`I_BCS:	 argtbl = { 25'b0, `O_BYTE, `O_B };	// 1f
 
+		`I_BRW:	 argtbl = { 25'b0, `O_WORD, `O_B };	// 31
 
-		`I_BRW:		optbl = `BROFF;		// 31
+		`I_BISPSW: 	argtbl = { 25'b0, `O_WORD, `O_B };	// b8
+		`I_BICPSW: 	argtbl = { 25'b0, `O_WORD, `O_B };	// b9
 
-		`I_BISPSW:	optbl = `SIMPOFF1;	// b8
-		`I_BICPSW:	optbl = `SIMPOFF1;	// b9
+		`I_ADDL2: argtbl =
+			{ 20'b0, `O_LONG, `O_M, `O_LONG, `O_R };	// c0
+		`I_ADDL3: argtbl = { 15'b0,  `O_LONG, `O_W,
+				`O_LONG, `O_R, `O_LONG, `O_R };		// c1
 
-		`I_ADDL2:	optbl = `SIMPOFF2;	// c0
-		`I_ADDL3:	optbl = `SIMPOFF3;	// c1
-
-		`I_MOVL:	optbl = `SIMPOFF2;	// d0
+		`I_MOVL: argtbl =
+			{ 20'b0, `O_LONG, `O_W, `O_LONG, `O_R };	// d0
 		endcase
 	end
 
-	assign stateoff = statetbl;
-	assign opoff = optbl;
+	/* get correct parameters based on current arg */
+	reg [4:0] retarg;
+	always @* begin
+		case (current_arg)
+		default: retarg = argtbl[4:0];
+		3'd1:	retarg = argtbl[9:5];
+		3'd2:	retarg = argtbl[14:10];
+		3'd3:	retarg = argtbl[19:15];
+		3'd4:	retarg = argtbl[24:20];
+		3'd5:	retarg = argtbl[29:25];
+		endcase
+	end
+
+	assign { arg_size, arg_R, arg_W, arg_A } = retarg[4:0];
+	assign num_args = numarg;
 
 endmodule
 
