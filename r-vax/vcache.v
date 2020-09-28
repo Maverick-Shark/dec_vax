@@ -1,5 +1,9 @@
+/*	$Id$	*/
 
 `timescale 1ns / 1ps
+`default_nettype none
+
+`include "opcodes.vh"
 
 /*
  * simple virtual cache, which also converts unaligned accesses to aligned.
@@ -20,17 +24,15 @@ module vcache(
 	input		clk,
 	input		rst,
 
-/* verilator lint_off UNUSED */
 	input [31:0]	in_addr,
-/* verilator lint_on UNUSED */
 	input [31:0]	in_wdata,
 	input		in_write,
 	input		in_stb,
-	input [1:0]	in_sz,		// 0 == byte, 1 == word, 3 == long
+	input [1:0]	in_sz,
 	output reg [31:0] in_rdata,
 	output reg	in_ack,
 
-	output reg [21:0] ut_addr,
+	output reg [29:0] ut_addr,
 	output reg [31:0] ut_wdata,
 	output reg 	ut_write,
 	output reg 	ut_stb,
@@ -41,15 +43,15 @@ module vcache(
 	reg [3:0]	state;
 	reg		needtwo;
 	reg [31:0]	shifted_bytes;
-	reg [21:0]	caddr;
+	reg [29:0]	caddr;
 	reg [1:0]	coff, csz;
 
 	/* read/write cases when we need two words */
 	always @* begin
 		casez ({csz, coff })
 		4'b01_11: needtwo = 1; // word on addr 3
-		4'b11_01: needtwo = 1;
-		4'b11_1?: needtwo = 1;
+		4'b10_01: needtwo = 1;
+		4'b10_1?: needtwo = 1;
 		default: needtwo = 0;
 		endcase
 	end
@@ -69,10 +71,10 @@ module vcache(
 		4'b01_10: merged_write_word = { quad[63:32], in_wdata[15:0], quad[15:0] };
 		4'b01_11: merged_write_word = { quad[63:40], in_wdata[15:0], quad[23:0] };
 
-		4'b11_00: merged_write_word = { quad[63:32], in_wdata };
-		4'b11_01: merged_write_word = { quad[63:40], in_wdata, quad[7:0] };
-		4'b11_10: merged_write_word = { quad[63:48], in_wdata, quad[15:0] };
-		4'b11_11: merged_write_word = { quad[63:56], in_wdata, quad[23:0] };
+		4'b10_00: merged_write_word = { quad[63:32], in_wdata };
+		4'b10_01: merged_write_word = { quad[63:40], in_wdata, quad[7:0] };
+		4'b10_10: merged_write_word = { quad[63:48], in_wdata, quad[15:0] };
+		4'b10_11: merged_write_word = { quad[63:56], in_wdata, quad[23:0] };
 		default: merged_write_word = 0; /* ILLEGAL */
 		endcase
 	end
@@ -100,12 +102,12 @@ module vcache(
 			else if (in_stb == 0)
 				in_ack <= 0;
 			else begin
-				ut_addr <= in_addr[23:2];
+				ut_addr <= in_addr[31:2];
 				ut_stb <= 1;
-				caddr <= in_addr[23:2];
+				caddr <= in_addr[31:2];
 				coff <= in_addr[1:0];
 				csz <= in_sz;
-				if (in_addr[1:0] == 2'b00 && in_sz == 2'b11) begin
+				if (in_addr[1:0] == 2'b00 && in_sz == `O_LONG) begin
 					/* fastpath, aligned longword access */
 					ut_write <= in_write;
 					ut_wdata <= in_wdata;

@@ -9,10 +9,6 @@
  * VAX CPU
  */
 
-`define	MEM_BYTE	2'b00
-`define	MEM_WORD	2'b01
-`define	MEM_LONG	2'b11
-
 module cpu(
 	input clk,
 	input rst,
@@ -379,7 +375,7 @@ module cpu(
 					else
 						OA <= OA + cur_reg_val;
 					if (arg_defer) begin
-						cpu_size <= `MEM_LONG;
+						cpu_size <= `O_LONG;
 						state <= `S_READMEM;
 						fillstate <= `S_INDOA;
 					end else begin
@@ -563,7 +559,7 @@ module cpu(
 			cpu_addr <= { curpc[31:2], 2'b00 };
 			cpu_write <= 0;
 			cpu_stb <= 1;
-			cpu_size <= `MEM_LONG;
+			cpu_size <= `O_LONG;
 			if (cpu_ack) begin
 				inslword <= cpu_rdata;
 				itag <= curpc[31:2];

@@ -1,5 +1,7 @@
 /*	$Id$	*/
 `timescale 1ns / 1ps
+`default_nettype none
+
 /*
  * Simple SDRAM controller for the Hynix SDRAM chip, 2M * 4 bank * 16 bit.
  * Runs at 50MHz, CAS2, burst 1.
@@ -36,7 +38,7 @@ module sdram #(
 	output [1:0]	sdram_ba,
 	inout [15:0]	sdram_data,
 
-	input [21:0]	pmem_addr,	// note: longword addressing.
+	input [29:0]	pmem_addr,	// note: longword addressing.
 	input		pmem_write,
 	input [31:0]	pmem_wdata,
 	input		pmem_stb,
@@ -47,7 +49,7 @@ module sdram #(
 	/* Request that all registers for comm with sdram is in IOBs */
 
 	(* IOB = "TRUE" *)
-	reg		ras, cas, we, a11, a10, cs;
+	reg		ras, cas, we, a11, a10;
 	(* IOB = "TRUE" *)
 	reg [9:0]	addr;
 	(* IOB = "TRUE" *)
@@ -98,11 +100,13 @@ module sdram #(
 
 	reg [15:0]	timer;
 
+	wire cs;
+	assign cs = |pmem_addr[29:22];
+
 	always @(posedge clk) begin
 		timer <= timer + 1;
 		if (timer[7:0] == 8'b0)
 			need_refresh <= 1;
-		cs <= 0;
 		{ a11, a10, addr } <= 0;	// default address 0
 		bank <= 0;
 		setdout <= 0;
