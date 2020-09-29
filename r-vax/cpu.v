@@ -40,11 +40,15 @@ module cpu(
 	 * arg1p is pointer to the destination (if memory and W|A|M) 
 	 * argd1 is destination for value.
 	 */
+/* verilator lint_off UNDRIVEN */
+/* verilator lint_off UNUSED */
 	reg [31:0]	arg1, arg2, arg3, arg4, argd1, arg1p, arg2p;
 	reg		num_arg, num_argd, num_argp;
 	reg		arg1p_isreg, arg2p_isreg;
 	reg [3:0]	arg1p_regnum, arg2p_regnum;
 	reg [1:0]	arg1p_size, arg2p_size;
+/* verilator lint_on UNDRIVEN */
+/* verilator lint_on UNUSED */
 
 	reg [`STATBITS-1:0]	state, fillstate;
 	// synthesis attribute INIT of state is "0"
@@ -108,7 +112,9 @@ module cpu(
 	reg [2:0] cur_arg_number; // cleared in FETCH, increased in ARGEND
 	reg arg_defer;		// indirect flag set.
 	reg notrash;		// don't trash OA if reading from mem
+/* verilator lint_off UNUSED */
 	reg [3:0] argaddto;	// for increment arguments
+/* verilator lint_on UNUSED */
 	wire [7:0] decode_inst;
 	wire [2:0] decode_arg;
 	wire [2:0] num_args;
@@ -228,6 +234,7 @@ module cpu(
 						else
 							reg_rdata<= cur_reg_val;
 					end
+					default: reg_rdata <= 0;
 					endcase
 				end
 				reg_ack <= 1;
@@ -420,12 +427,12 @@ module cpu(
 		`S_ARGEND: begin
 			if (arg_R) begin
 				case (num_arg)
-				2'b00: arg1 <= OP;
-				2'b01: arg2 <= OP;
-				2'b10: arg2 <= OP; // XX
-				2'b11: arg2 <= OP; // XX
+				1'b0: arg1 <= OP;
+				1'b1: arg2 <= OP;
+		//		2'b10: arg2 <= OP; // XX
+		//		2'b11: arg2 <= OP; // XX
 				endcase
-				num_arg <= num_arg + 1;
+				num_arg <= 1;
 			end
 
 			if (arg_W | arg_A) begin
@@ -492,9 +499,9 @@ module cpu(
 					state <= `S_HALT;
 				end else begin
 					if (cur_inst[0]) // bicpsw
-						psw <= psw[3:0] & ~arg1[3:0];
+						psw[3:0] <= psw[3:0] & ~arg1[3:0];
 					else  // bispsw
-						psw <= psw | arg1[3:0];
+						psw <= psw | { 4'b0, arg1[3:0]};
 				end
 			end
 			default: begin state <= `S_HALT; haltpos <= 13; end

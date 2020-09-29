@@ -48,31 +48,31 @@ module decode(
 	 */
 	always @* begin
 		case (insn)
-		default: numarg = 2'd0;
-		`I_BRB: numarg = 2'd1;		// 11
-		`I_BNEQ: numarg = 2'd1;		// 12
-		`I_BEQL: numarg = 2'd1;		// 13
-		`I_BGTR: numarg = 2'd1;		// 14
-		`I_BLEQ: numarg = 2'd1;		// 15
+		default: numarg = 3'd0;
+		`I_BRB: numarg = 3'd1;		// 11
+		`I_BNEQ: numarg = 3'd1;		// 12
+		`I_BEQL: numarg = 3'd1;		// 13
+		`I_BGTR: numarg = 3'd1;		// 14
+		`I_BLEQ: numarg = 3'd1;		// 15
 
-		`I_BGEQ: numarg = 2'd1;		// 18
-		`I_BLSS: numarg = 2'd1;		// 19
-		`I_BGTRU: numarg = 2'd1;	// 1a
-		`I_BLEQU: numarg = 2'd1;	// 1b
-		`I_BVC:	 numarg = 2'd1;		// 1c
-		`I_BVS:	 numarg = 2'd1;		// 1d
-		`I_BCC:	 numarg = 2'd1;		// 1e
-		`I_BCS:	 numarg = 2'd1;		// 1f
+		`I_BGEQ: numarg = 3'd1;		// 18
+		`I_BLSS: numarg = 3'd1;		// 19
+		`I_BGTRU: numarg = 3'd1;	// 1a
+		`I_BLEQU: numarg = 3'd1;	// 1b
+		`I_BVC:	 numarg = 3'd1;		// 1c
+		`I_BVS:	 numarg = 3'd1;		// 1d
+		`I_BCC:	 numarg = 3'd1;		// 1e
+		`I_BCS:	 numarg = 3'd1;		// 1f
 
-		`I_BRW:	 numarg = 2'd1;		// 31
+		`I_BRW:	 numarg = 3'd1;		// 31
 
-		`I_BISPSW: 	numarg = 2'd1;	// b8
-		`I_BICPSW: 	numarg = 2'd1;	// b9
+		`I_BISPSW: 	numarg = 3'd1;	// b8
+		`I_BICPSW: 	numarg = 3'd1;	// b9
 
-		`I_ADDL2: numarg = 2'd2;	// c0
-		`I_ADDL3: numarg = 2'd3;	// c1
+		`I_ADDL2: numarg = 3'd2;	// c0
+		`I_ADDL3: numarg = 3'd3;	// c1
 
-		`I_MOVL: numarg = 2'd2;	// d0
+		`I_MOVL: numarg = 3'd2;	// d0
 		endcase
 	end
 
