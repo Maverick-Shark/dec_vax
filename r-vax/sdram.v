@@ -100,8 +100,7 @@ module sdram #(
 
 	reg [15:0]	timer;
 
-	wire cs;
-	assign cs = |pmem_addr[29:22];
+	reg cs;
 
 	always @(posedge clk) begin
 		timer <= timer + 1;
@@ -118,6 +117,7 @@ module sdram #(
 			state <= STARTUP;
 		end else case (state)
 		STARTUP: begin
+			cs <= 0;
 			state <= ISETTLE;
 			timer <= 0;
 		end
@@ -147,11 +147,14 @@ module sdram #(
 
 		/* default state */
 		IDLE: begin
+			cs <= 1;
 			if (need_refresh) begin
+				cs <= 0;
 				{ ras, cas, we } <= AUTO_REFRESH;
 				state <= REF1;
 				need_refresh <= 0;
 			end else if (pmem_stb) begin
+				cs <= |pmem_addr[29:22];
 				/* do something; open row */
 				{ ras, cas, we } <= ACTIVATE;
 				bank <= pmem_addr[9:8];
@@ -190,7 +193,7 @@ module sdram #(
 
 		WRITE2: begin
 			setdout <= 1;
-			state <= REF2;
+			state <= REF1;
 			sdata <= xprdata[31:16];
 			pack <= 1;
 		end
