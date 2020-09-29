@@ -43,7 +43,7 @@ module vcache(
 	reg [3:0]	state;
 	reg		needtwo;
 	reg [31:0]	shifted_bytes;
-	reg [29:0]	caddr;
+	reg [29:0]	caddrl, caddrh;
 	reg [1:0]	coff, csz;
 
 	/* read/write cases when we need two words */
@@ -104,7 +104,8 @@ module vcache(
 			else begin
 				ut_addr <= in_addr[31:2];
 				ut_stb <= 1;
-				caddr <= in_addr[31:2];
+				caddrl <= in_addr[31:2];
+				caddrh <= in_addr[31:2] + 1;
 				coff <= in_addr[1:0];
 				csz <= in_sz;
 				if (in_addr[1:0] == 2'b00 && in_sz == `O_LONG) begin
@@ -128,8 +129,8 @@ module vcache(
 			/* got first word */
 			quad[31:0] <= ut_rdata;
 			ut_stb <= 0;
-			if (needtwo) begin // get another word
-				ut_addr <= caddr + 1;
+			if (1 || needtwo) begin // get another word
+				ut_addr <= caddrh;
 				state <= `SLOWRMEM2;
 			end else if (in_write == 0) begin
 				state <= `RETWD;
@@ -153,10 +154,10 @@ module vcache(
 
 		`SETWD: if (ut_ack == 0) begin
 			ut_wdata <= merged_write_word[31:0];
-			ut_addr <= caddr;
+			ut_addr <= caddrl;
 			ut_write <= 1;
 			ut_stb <= 1;
-			if (needtwo) begin
+			if (1 || needtwo) begin
 				state <= `WRHIGH;
 			end else begin
 				in_ack <= 1;
@@ -167,7 +168,7 @@ module vcache(
 		`WRHIGH: if (ut_ack) begin
 			ut_stb <= 0;
 			ut_wdata <= merged_write_word[63:32];
-			ut_addr <= caddr + 22'd1;
+			ut_addr <= caddrh;
 			ut_write <= 1;
 			state <= `WRHIGH2;
 		end

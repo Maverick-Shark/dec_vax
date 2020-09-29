@@ -24,6 +24,8 @@
 // `define HALFCLOCK
 // `define	BLOCKRAM
 
+`include "opcodes.vh"
+
 /*
  * The memory address bus is 32 bit, 32 bit wide.
  */
