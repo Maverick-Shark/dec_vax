@@ -72,7 +72,9 @@ module decode(
 		`I_ADDL2: numarg = 3'd2;	// c0
 		`I_ADDL3: numarg = 3'd3;	// c1
 
-		`I_MOVL: numarg = 3'd2;	// d0
+		`I_MOVL: numarg = 3'd2;		// d0
+
+		`I_CLRL: numarg = 3'd1;		// d4
 		endcase
 	end
 
@@ -109,6 +111,8 @@ module decode(
 
 		`I_MOVL: argtbl =
 			{ 20'b0, `O_LONG, `O_W, `O_LONG, `O_R };	// d0
+
+		`I_CLRL: argtbl = { 25'b0, `O_LONG, `O_W };		// d4
 		endcase
 	end
 

@@ -185,7 +185,7 @@ module cpu(
 	/*
 	 * evaluation definitions.
 	 */
-	reg		calc_vnzc;
+	reg		calc_vnzc, set_vnz_dest;
 
 	/*
 	 * Program counter mgmt. curpc is the "live" version. greg[15] is
@@ -489,7 +489,16 @@ module cpu(
 				writeback <= 1;
 				calc_vnzc <= 1;
 			end
-			`I_MOVL: begin argd1 <= arg1; writeback <= 1; end
+			`I_MOVL: begin
+				argd1 <= arg1;
+				writeback <= 1;
+				set_vnz_dest <= 1;
+			end
+			`I_CLRL: begin
+				argd1 <= 0;
+				writeback <= 1;
+				set_vnz_dest <= 1;
+			end
 			`I_BISPSW, `I_BICPSW: begin
 				//  XXX handle exceptions in instr read
 				if (|arg1[15:8]) begin
@@ -549,6 +558,11 @@ module cpu(
 			if (set_branch_pc)
 				curpc <= pc_plus_arg1;
 			set_branch_pc <= 0;
+			if (set_vnz_dest) begin
+				psw[`PSL_N] <= argd1[31];
+				psw[`PSL_Z] <= ~|argd1;
+				psw[`PSL_V] <= 0;
+			end
 			if (calc_vnzc) begin
 				psw[`PSL_C] <= Ctmp;
 				psw[`PSL_N] <= argd1[31];
