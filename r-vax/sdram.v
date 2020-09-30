@@ -117,12 +117,13 @@ module sdram #(
 			state <= STARTUP;
 		end else case (state)
 		STARTUP: begin
-			cs <= 0;
+			cs <= 1;
 			state <= ISETTLE;
 			timer <= 0;
 		end
 		ISETTLE: if (timer == SETTLETIME) begin
 			/* after 200us precharge all */
+			cs <= 0;
 			{ ras, cas, we } <= PRECHARGE_ALL;
 			a10 <= 1;
 			state <= ICHARGE;

@@ -176,6 +176,11 @@ module vcache(
 		`WRHIGH2: if (ut_ack == 0) begin
 			ut_stb <= 1;
 			in_ack <= 1;
+			state <= `WRHIGH3;
+		end
+
+		`WRHIGH3: if (ut_ack) begin
+			ut_stb <= 0;
 			state <= `IDLE;
 		end
 
