@@ -1,6 +1,8 @@
 /*	$Id$	*/
 
+#include <fcntl.h>
 #include <stdio.h>
+#include <err.h>
 
 #include "Vnvax.h"
 #include "verilated.h"
@@ -24,7 +26,8 @@ const static char *cmd[] = {	// { ras, cas, we }
 	"Nop"		// 111
 };
 
-unsigned short sdramet[16*1024*1024/2];
+#define	SDRAMSZ	(16*1024*1024)
+unsigned short sdramet[SDRAMSZ/2];
 
 int debug = 0;
 
@@ -115,3 +118,18 @@ sdramexec(Vnvax *tb)
 	}
 }
 
+void
+loadfile(char *fn, int off)
+{
+	int fd, s;
+
+	if ((fd = open(fn, O_RDONLY)) < 0)
+		err(1, "open");
+
+	if ((s = read(fd, sdramet+off, SDRAMSZ-off)) < 0)
+		err(1, "read");
+
+	fprintf(stderr, "read %d bytes\n", s);
+
+	close(fd);
+}

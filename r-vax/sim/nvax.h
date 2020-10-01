@@ -7,6 +7,7 @@ void ttoexec(Vnvax *tb);
 void ttiexec(Vnvax *tb);
 void ttiinit(void);
 void tick(Vnvax *tb);
+void loadfile(char *, int);
 
 extern int tto_active, tti_active;
 extern volatile int ttisig;

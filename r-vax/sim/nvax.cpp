@@ -1,6 +1,8 @@
 /*	$Id$	*/
 
+#include <err.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 #include "Vnvax.h"
 #include "verilated.h"
@@ -9,12 +11,32 @@
 
 unsigned long nticks;
 void dumpvcache(Vnvax *tb);
+void loadfile(char *, int);
 
 int main(int argc, char **argv)
 {
 	Verilated::commandArgs(argc, argv);
 	Vnvax *tb = new Vnvax;
-	int needeval;
+	int needeval, off, ch;
+	char *fn;
+
+	fn = NULL;
+	off = 0;
+	while ((ch = getopt(argc, argv, "o:f:")) != -1)
+		switch (ch) {
+		case 'o': // offset
+			off = strtol(optarg, 0, 0);
+			break;
+		case 'f': // offset
+			fn = optarg;
+			break;
+		default:
+			errx(1, "unknown arg");
+		}
+
+	if (fn)
+		loadfile(fn, off);
+
 
 	ttiinit();
 
