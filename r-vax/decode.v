@@ -66,6 +66,10 @@ module decode(
 
 		`I_BRW:	 numarg = 3'd1;		// 31
 
+		`I_CLRB: numarg = 3'd1;		// 94
+
+		`I_CLRW: numarg = 3'd1;		// b4
+
 		`I_BISPSW: 	numarg = 3'd1;	// b8
 		`I_BICPSW: 	numarg = 3'd1;	// b9
 
@@ -75,6 +79,8 @@ module decode(
 		`I_MOVL: numarg = 3'd2;		// d0
 
 		`I_CLRL: numarg = 3'd1;		// d4
+
+		`I_ADWC: numarg = 2'd1;		// d8
 		endcase
 	end
 
@@ -101,8 +107,12 @@ module decode(
 
 		`I_BRW:	 argtbl = { 25'b0, `O_WORD, `O_B };	// 31
 
-		`I_BISPSW: 	argtbl = { 25'b0, `O_WORD, `O_B };	// b8
-		`I_BICPSW: 	argtbl = { 25'b0, `O_WORD, `O_B };	// b9
+		`I_CLRB: argtbl = { 25'b0, `O_BYTE, `O_W };		// 94
+
+		`I_CLRW: argtbl = { 25'b0, `O_WORD, `O_W };		// b4
+
+		`I_BISPSW: 	argtbl = { 25'b0, `O_WORD, `O_R };	// b8
+		`I_BICPSW: 	argtbl = { 25'b0, `O_WORD, `O_R };	// b9
 
 		`I_ADDL2: argtbl =
 			{ 20'b0, `O_LONG, `O_M, `O_LONG, `O_R };	// c0
@@ -113,6 +123,9 @@ module decode(
 			{ 20'b0, `O_LONG, `O_W, `O_LONG, `O_R };	// d0
 
 		`I_CLRL: argtbl = { 25'b0, `O_LONG, `O_W };		// d4
+
+		`I_ADWC: argtbl =
+			{ 20'b0, `O_LONG, `O_M, `O_LONG, `O_R };	// d8
 		endcase
 	end
 

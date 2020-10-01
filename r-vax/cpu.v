@@ -192,9 +192,8 @@ module cpu(
 	 * only updated between instructions.
 	 */
 	reg set_branch_pc, delay_halt;
-	wire [31:0] pc_plus_1, pc_plus_arg1;
+	wire [31:0] pc_plus_1;
 	assign pc_plus_1 = curpc + 1;
-	assign pc_plus_arg1 = curpc + arg1;
 
 	always @(posedge clk) begin
 
@@ -494,7 +493,7 @@ module cpu(
 				writeback <= 1;
 				set_vnz_dest <= 1;
 			end
-			`I_CLRL: begin
+			`I_CLRB, `I_CLRW, `I_CLRL: begin
 				argd1 <= 0;
 				writeback <= 1;
 				set_vnz_dest <= 1;
@@ -556,7 +555,7 @@ module cpu(
 				state <= `S_WREG;
 			end
 			if (set_branch_pc)
-				curpc <= pc_plus_arg1;
+				curpc <= arg1p;
 			set_branch_pc <= 0;
 			if (set_vnz_dest) begin
 				psw[`PSL_N] <= argd1[31];

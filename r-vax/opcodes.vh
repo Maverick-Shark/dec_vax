@@ -71,6 +71,8 @@
 
 `define I_CLRL	8'hd4
 
+`define I_ADWC	8'hd8
+
 /* operand data size */
 `define	O_BYTE	2'd0
 `define	O_WORD	2'd1
