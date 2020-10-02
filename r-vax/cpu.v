@@ -81,7 +81,7 @@ module cpu(
 
 
 
-	reg [31:0] curpc;
+	reg [31:0] curpc, oldpc;
 	wire [31:0] cur_reg_val_subsz;
 	wire [31:0] cur_reg_val;
 //	wire [1:0] curbyte;
@@ -217,6 +217,7 @@ module cpu(
 				end else begin
 					casez (reg_addr)
 					5'h1f: reg_rdata <= { 24'd0, psw };
+					5'h1e: reg_rdata <= oldpc;
 					5'h1d: reg_rdata <= { 24'b0, haltpos };
 					5'h1c: reg_rdata <= inslword;
 					5'h1b: reg_rdata <= { itag, 1'b0, ivalid };
@@ -257,6 +258,7 @@ module cpu(
 				num_argp <= 0;
 				cur_arg_number <= 0;
 				isindex <= 0;
+				oldpc <= curpc;
 				curpc <= pc_plus_1;
 				state <= `S_DECODE;
 			end else begin
