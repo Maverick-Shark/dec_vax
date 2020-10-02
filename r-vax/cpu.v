@@ -494,6 +494,14 @@ module cpu(
 				writeback <= 1;
 				calc_vnzc <= 1;
 			end
+			`I_MOVAB, `I_MOVAW, `I_MOVAL: begin
+				argd1 <= arg1p;
+				arg1p <= arg2p;
+				arg1p_regnum <= arg2p_regnum;
+				arg1p_isreg <= arg2p_isreg;
+				writeback <= 1;
+				set_vnz_dest <= 1;
+			end
 			`I_MOVL: begin
 				argd1 <= arg1;
 				writeback <= 1;

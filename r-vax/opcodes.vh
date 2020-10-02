@@ -51,7 +51,11 @@
 
 `define	I_BRW	8'h31
 
+`define I_MOVAW	8'h3e
+
 `define I_CLRB	8'h94
+
+`define I_MOVAB	8'h9e
 
 `define I_CLRW	8'hb4
 
@@ -72,6 +76,8 @@
 `define I_CLRL	8'hd4
 
 `define I_ADWC	8'hd8
+
+`define I_MOVAL	8'hde
 
 /* operand data size */
 `define	O_BYTE	2'd0
