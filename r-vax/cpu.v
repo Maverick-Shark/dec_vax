@@ -123,6 +123,7 @@ module cpu(
 	assign decode_inst = (state == `S_FETCH ? cur_byte : cur_inst);
 	assign decode_arg = (state == `S_FETCH ? 3'b0 : cur_arg_number);
 	decode decode(
+		.clk(clk),
 		.insn(decode_inst),		// instruction input
 		.current_arg(decode_arg),	// Current arg # input
 
@@ -196,7 +197,6 @@ module cpu(
 	assign pc_plus_1 = curpc + 1;
 
 	always @(posedge clk) begin
-
 		if (rst)
 			state <= `S_HALT;
 		else
@@ -257,18 +257,21 @@ module cpu(
 				num_argp <= 0;
 				cur_arg_number <= 0;
 				isindex <= 0;
-
 				curpc <= pc_plus_1;
-				if (num_args == 3'b0)
-					state <= `S_EXECUTE;
-				else if (arg_R == 0 && (arg_W & arg_A))
-					state <= `S_BRARGS;
-				else
-					state <= `S_ARG;
+				state <= `S_DECODE;
 			end else begin
 				state <= `S_FILLUP;
 				fillstate <= `S_FETCH;
 			end
+		end
+
+		`S_DECODE: begin
+			if (num_args == 3'b0)
+				state <= `S_EXECUTE;
+			else if (arg_R == 0 && (arg_W & arg_A))
+				state <= `S_BRARGS;
+			else
+				state <= `S_ARG;
 		end
 
 		/* Read a longword and put into current arg reg */
@@ -464,7 +467,6 @@ module cpu(
 		 */
 		`S_EXECUTE: begin
 			state <= `S_ENDINST;
-			Ctmp <= psw[`PSL_C];
 			case (cur_inst)
 			`I_BRB, `I_BRW: set_branch_pc <= 1;
 			`I_BNEQ: if (psw[`PSL_Z] == 0) set_branch_pc <= 1;
@@ -482,9 +484,11 @@ module cpu(
 			`I_BVS: if (psw[`PSL_V] == 1) set_branch_pc <= 1;
 			`I_BCC: if (psw[`PSL_C] == 0) set_branch_pc <= 1;
 			`I_BCS: if (psw[`PSL_C] == 1) set_branch_pc <= 1;
-			`I_ADDL2, `I_ADDL3: begin
+			`I_ADDL2, `I_ADDL3, `I_ADWC: begin
 				{ Ctmp, argd1 } <=
-				    { 1'b0, arg1 } + { 1'b0, arg2 };
+				    { 1'b0, arg1 } + { 1'b0, arg2 } +
+				    (cur_inst == `I_ADWC ?
+				    { 32'b0, psw[`PSL_C] } : 33'd0);
 				writeback <= 1;
 				calc_vnzc <= 1;
 			end
@@ -621,6 +625,5 @@ module cpu(
 		default: begin state <= `S_HALT; haltpos <= 7; end
 		endcase
 	end
-
 
 endmodule

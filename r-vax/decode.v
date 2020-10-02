@@ -28,6 +28,7 @@
 
 
 module decode(
+	input		clk,
 	input [7:0]	insn,
 	input [2:0]	current_arg,
 
@@ -46,85 +47,85 @@ module decode(
 	/*
 	 * Argument size table.
 	 */
-	always @* begin
+	always @(posedge clk) begin
 		case (insn)
-		default: numarg = 3'd0;
-		`I_BRB: numarg = 3'd1;		// 11
-		`I_BNEQ: numarg = 3'd1;		// 12
-		`I_BEQL: numarg = 3'd1;		// 13
-		`I_BGTR: numarg = 3'd1;		// 14
-		`I_BLEQ: numarg = 3'd1;		// 15
+		default: numarg <= 3'd0;
+		`I_BRB: numarg <= 3'd1;		// 11
+		`I_BNEQ: numarg <= 3'd1;		// 12
+		`I_BEQL: numarg <= 3'd1;		// 13
+		`I_BGTR: numarg <= 3'd1;		// 14
+		`I_BLEQ: numarg <= 3'd1;		// 15
 
-		`I_BGEQ: numarg = 3'd1;		// 18
-		`I_BLSS: numarg = 3'd1;		// 19
-		`I_BGTRU: numarg = 3'd1;	// 1a
-		`I_BLEQU: numarg = 3'd1;	// 1b
-		`I_BVC:	 numarg = 3'd1;		// 1c
-		`I_BVS:	 numarg = 3'd1;		// 1d
-		`I_BCC:	 numarg = 3'd1;		// 1e
-		`I_BCS:	 numarg = 3'd1;		// 1f
+		`I_BGEQ: numarg <= 3'd1;		// 18
+		`I_BLSS: numarg <= 3'd1;		// 19
+		`I_BGTRU: numarg <= 3'd1;	// 1a
+		`I_BLEQU: numarg <= 3'd1;	// 1b
+		`I_BVC:	 numarg <= 3'd1;		// 1c
+		`I_BVS:	 numarg <= 3'd1;		// 1d
+		`I_BCC:	 numarg <= 3'd1;		// 1e
+		`I_BCS:	 numarg <= 3'd1;		// 1f
 
-		`I_BRW:	 numarg = 3'd1;		// 31
+		`I_BRW:	 numarg <= 3'd1;		// 31
 
-		`I_CLRB: numarg = 3'd1;		// 94
+		`I_CLRB: numarg <= 3'd1;		// 94
 
-		`I_CLRW: numarg = 3'd1;		// b4
+		`I_CLRW: numarg <= 3'd1;		// b4
 
-		`I_BISPSW: 	numarg = 3'd1;	// b8
-		`I_BICPSW: 	numarg = 3'd1;	// b9
+		`I_BISPSW: 	numarg <= 3'd1;	// b8
+		`I_BICPSW: 	numarg <= 3'd1;	// b9
 
-		`I_ADDL2: numarg = 3'd2;	// c0
-		`I_ADDL3: numarg = 3'd3;	// c1
+		`I_ADDL2: numarg <= 3'd2;	// c0
+		`I_ADDL3: numarg <= 3'd3;	// c1
 
-		`I_MOVL: numarg = 3'd2;		// d0
+		`I_MOVL: numarg <= 3'd2;		// d0
 
-		`I_CLRL: numarg = 3'd1;		// d4
+		`I_CLRL: numarg <= 3'd1;		// d4
 
-		`I_ADWC: numarg = 2'd1;		// d8
+		`I_ADWC: numarg <= 2;			// d8
 		endcase
 	end
 
 	/*
 	 * Argument state table.
 	 */
-	always @* begin
+	always @(posedge clk) begin
 		case (insn)
-		default: argtbl = 30'b0;
-		`I_BRB: argtbl = { 25'b0, `O_BYTE, `O_B };	// 11
-		`I_BNEQ: argtbl = { 25'b0, `O_BYTE, `O_B };	// 12
-		`I_BEQL: argtbl = { 25'b0, `O_BYTE, `O_B };	// 13
-		`I_BGTR: argtbl = { 25'b0, `O_BYTE, `O_B };	// 14
-		`I_BLEQ: argtbl = { 25'b0, `O_BYTE, `O_B };	// 15
+		default: argtbl <= 30'b0;
+		`I_BRB: argtbl <= { 25'b0, `O_BYTE, `O_B };	// 11
+		`I_BNEQ: argtbl <= { 25'b0, `O_BYTE, `O_B };	// 12
+		`I_BEQL: argtbl <= { 25'b0, `O_BYTE, `O_B };	// 13
+		`I_BGTR: argtbl <= { 25'b0, `O_BYTE, `O_B };	// 14
+		`I_BLEQ: argtbl <= { 25'b0, `O_BYTE, `O_B };	// 15
 
-		`I_BGEQ: argtbl = { 25'b0, `O_BYTE, `O_B };	// 18
-		`I_BLSS: argtbl = { 25'b0, `O_BYTE, `O_B };	// 19
-		`I_BGTRU: argtbl = { 25'b0, `O_BYTE, `O_B };	// 1a
-		`I_BLEQU: argtbl = { 25'b0, `O_BYTE, `O_B };	// 1b
-		`I_BVC:	 argtbl = { 25'b0, `O_BYTE, `O_B };	// 1c
-		`I_BVS:	 argtbl = { 25'b0, `O_BYTE, `O_B };	// 1d
-		`I_BCC:	 argtbl = { 25'b0, `O_BYTE, `O_B };	// 1e
-		`I_BCS:	 argtbl = { 25'b0, `O_BYTE, `O_B };	// 1f
+		`I_BGEQ: argtbl <= { 25'b0, `O_BYTE, `O_B };	// 18
+		`I_BLSS: argtbl <= { 25'b0, `O_BYTE, `O_B };	// 19
+		`I_BGTRU: argtbl <= { 25'b0, `O_BYTE, `O_B };	// 1a
+		`I_BLEQU: argtbl <= { 25'b0, `O_BYTE, `O_B };	// 1b
+		`I_BVC:	 argtbl <= { 25'b0, `O_BYTE, `O_B };	// 1c
+		`I_BVS:	 argtbl <= { 25'b0, `O_BYTE, `O_B };	// 1d
+		`I_BCC:	 argtbl <= { 25'b0, `O_BYTE, `O_B };	// 1e
+		`I_BCS:	 argtbl <= { 25'b0, `O_BYTE, `O_B };	// 1f
 
-		`I_BRW:	 argtbl = { 25'b0, `O_WORD, `O_B };	// 31
+		`I_BRW:	 argtbl <= { 25'b0, `O_WORD, `O_B };	// 31
 
-		`I_CLRB: argtbl = { 25'b0, `O_BYTE, `O_W };		// 94
+		`I_CLRB: argtbl <= { 25'b0, `O_BYTE, `O_W };		// 94
 
-		`I_CLRW: argtbl = { 25'b0, `O_WORD, `O_W };		// b4
+		`I_CLRW: argtbl <= { 25'b0, `O_WORD, `O_W };		// b4
 
-		`I_BISPSW: 	argtbl = { 25'b0, `O_WORD, `O_R };	// b8
-		`I_BICPSW: 	argtbl = { 25'b0, `O_WORD, `O_R };	// b9
+		`I_BISPSW: 	argtbl <= { 25'b0, `O_WORD, `O_R };	// b8
+		`I_BICPSW: 	argtbl <= { 25'b0, `O_WORD, `O_R };	// b9
 
-		`I_ADDL2: argtbl =
+		`I_ADDL2: argtbl <=
 			{ 20'b0, `O_LONG, `O_M, `O_LONG, `O_R };	// c0
-		`I_ADDL3: argtbl = { 15'b0,  `O_LONG, `O_W,
+		`I_ADDL3: argtbl <= { 15'b0,  `O_LONG, `O_W,
 				`O_LONG, `O_R, `O_LONG, `O_R };		// c1
 
-		`I_MOVL: argtbl =
+		`I_MOVL: argtbl <=
 			{ 20'b0, `O_LONG, `O_W, `O_LONG, `O_R };	// d0
 
-		`I_CLRL: argtbl = { 25'b0, `O_LONG, `O_W };		// d4
+		`I_CLRL: argtbl <= { 25'b0, `O_LONG, `O_W };		// d4
 
-		`I_ADWC: argtbl =
+		`I_ADWC: argtbl <=
 			{ 20'b0, `O_LONG, `O_M, `O_LONG, `O_R };	// d8
 		endcase
 	end

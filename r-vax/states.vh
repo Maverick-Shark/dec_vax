@@ -18,6 +18,7 @@
 `define	S_ARG		13
 `define	S_ARGEND	14
 `define	S_INDOA		15
+`define	S_DECODE	16
 
 
 
