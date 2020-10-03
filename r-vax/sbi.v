@@ -20,7 +20,6 @@
 // Additional Comments: 
 //
 //////////////////////////////////////////////////////////////////////////////////
-`define VCACHE
 // `define HALFCLOCK
 // `define	BLOCKRAM
 
@@ -146,7 +145,6 @@ defparam console.tto.CLKPERBIT = 2604;
 	wire [29:0] mmu_to_sw_addr, sw_to_pc_addr;
 	wire [31:0] mmu_to_sw_wdata, sw_to_pc_wdata, pc_to_mmu_rdata;
 
-`ifdef VCACHE
 	vcache vcache(
 		.clk(clk),
 		.rst(rst),
@@ -166,16 +164,6 @@ defparam console.tto.CLKPERBIT = 2604;
 		.ut_rdata(pc_to_mmu_rdata),
 		.ut_ack(pc_to_mmu_ack)
 	);
-
-
-`else
-	assign mmu_to_sw_addr = sw_to_mmu_addr[23:2];
-	assign mmu_to_sw_wdata = sw_to_mmu_wdata;
-	assign mmu_to_sw_write = sw_to_mmu_write;
-	assign mmu_to_sw_stb = sw_to_mmu_stb;
-	assign cpu_rdata = pc_to_mmu_rdata;
-	assign cpu_ack = pc_to_mmu_ack;
-`endif
 
 	/* switch pcache input between console and mmu */
 	assign sw_to_pc_addr = con_pmem ? con_addr[31:2] : mmu_to_sw_addr;
