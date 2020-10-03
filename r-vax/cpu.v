@@ -30,9 +30,8 @@ module cpu(
 
 	input		cont,
 	input		step,
-	output		halted,
+	output		halted
 
-	output reg [31:0]	pc
 );
 
 	/*
@@ -202,7 +201,6 @@ module cpu(
 		else
 		case (state)
 		`S_HALT: begin
-			pc <= curpc;
 			if (cont)
 				state <= `S_FETCH;
 			if (reg_stb) begin

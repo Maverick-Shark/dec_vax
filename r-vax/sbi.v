@@ -96,7 +96,7 @@ defparam console.tto.CLKPERBIT = 2604;
 	wire cont, step;
 	
 	/* wires from CPU */
-	wire [31:0] reg_rdata, pc;
+	wire [31:0] reg_rdata;
 	wire reg_ack, reg_stb;
 	wire halted;		// CPU is halted
 
@@ -130,9 +130,7 @@ defparam console.tto.CLKPERBIT = 2604;
 
 		.step(step),
 		.cont(cont),
-		.halted(halted),
-
-		.pc(pc)
+		.halted(halted)
 	);
 
 	/* switch mmu input between console and cpu */
@@ -312,8 +310,6 @@ wire cyc_o, con_ipr;
 		.con_pmem(con_pmem),
 		.con_vmem(con_vmem),
 		.con_reg(con_reg),
-
-		.pc(pc),
 
 		.tti_rx(tti_rx),
 		.tto_tx(tto_tx)

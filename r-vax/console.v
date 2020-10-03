@@ -46,6 +46,7 @@
 `define	PUTCHAR21	6'd32
 `define	WRITENUM51	6'd36
 `define	WRITENUM52	6'd37
+`define	CONSOLE0	6'd38
 
 `define	READNUM_NEXT_C4	2'd0
 `define	READNUM_NEXT_M4	2'd2
@@ -88,7 +89,6 @@ module console(
 	output reg	con_ipr,	// internal processor reg
 
 
-	input [31:0]	pc,
 //	input [1:0]	hreason,
 
 	output reg step, 
@@ -210,10 +210,21 @@ module console(
 		/* verilator lint_off CASEINCOMPLETE */
 		case (state)
 		`CONSOLE: begin
-			utnum <= pc;
+			ADR_O <= 32'hf;
+			WE_O <= 0;
+			STB_O <= 1;
+			CYC_O <= 1;
+			con_reg <= 1;
+			state <= `CONSOLE0;
+		end
+		`CONSOLE0: if (ACK_I) begin
+			utnum <= DAT_I;
+			STB_O <= 0;
+			CYC_O <= 0;
 			writenum_next <= `WRITNUM_NEXT_C2;
 			state <= `WRITENUM;
 		end
+
 		`CONSOLE2: begin
 			state <= `CRLFEXC;
 			con_mem <= 0;
