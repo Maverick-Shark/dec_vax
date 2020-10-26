@@ -6,8 +6,9 @@
 `define	PSL_Z	2
 `define	PSL_N	3
 
-/* pc */
+/* general regs */
 `define	REG_PC		4'hf
+`define	REG_SP		4'he
 
 /* Operand specifiers */
 `define	OPS_LIT		4'b00??			// 0-3
@@ -40,6 +41,7 @@
 `define	I_BGTR	8'h14
 `define	I_BLEQ	8'h15
 
+`define	I_JMP	8'h17
 `define	I_BGEQ	8'h18
 `define	I_BLSS	8'h19
 `define	I_BGTRU	8'h1a
@@ -54,10 +56,12 @@
 `define I_MOVAW	8'h3e
 
 `define I_CLRB	8'h94
+`define I_TSTB	8'h95
 
 `define I_MOVAB	8'h9e
 
 `define I_CLRW	8'hb4
+`define I_TSTW	8'hb5
 
 `define	I_BISPSW	8'hb8
 `define	I_BICPSW	8'hb9
@@ -71,11 +75,21 @@
 `define	I_DIVL2	8'hc6
 `define	I_DIVL3	8'hc7
 
+`define	I_BICL2	8'hca
+`define	I_BICL3	8'hcb
+`define	I_XORL2	8'hcc
+`define	I_XORL3	8'hcd
+
 `define	I_MOVL	8'hd0
 
 `define I_CLRL	8'hd4
+`define I_TSTL	8'hd5
+`define I_INCL	8'hd6
 
 `define I_ADWC	8'hd8
+
+`define I_MTPR	8'hda
+`define I_MFPR	8'hdb
 
 `define I_MOVAL	8'hde
 

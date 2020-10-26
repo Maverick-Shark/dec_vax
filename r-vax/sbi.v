@@ -21,7 +21,6 @@
 //
 //////////////////////////////////////////////////////////////////////////////////
 // `define HALFCLOCK
-// `define	BLOCKRAM
 
 `include "opcodes.vh"
 
@@ -82,62 +81,55 @@ defparam console.tto.CLKPERBIT = 2604;
 
 	assign buzzer = 1;
 
+	/* wires from CPU */
+	wire halted, mcheck;
 	wire [31:0] cpu_addr, cpu_wdata, cpu_rdata;
-	wire cpu_write, cpu_stb, cpu_ack;
+	wire cpu_write, cpu_stb, cpu_ack, cpu_cyc;
+	wire cpu_pmem;
 	wire [1:0] cpu_size;
 
-	/* wires from console */
-	wire con_mem, con_vmem, con_pmem;
-	wire [31:0] con_addr, con_wdata, con_rdata;
-/* verilator lint_off UNUSED */
-	wire con_write, con_stb, con_reg, con_ack, con_cyc;
-/* verilator lint_on UNUSED */
+	/* cpu - console wires */
 	wire cont, step;
-	
-	/* wires from CPU */
-	wire [31:0] reg_rdata;
-	wire reg_ack, reg_stb;
-	wire halted;		// CPU is halted
-
-	assign reg_stb = con_reg ? con_stb : 0;
-
-	/* mmu wires */
-	wire sw_to_mmu_write, sw_to_mmu_stb;
-	wire [31:0] sw_to_mmu_addr;
-	wire [31:0] sw_to_mmu_wdata;
-	wire [1:0] sw_to_mmu_size;
-
+	wire [31:0] con_cpu_addr, con_cpu_wdata, con_cpu_rdata;
+	wire con_cpu_cyc, con_cpu_write, con_cpu_stb, con_cpu_ack;
+	wire con_cpu_vmem, con_cpu_pmem, con_cpu_ipr, con_cpu_reg;
+	wire con_tto_tx;
 
 	cpu cpu(
 		.clk(clk),
 		.rst(rst),
 
-		.reg_addr(con_addr[4:0]),
-		.reg_wdata(con_wdata),
-		.reg_write(con_write),
-		.reg_stb(reg_stb),
-		.reg_rdata(reg_rdata),
-		.reg_ack(reg_ack),
+		.CON_CYC_I(con_cpu_cyc),
+		.CON_ADR_I(con_cpu_addr),
+		.CON_WE_I(con_cpu_write),
+		.CON_DAT_I(con_cpu_wdata),
+		.CON_STB_I(con_cpu_stb),
+		.CON_DAT_O(con_cpu_rdata),
+		.CON_ACK_O(con_cpu_ack),
 
-		.cpu_addr(cpu_addr),
-		.cpu_wdata(cpu_wdata),
-		.cpu_write(cpu_write),
-		.cpu_stb(cpu_stb),
-		.cpu_rdata(cpu_rdata),
-		.cpu_ack(cpu_ack),
-		.cpu_size(cpu_size),
+		.con_reg(con_cpu_reg),
+		.con_ipr(con_cpu_ipr),
+		.con_pmem(con_cpu_pmem),
+		.con_vmem(con_cpu_vmem),
+
+		.CPU_CYC_O(cpu_cyc),
+		.CPU_ADR_O(cpu_addr),
+		.CPU_DAT_O(cpu_wdata),
+		.CPU_WE_O(cpu_write),
+		.CPU_STB_O(cpu_stb),
+		.CPU_DAT_I(cpu_rdata),
+		.CPU_ACK_I(cpu_ack),
+
+		.CPU_SIZE_O(cpu_size),
+
+		.CPU_PMEM_O(cpu_pmem),
+
+		.cpu_mcheck(mcheck),
 
 		.step(step),
 		.cont(cont),
 		.halted(halted)
 	);
-
-	/* switch mmu input between console and cpu */
-	assign sw_to_mmu_addr = con_vmem ? con_addr : cpu_addr;
-	assign sw_to_mmu_write = con_vmem ? con_write : cpu_write;
-	assign sw_to_mmu_wdata = con_vmem ? con_wdata : cpu_wdata;
-	assign sw_to_mmu_stb = con_vmem ? con_stb : cpu_stb;
-	assign sw_to_mmu_size = con_vmem ? `O_LONG : cpu_size;
 
 	/* wires between mmu and pcache */
 	wire mmu_to_sw_write, mmu_to_sw_stb, sw_to_pc_write, sw_to_pc_stb;
@@ -149,32 +141,67 @@ defparam console.tto.CLKPERBIT = 2604;
 		.clk(clk),
 		.rst(rst),
 
-		.in_addr(sw_to_mmu_addr),
-		.in_wdata(sw_to_mmu_wdata),
-		.in_write(sw_to_mmu_write),
-		.in_stb(sw_to_mmu_stb),
-		.in_rdata(cpu_rdata),
-		.in_ack(cpu_ack),
-		.in_sz(sw_to_mmu_size),
+		.IN_CYC_I(cpu_cyc),
+		.IN_STB_I(cpu_stb),
+		.IN_ADR_I(cpu_addr),
+		.IN_DAT_I(cpu_wdata),
+		.IN_WE_I(cpu_write),
+		.IN_DAT_O(cpu_rdata),
+		.IN_ACK_O(cpu_ack),
 
-		.ut_addr(mmu_to_sw_addr),
-		.ut_wdata(mmu_to_sw_wdata),
-		.ut_write(mmu_to_sw_write),
-		.ut_stb(mmu_to_sw_stb),
-		.ut_rdata(pc_to_mmu_rdata),
-		.ut_ack(pc_to_mmu_ack)
+		.in_passthru(cpu_pmem),
+		.in_sz(cpu_size),
+
+		.in_mcheck(mcheck),
+
+//		.ut_sz(),
+
+//		.UT_CYC_O(),
+		.UT_STB_O(mmu_to_sw_stb),
+		.UT_ADR_O(mmu_to_sw_addr),
+		.UT_DAT_O(mmu_to_sw_wdata),
+		.UT_WE_O(mmu_to_sw_write),
+		.UT_DAT_I(pc_to_mmu_rdata),
+		.UT_ACK_I(pc_to_mmu_ack)
 	);
 
+	wire		qbus_cyc, qbus_ack;
+	wire		dl11_tx;
+	wire [31:0]	qbus_wdata;
+	assign	qbus_cyc = mmu_to_sw_addr[29];
+	assign tto_tx = dl11_tx & con_tto_tx;
+
+	/*
+	 * Qbus controller.
+	 */
+	qbus qbus(
+		.clk(clk),
+		.rst(rst),
+
+		.CYC_I(qbus_cyc),
+		.STB_I(mmu_to_sw_stb),
+		.ADR_I(mmu_to_sw_addr[27:0]),
+		.DAT_I(mmu_to_sw_wdata),
+		.WE_I(mmu_to_sw_write),
+		.DAT_O(qbus_wdata),
+		.ACK_O(qbus_ack),
+
+		.tto_tx(dl11_tx)
+	);
+
+
 	/* switch pcache input between console and mmu */
-	assign sw_to_pc_addr = con_pmem ? con_addr[31:2] : mmu_to_sw_addr;
-	assign sw_to_pc_write = con_pmem ? con_write : mmu_to_sw_write;
-	assign sw_to_pc_wdata = con_pmem ? con_wdata : mmu_to_sw_wdata;
-	assign sw_to_pc_stb = con_pmem ? con_stb : mmu_to_sw_stb;
+	assign sw_to_pc_addr = mmu_to_sw_addr;
+	assign sw_to_pc_write = mmu_to_sw_write;
+	assign sw_to_pc_wdata = mmu_to_sw_wdata;
+	assign sw_to_pc_stb = mmu_to_sw_stb;
 
 	/* wires between mem and pcache */
 	wire pc_to_sw_write, pc_to_sw_stb, sw_to_mem_write, sw_to_mem_stb;
 	wire mem_to_pc_ack;
+/* verilator lint_off UNUSED */
 	wire [29:0] pc_to_sw_addr, sw_to_mem_addr;
+/* verilator lint_on UNUSED */
 	wire [31:0] pc_to_sw_wdata, sw_to_mem_wdata, mem_to_pc_rdata;
 
 `ifdef notdef
@@ -201,41 +228,16 @@ defparam console.tto.CLKPERBIT = 2604;
 	assign pc_to_sw_wdata = sw_to_pc_wdata;
 	assign pc_to_sw_write = sw_to_pc_write;
 	assign pc_to_sw_stb = sw_to_pc_stb;
-	assign pc_to_mmu_rdata = mem_to_pc_rdata;
-	assign pc_to_mmu_ack = mem_to_pc_ack;
+	assign pc_to_mmu_rdata = mem_to_pc_rdata | qbus_wdata;
+	assign pc_to_mmu_ack = mem_to_pc_ack | qbus_ack;
 `endif
 
 	/* switch mem input between console and pcache */
-	assign sw_to_mem_addr = con_mem ? con_addr[31:2] : pc_to_sw_addr;
-	assign sw_to_mem_write = con_mem ? con_write : pc_to_sw_write;
-	assign sw_to_mem_wdata = con_mem ? con_wdata : pc_to_sw_wdata;
-	assign sw_to_mem_stb = con_mem ? con_stb : pc_to_sw_stb;
+	assign sw_to_mem_addr = pc_to_sw_addr;
+	assign sw_to_mem_write = pc_to_sw_write;
+	assign sw_to_mem_wdata = pc_to_sw_wdata;
+	assign sw_to_mem_stb = pc_to_sw_stb;
 
-	/* signals to console somewhere */
-	assign con_rdata = con_reg ? reg_rdata :
-			con_mem ? mem_to_pc_rdata :
-			con_pmem ? pc_to_mmu_rdata :
-			con_vmem ? cpu_rdata : 32'b0;
-	assign con_ack = con_reg ? reg_ack :
-			con_mem ? mem_to_pc_ack :
-			con_pmem ? pc_to_mmu_ack :
-			con_vmem ? cpu_ack : 1'b0;
-
-`ifdef BLOCKRAM
-	blkram blkram(
-		.clk(clk),
-		.rst(rst),
-
-		.pmem_addr(sw_to_mem_addr),		// i
-		.pmem_write(sw_to_mem_write),		// i
-		.pmem_wdata(sw_to_mem_wdata),		// i
-		.pmem_stb(sw_to_mem_stb),		// i
-		.pmem_rdata(mem_to_pc_rdata),		// o
-		.pmem_ack(mem_to_pc_ack)		// o
-	);
-	wire [31:0] mem_32_fake;
-	wire mem_1_fakeack;
-`endif
 	/*
 	 * Ram 16MB (4MLW).  22 bits addr (21-0) * 32 bits data.
 	 */
@@ -255,26 +257,14 @@ defparam console.tto.CLKPERBIT = 2604;
 		.sdram_ba(sdram_ba),
 		.sdram_data(sdram_data),
 		
-`ifdef BLOCKRAM
-		.pmem_addr(22'b0),		// i
-		.pmem_write(1'b0),		// i
-		.pmem_wdata(32'b0),		// i
-		.pmem_stb(1'b0),		// i
-		.pmem_rdata(mem_32_fake),		// o
-		.pmem_ack(mem_1_fakeack)		// o
-`else
-		.pmem_addr(sw_to_mem_addr),		// i
-		.pmem_write(sw_to_mem_write),		// i
-		.pmem_wdata(sw_to_mem_wdata),		// i
-		.pmem_stb(sw_to_mem_stb),		// i
-		.pmem_rdata(mem_to_pc_rdata),		// o
-		.pmem_ack(mem_to_pc_ack)		// o
-`endif
+		.CYC_I(~|sw_to_mem_addr[29:24]),
+		.ADR_I(sw_to_mem_addr[23:2]),		// i
+		.WE_I(sw_to_mem_write),		// i
+		.DAT_I(sw_to_mem_wdata),		// i
+		.STB_I(sw_to_mem_stb),		// i
+		.DAT_O(mem_to_pc_rdata),		// o
+		.ACK_O(mem_to_pc_ack)		// o
 	);
-
-/* verilator lint_off UNUSED */
-wire cyc_o, con_ipr;
-/* verilator lint_on UNUSED */
 
 	console console(
 		.clk(clk),
@@ -285,22 +275,21 @@ wire cyc_o, con_ipr;
 		.cont(cont),
 		.step(step),
 
-		.CYC_O(con_cyc),
-		.ADR_O(con_addr),
-		.WE_O(con_write),
-		.DAT_O(con_wdata),
-		.STB_O(con_stb),
-		.DAT_I(con_rdata),
-		.ACK_I(con_ack),
+		.CYC_O(con_cpu_cyc),
+		.ADR_O(con_cpu_addr),
+		.WE_O(con_cpu_write),
+		.DAT_O(con_cpu_wdata),
+		.STB_O(con_cpu_stb),
+		.DAT_I(con_cpu_rdata),
+		.ACK_I(con_cpu_ack),
 
-		.con_ipr(con_ipr),
-		.con_mem(con_mem),
-		.con_pmem(con_pmem),
-		.con_vmem(con_vmem),
-		.con_reg(con_reg),
+		.con_reg(con_cpu_reg),
+		.con_ipr(con_cpu_ipr),
+		.con_pmem(con_cpu_pmem),
+		.con_vmem(con_cpu_vmem),
 
 		.tti_rx(tti_rx),
-		.tto_tx(tto_tx)
+		.tto_tx(con_tto_tx)
 	);
 
 endmodule

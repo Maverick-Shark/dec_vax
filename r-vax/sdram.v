@@ -6,8 +6,7 @@
  * Simple SDRAM controller for the Hynix SDRAM chip, 2M * 4 bank * 16 bit.
  * Runs at 50MHz, CAS2, burst 1.
  *
- * Addressing is <row><bank><col>.  Only addressed word-wise (16 bit),
- * since burst mode makes it instable. (???)
+ * Addressing is <row><bank><col>.
  *
  * Memory is read/written as 32-bit longwords. 
  * Size is 16Mbyte, addressed as 4M longwords (22 bits).
@@ -38,12 +37,13 @@ module sdram #(
 	output [1:0]	sdram_ba,
 	inout [15:0]	sdram_data,
 
-	input [29:0]	pmem_addr,	// note: longword addressing.
-	input		pmem_write,
-	input [31:0]	pmem_wdata,
-	input		pmem_stb,
-	output [31:0]	pmem_rdata,
-	output		pmem_ack
+	input		CYC_I,
+	input		STB_I,
+	input [21:0]	ADR_I,	// note: longword addressing.
+	input		WE_I,
+	input [31:0]	DAT_I,
+	output [31:0]	DAT_O,
+	output		ACK_O
 );
 
 	/* Request that all registers for comm with sdram is in IOBs */
@@ -62,6 +62,8 @@ module sdram #(
 
 	reg		need_refresh, setdout;
 	wire [15:0]	indata;
+	wire		request;
+	assign		request = CYC_I & STB_I;
 
 	/* RAS/CAS/WE command triple */
 	localparam	NOP = 3'b111,
@@ -109,7 +111,7 @@ module sdram #(
 		{ a11, a10, addr } <= 0;	// default address 0
 		bank <= 0;
 		setdout <= 0;
-		if (pmem_stb == 0) begin
+		if (STB_I == 0) begin
 			pack <= 0;
 		end
 		{ ras, cas, we } <= NOP;	// none set
@@ -154,25 +156,25 @@ module sdram #(
 				{ ras, cas, we } <= AUTO_REFRESH;
 				state <= REF1;
 				need_refresh <= 0;
-			end else if (pmem_stb) begin
-				cs <= |pmem_addr[29:22];
+			end else if (request) begin
+				cs <= 0;
 				/* do something; open row */
 				{ ras, cas, we } <= ACTIVATE;
-				bank <= pmem_addr[9:8];
-				{ a11, a10, addr } <= pmem_addr[21:10];
-				xprdata <= pmem_wdata;
+				bank <= ADR_I[9:8];
+				{ a11, a10, addr } <= ADR_I[21:10];
+				xprdata <= DAT_I;
 				state <= SETCAS;
 			end
 		end
 
 		SETCAS: begin
-			bank <= pmem_addr[9:8];
+			bank <= ADR_I[9:8];
 			/* Note: precharge after use (closes row) */
-			{ a11, a10, addr } <= { 3'b010, pmem_addr[7:0], 1'b0 };
-			if (pmem_write) begin
+			{ a11, a10, addr } <= { 3'b010, ADR_I[7:0], 1'b0 };
+			if (WE_I) begin
 				{ ras, cas, we } <= WRITE;
 				setdout <= 1;
-					sdata <= xprdata[15:0];
+				sdata <= xprdata[15:0];
 				state <= WRITE2;
 			end else begin
 				{ ras, cas, we } <= READ;
@@ -258,7 +260,7 @@ endgenerate
 	assign sdram_ldqm = 1'b0;
 	assign sdram_ba = bank;
 
-	assign pmem_rdata = prdata;
-	assign pmem_ack = pack;
+	assign DAT_O = request ? prdata : 32'b0;
+	assign ACK_O = request ? pack : 1'b0;
 
 endmodule

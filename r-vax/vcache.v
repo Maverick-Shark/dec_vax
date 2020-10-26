@@ -19,32 +19,63 @@
 `define	WRHIGH		7
 `define	WRHIGH2		8
 `define	WRHIGH3		9
+`define	SETTLE		10
 
 module vcache(
 	input		clk,
 	input		rst,
 
-	input [31:0]	in_addr,
-	input [31:0]	in_wdata,
-	input		in_write,
-	input		in_stb,
-	input [1:0]	in_sz,
-	output reg [31:0] in_rdata,
-	output reg	in_ack,
+	input		IN_CYC_I,
+	input		IN_STB_I,
+	output [31:0]	IN_DAT_O,
+	output		IN_ACK_O,
+/* verilator lint_off UNUSED */
+	input [31:0]	IN_ADR_I,
+/* verilator lint_on UNUSED */
+	input [31:0]	IN_DAT_I,
+	input		IN_WE_I,
 
-	output reg [29:0] ut_addr,
-	output reg [31:0] ut_wdata,
-	output reg 	ut_write,
-	output reg 	ut_stb,
-	input [31:0]	ut_rdata,
-	input		ut_ack
+	input [1:0]	in_sz,
+	input		in_passthru,
+
+	input		in_mcheck,
+
+//	output [1:0]	ut_sz,
+
+//	output		UT_CYC_O,
+	output 		UT_STB_O,
+	output [29:0]	UT_ADR_O,
+	output [31:0]	UT_DAT_O,
+	output		UT_WE_O,
+	input [31:0]	UT_DAT_I,
+	input		UT_ACK_I
 );
+
+
 	reg [63:0]	quad, merged_write_word;
 	reg [3:0]	state;
 	reg		needtwo;
 	reg [31:0]	shifted_bytes;
 	reg [29:0]	caddrl, caddrh;
 	reg [1:0]	coff, csz;
+
+	/* only output if CYC */
+	wire in_stb;
+	reg [31:0] in_rdata;
+	reg in_ack;
+	assign in_stb = IN_CYC_I & IN_STB_I;
+	assign IN_DAT_O = IN_CYC_I ? in_rdata : 32'b0;
+	assign IN_ACK_O = IN_CYC_I ? in_ack : 1'b0;
+
+	reg		ut_stb, ut_write;
+	reg [29:0]	ut_addr;
+	reg [31:0]	ut_wdata;
+//	reg [1:0]	ut_sz;
+//	assign UT_CYC_O = ut_stb;
+	assign UT_STB_O = ut_stb;
+	assign UT_ADR_O = ut_addr;
+	assign UT_DAT_O = ut_wdata;
+	assign UT_WE_O = ut_write;
 
 	/* read/write cases when we need two words */
 	always @* begin
@@ -60,21 +91,21 @@ module vcache(
 	always @* begin
 		casez ({csz, coff })
 		/* byte size first, addr off 0-3 */
-		4'b00_00: merged_write_word = { quad[63:8], in_wdata[7:0] };
-		4'b00_01: merged_write_word = { quad[63:16], in_wdata[7:0], quad[7:0] };
-		4'b00_10: merged_write_word = { quad[63:24], in_wdata[7:0], quad[15:0] };
-		4'b00_11: merged_write_word = { quad[63:32], in_wdata[7:0], quad[23:0] };
+		4'b00_00: merged_write_word = { quad[63:8], IN_DAT_I[7:0] };
+		4'b00_01: merged_write_word = { quad[63:16], IN_DAT_I[7:0], quad[7:0] };
+		4'b00_10: merged_write_word = { quad[63:24], IN_DAT_I[7:0], quad[15:0] };
+		4'b00_11: merged_write_word = { quad[63:32], IN_DAT_I[7:0], quad[23:0] };
 
 		/* word size */
-		4'b01_00: merged_write_word = { quad[63:16], in_wdata[15:0] };
-		4'b01_01: merged_write_word = { quad[63:24], in_wdata[15:0], quad[7:0] };
-		4'b01_10: merged_write_word = { quad[63:32], in_wdata[15:0], quad[15:0] };
-		4'b01_11: merged_write_word = { quad[63:40], in_wdata[15:0], quad[23:0] };
+		4'b01_00: merged_write_word = { quad[63:16], IN_DAT_I[15:0] };
+		4'b01_01: merged_write_word = { quad[63:24], IN_DAT_I[15:0], quad[7:0] };
+		4'b01_10: merged_write_word = { quad[63:32], IN_DAT_I[15:0], quad[15:0] };
+		4'b01_11: merged_write_word = { quad[63:40], IN_DAT_I[15:0], quad[23:0] };
 
-		4'b10_00: merged_write_word = { quad[63:32], in_wdata };
-		4'b10_01: merged_write_word = { quad[63:40], in_wdata, quad[7:0] };
-		4'b10_10: merged_write_word = { quad[63:48], in_wdata, quad[15:0] };
-		4'b10_11: merged_write_word = { quad[63:56], in_wdata, quad[23:0] };
+		4'b10_00: merged_write_word = { quad[63:32], IN_DAT_I };
+		4'b10_01: merged_write_word = { quad[63:40], IN_DAT_I, quad[7:0] };
+		4'b10_10: merged_write_word = { quad[63:48], IN_DAT_I, quad[15:0] };
+		4'b10_11: merged_write_word = { quad[63:56], IN_DAT_I, quad[23:0] };
 		default: merged_write_word = 0; /* ILLEGAL */
 		endcase
 	end
@@ -90,6 +121,8 @@ module vcache(
 	end
 
 	always @(posedge clk) begin
+//if (state != `IDLE)
+//$fdisplay(32'h80000002, "vc STATE: %d in_addr %x\r\n", state, IN_ADR_I);
 		if (rst) begin
 			state <= `IDLE;
 			in_ack <= 0;
@@ -97,21 +130,25 @@ module vcache(
 		end else
 		case (state)
 		`IDLE: begin
-			if (ut_ack)
+			if (UT_ACK_I)
 				ut_stb <= 0;
 			else if (in_stb == 0)
 				in_ack <= 0;
 			else begin
-				ut_addr <= in_addr[31:2];
+//				ut_addr <= { IN_ADR_I[29:2], 2'b0 };
+				ut_addr <= IN_ADR_I[29:0];
 				ut_stb <= 1;
-				caddrl <= in_addr[31:2];
-				caddrh <= in_addr[31:2] + 1;
-				coff <= in_addr[1:0];
+				caddrl <= { IN_ADR_I[29:2], 2'b0 };
+				caddrh <= { IN_ADR_I[29:2], 2'b0 } + 4;
+				coff <= IN_ADR_I[1:0];
 				csz <= in_sz;
-				if (in_addr[1:0] == 2'b00 && in_sz == `O_LONG) begin
+				if (in_passthru ||
+				    (IN_ADR_I[1:0] == 2'b00 &&
+				     in_sz == `O_LONG)) begin
 					/* fastpath, aligned longword access */
-					ut_write <= in_write;
-					ut_wdata <= in_wdata;
+					ut_write <= IN_WE_I;
+					ut_wdata <= IN_DAT_I;
+		//			ut_sz <= in_sz;
 					state <= `FASTPATH;
 				end else begin
 					ut_write <= 0;
@@ -119,53 +156,53 @@ module vcache(
 				end
 			end
 		end
-		`FASTPATH: if (ut_ack) begin
-			if (in_write == 0)
-				in_rdata <= ut_rdata;
+		`FASTPATH: if (UT_ACK_I | in_mcheck) begin
+			if (IN_WE_I == 0)
+				in_rdata <= UT_DAT_I;
 			in_ack <= 1;
-			state <= `IDLE;
+			state <= `SETTLE;
 		end
-		`SLOWRMEM: if (ut_ack) begin
+		`SLOWRMEM: if (UT_ACK_I) begin
 			/* got first word */
-			quad[31:0] <= ut_rdata;
+			quad[31:0] <= UT_DAT_I;
 			ut_stb <= 0;
-			if (1 || needtwo) begin // get another word
+			if (needtwo) begin // get another word
 				ut_addr <= caddrh;
 				state <= `SLOWRMEM2;
-			end else if (in_write == 0) begin
+			end else if (IN_WE_I == 0) begin
 				state <= `RETWD;
 			end else begin
 				state <= `SETWD;
 				
 			end
 		end
-		`SLOWRMEM2: if (ut_ack == 0) begin // wait until settle
+		`SLOWRMEM2: if (UT_ACK_I == 0) begin // wait until settle
 			ut_stb <= 1; /* start next word */
 			state <= `SLOWRMEM3;
 		end
-		`SLOWRMEM3: if (ut_ack) begin
-			quad[63:32] <= ut_rdata;
+		`SLOWRMEM3: if (UT_ACK_I) begin
+			quad[63:32] <= UT_DAT_I;
 			ut_stb <= 0;
-			if (in_write == 0)
+			if (IN_WE_I == 0)
 				state <= `RETWD;
 			else
 				state <= `SETWD;
 		end
 
-		`SETWD: if (ut_ack == 0) begin
+		`SETWD: if (UT_ACK_I == 0) begin
 			ut_wdata <= merged_write_word[31:0];
 			ut_addr <= caddrl;
 			ut_write <= 1;
 			ut_stb <= 1;
-			if (1 || needtwo) begin
+			if (needtwo) begin
 				state <= `WRHIGH;
 			end else begin
 				in_ack <= 1;
-				state <= `IDLE;
+				state <= `SETTLE;
 			end
 		end
 
-		`WRHIGH: if (ut_ack) begin
+		`WRHIGH: if (UT_ACK_I) begin
 			ut_stb <= 0;
 			ut_wdata <= merged_write_word[63:32];
 			ut_addr <= caddrh;
@@ -173,26 +210,34 @@ module vcache(
 			state <= `WRHIGH2;
 		end
 
-		`WRHIGH2: if (ut_ack == 0) begin
+		`WRHIGH2: if (UT_ACK_I == 0) begin
 			ut_stb <= 1;
-			in_ack <= 1;
 			state <= `WRHIGH3;
 		end
 
-		`WRHIGH3: if (ut_ack) begin
+		`WRHIGH3: if (UT_ACK_I) begin
 			ut_stb <= 0;
-			state <= `IDLE;
+			in_ack <= 1;
+			state <= `SETTLE;
+		end
+
+		`SETTLE: begin
+			if (in_stb == 0 && UT_ACK_I == 0)
+				state <= `IDLE;
+			if (in_stb == 0)
+				in_ack <= 0;
+			if (UT_ACK_I == 1)
+				ut_stb <= 0;
 		end
 
 		/* Return an unaligned word */
 		`RETWD: begin
 			in_rdata <= shifted_bytes;
 			in_ack <= 1;
-			state <= `IDLE;
+			state <= `SETTLE;
 		end
 		default: state <= `IDLE;
 		endcase
-	end
-
+	end 
 
 endmodule

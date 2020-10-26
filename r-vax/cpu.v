@@ -4,6 +4,8 @@
 
 `include "states.vh"
 `include "opcodes.vh"
+`include "ipr.vh"
+`include "scb.vh"
 
 /*
  * VAX CPU
@@ -13,26 +15,84 @@ module cpu(
 	input clk,
 	input rst,
 
-	input [4:0]	reg_addr,
-	input [31:0]	reg_wdata,
-	input		reg_write,
-	input		reg_stb,
-	output reg [31:0] reg_rdata,
-	output reg	reg_ack,
+	input		CON_CYC_I,
+	input [31:0]	CON_ADR_I,
+	input [31:0]	CON_DAT_I,
+	input		CON_WE_I,
+	input		CON_STB_I,
+	output [31:0]	CON_DAT_O,
+	output 		CON_ACK_O,
 
-	output reg [31:0] cpu_addr,
-	output reg [31:0] cpu_wdata,
-	input [31:0]	cpu_rdata,
-	output reg	cpu_stb,
-	output reg	cpu_write,
-	input		cpu_ack,
-	output reg [1:0] cpu_size,
+	input		con_reg,
+	input		con_ipr,
+	input		con_pmem,
+	input		con_vmem,
+
+	output		CPU_CYC_O,
+	output [31:0] 	CPU_ADR_O,
+	output [31:0] 	CPU_DAT_O,
+	output 		CPU_STB_O,
+	output 		CPU_WE_O,
+	input [31:0]	CPU_DAT_I,
+	input		CPU_ACK_I,
+
+	output [1:0]	CPU_SIZE_O,
+
+	output		CPU_PMEM_O,
+
+	output		cpu_mcheck,
 
 	input		cont,
 	input		step,
 	output		halted
 
 );
+
+	/*
+	 * Console communications.
+	 */
+	reg [31:0]	con_dat_o_reg;
+	reg 		con_ack_o_reg;
+	wire		con_passthru;
+	assign con_passthru = CON_CYC_I & (con_vmem | con_pmem);
+	assign CON_DAT_O = con_passthru ? CPU_DAT_I : con_dat_o_reg;
+	assign CON_ACK_O = con_passthru ? CPU_ACK_I : con_ack_o_reg;
+
+	/*
+	 * CPU to memory/IPR communications.
+	 */
+	reg [31:0]	cpu_addr, cpu_wdata;
+	reg		cpu_write, cpu_stb;
+	reg		cpu_pmem;
+	reg		mcheck;
+	reg [1:0]	cpu_size;
+	wire		cpu_acki;
+	assign cpu_mcheck  = mcheck;
+	assign cpu_acki = CPU_ACK_I | mcheck;
+	assign CPU_CYC_O = halted & ~(con_reg | con_ipr) ? CON_CYC_I : cpu_stb;
+	assign CPU_ADR_O = halted ? CON_ADR_I : cpu_addr;
+	assign CPU_DAT_O = halted ? CON_DAT_I : cpu_wdata;
+	assign CPU_WE_O  = halted ? CON_WE_I  : cpu_write;
+	assign CPU_STB_O = halted ? CON_STB_I : cpu_stb;
+
+	assign CPU_PMEM_O = halted ? con_pmem : cpu_pmem;
+	assign CPU_SIZE_O = halted ? `O_LONG : cpu_size;
+
+	/*
+	 * IPR regs.  First 15 in LUT RAM, rest in flipflops.
+	 */
+	(* ram_style = "DISTRIBUTED" *)
+	reg [31:0]	ipr_reg[15:0];
+
+	wire [3:0]	ipr_regraddr, ipr_regwaddr;
+	wire [31:0]	ipr_val, ipr_wdata;
+	reg [14:0]	scbb;
+	reg		ipr_write;
+
+	always @(posedge clk)
+		if (ipr_write)
+			ipr_reg[ipr_regwaddr] <= ipr_wdata;
+	assign ipr_val = ipr_reg[ipr_regraddr];
 
 	/*
 	 * arg1/2 are arg value read. (if R|M)
@@ -49,12 +109,21 @@ module cpu(
 /* verilator lint_on UNDRIVEN */
 /* verilator lint_on UNUSED */
 
+	assign ipr_regraddr = halted ? CON_ADR_I[3:0] : arg1[3:0];
+	assign ipr_regwaddr = halted ? CON_ADR_I[3:0] : arg2[3:0];
+	assign ipr_wdata = halted ? CON_DAT_I : arg1;
+
 	reg [`STATBITS-1:0]	state, fillstate;
 	// synthesis attribute INIT of state is "0"
 	reg [7:0]	haltpos;
 
 /* verilator lint_off UNDRIVEN */
+	reg		psl_is;
+	reg [1:0]	cur_mod, prv_mod;
+	reg [4:0]	psl_ipl;
 	reg [7:0]	psw;
+initial psl_is = 1'b1;
+initial psl_ipl = 5'h1f;
 
 	/* different traps/faults */
 	reg	resinflt,	/* reserved instruction fault (FFFF) */
@@ -111,9 +180,6 @@ module cpu(
 	reg [2:0] cur_arg_number; // cleared in FETCH, increased in ARGEND
 	reg arg_defer;		// indirect flag set.
 	reg notrash;		// don't trash OA if reading from mem
-/* verilator lint_off UNUSED */
-	reg [3:0] argaddto;	// for increment arguments
-/* verilator lint_on UNUSED */
 	wire [7:0] decode_inst;
 	wire [2:0] decode_arg;
 	wire [2:0] num_args;
@@ -148,10 +214,25 @@ module cpu(
 		endcase
 	end
 
+	/*
+	 * Faults.
+	 */
+	reg manhalt;
+	reg [6:0] mchk_cnt;
 	wire isvalid, anyfault;
-	assign halted = state == `S_HALT;
+	assign halted = (state == `S_HALT) || manhalt;
 	assign isvalid = (itag[31:2] == curpc[31:2]) && ivalid;
 	assign anyfault = resinflt | resadflt | resopflt;
+
+	always @(posedge clk) begin
+		if (CPU_STB_O == 0) begin
+			mchk_cnt <= 0;
+			mcheck <= 0;
+		end else if (CPU_ACK_I == 0)
+			mchk_cnt <= mchk_cnt + 1;
+		if (&mchk_cnt)
+			mcheck <= 1;
+	end
 
 	/*
 	 * General register file, currently in Distributed RAM.
@@ -173,14 +254,15 @@ module cpu(
 	reg [3:0] greg_wregnum;
 	wire [3:0]  greg_addr;
 	assign greg_addr =
-		state == `S_HALT ? reg_addr[3:0] :
+		state == `S_HALT ? CON_ADR_I[3:0] :
 	    	state == `S_ARG ? cur_reg_num :
 	    	state == `S_ENDINST ? arg1p_regnum : cur_reg_num_save;
 
 	always @(posedge clk)
 		if (state == `S_WREG)
 			general_reg[greg_wregnum] <= greg_wbdata;
-	assign cur_reg_val = general_reg[greg_addr];
+	assign cur_reg_val =
+	    (greg_addr == `REG_PC ? curpc : general_reg[greg_addr]);
 
 	/*
 	 * evaluation definitions.
@@ -195,54 +277,77 @@ module cpu(
 	wire [31:0] pc_plus_1;
 	assign pc_plus_1 = curpc + 1;
 
+
+	/* console communications */
+	wire ref_greg_read, ref_greg_write, ipr_greg_read, ipr_greg_write;
+	assign ref_greg_read = CON_STB_I & CON_CYC_I & (CON_WE_I == 0) &con_reg;
+	assign ref_greg_write = CON_STB_I & CON_CYC_I & CON_WE_I & con_reg;
+	assign ipr_greg_read = CON_STB_I & CON_CYC_I & (CON_WE_I == 0) &con_ipr;
+	assign ipr_greg_write = CON_STB_I & CON_CYC_I & CON_WE_I & con_ipr;
+
 	always @(posedge clk) begin
 		if (rst)
 			state <= `S_HALT;
 		else
 		case (state)
 		`S_HALT: begin
-			if (cont)
+			manhalt <= 1;
+			if (cont) begin
 				state <= `S_FETCH;
-			if (reg_stb) begin
-				if (reg_write) begin
-					ivalid <= 0;
-					greg_wregnum <= reg_addr[3:0];
-					greg_wbdata <= reg_wdata;
-					if (reg_addr == 5'h0f)
-						curpc <= reg_wdata;
-					fillstate <= `S_HALT;
-					state <= `S_WREG;
-				end else begin
-					casez (reg_addr)
-					5'h1f: reg_rdata <= { 24'd0, psw };
-					5'h1e: reg_rdata <= oldpc;
-					5'h1d: reg_rdata <= { 24'b0, haltpos };
-					5'h1c: reg_rdata <= inslword;
-					5'h1b: reg_rdata <= { itag, 1'b0, ivalid };
-					5'h19: reg_rdata <= arg2p;
-					5'h18: reg_rdata <= arg1p;
-					5'h14: reg_rdata <= argd1;
-					5'h13: reg_rdata <= arg4;
-					5'h12: reg_rdata <= arg3;
-					5'h11: reg_rdata <= arg2;
-					5'h10: reg_rdata <= arg1;
-					5'h0?: begin
-						if (reg_addr == 5'h0f)
-							reg_rdata <= curpc;
-						else
-							reg_rdata<= cur_reg_val;
-					end
-					default: reg_rdata <= 0;
-					endcase
-				end
-				reg_ack <= 1;
-			end else
-				reg_ack <= 0;
+				ivalid <= 0;
+				resopflt <= 0;
+			end
+			if (CON_STB_I == 0)
+				con_ack_o_reg <= 0;
+
+			ipr_write <= 0;
+			if (ipr_greg_read) begin
+				casez (CON_ADR_I[5:0])
+				6'b00zzzz: con_dat_o_reg <= ipr_val;
+				`IPR_SCBB: con_dat_o_reg <= { 8'b0, scbb,9'b0 };
+				default: con_dat_o_reg <= 32'hdeadbabe;
+				endcase
+				con_ack_o_reg <= 1;
+			end else if (ipr_greg_write) begin
+				casez (CON_ADR_I[5:0])
+				6'b00zzzz: ipr_write <= 1;
+				`IPR_SCBB: scbb <= CON_DAT_I[23:9];
+				default: ;
+				endcase
+				con_ack_o_reg <= 1;
+			end else if (ref_greg_read) begin
+				casez (CON_ADR_I[4:0])
+				5'h1f: con_dat_o_reg <=
+	{ 5'd0, psl_is, cur_mod, prv_mod, 1'b0, psl_ipl, 8'b0, psw };
+				5'h1e: con_dat_o_reg <= oldpc;
+				5'h1d: con_dat_o_reg <=
+				    { 23'b0, resopflt, haltpos };
+				5'h1c: con_dat_o_reg <= inslword;
+				5'h1b: con_dat_o_reg <= { itag, 1'b0, ivalid };
+				5'h19: con_dat_o_reg <= arg2p;
+				5'h18: con_dat_o_reg <= arg1p;
+				5'h14: con_dat_o_reg <= argd1;
+				5'h13: con_dat_o_reg <= arg4;
+				5'h12: con_dat_o_reg <= arg3;
+				5'h11: con_dat_o_reg <= arg2;
+				5'h10: con_dat_o_reg <= arg1;
+				5'h0?: con_dat_o_reg <= cur_reg_val;
+				default: con_dat_o_reg <= 0;
+				endcase
+				con_ack_o_reg <= 1;
+			end else if (ref_greg_write) begin
+				greg_wregnum <= CON_ADR_I[3:0];
+				greg_wbdata <= CON_DAT_I;
+				con_ack_o_reg <= 1;
+				state <= `S_WREG;
+				fillstate <= `S_HALT;
+			end
 		end
 
 		/* get next instruction from input stream */
 		`S_FETCH: begin
-			if (cpu_ack)
+			manhalt <= 0;
+			if (CPU_ACK_I)
 				cpu_stb <= 0;
 			if (step && delay_halt) begin
 				state <= `S_HALT;
@@ -281,6 +386,7 @@ module cpu(
 				curpc <= pc_plus_1;
 				state <= `S_ARGEND;
 				cur_reg_num_save <= cur_byte[3:0];
+//$fdisplay(32'h80000002, "ARG: curpc %x curbyte %x\r\n", curpc, cur_byte);
 
 				casez (cur_byte[7:4])
 				`OPS_LIT: begin
@@ -329,17 +435,11 @@ module cpu(
 				end
 
 				`OPS_AINC, `OPS_AINCD: begin // 8-9
-					if (cur_byte[4])
-						argaddto <= 4'd4;
-					else
-						argaddto <= op_size_ary;
-					OA <= 0;
-					regnum <= 4'b0000;
-					state <= `S_RDCDATA;
+					greg_wregnum <= cur_reg_num;
+					state <= `S_POSTINC0;
 				end
 
 				`OPS_DISP: begin // 10-15
-					argaddto <= 4'd0;
 					state <= `S_RDCDATA;
 					case (cur_byte[6:5])
 					2'b00: regnum <= 4'b0000;
@@ -379,10 +479,10 @@ module cpu(
 					regnum[3] <= 0;
 					curpc <= pc_plus_1;
 				end else begin
-					if (cur_reg_num_save == `REG_PC)
-						OA <= OA + curpc;
-					else
-						OA <= OA + cur_reg_val;
+					OA <= OA + cur_reg_val;
+					cpu_addr <= OA + cur_reg_val;
+					
+// $fdisplay(32'h80000002, "RDC: curpc %x oa %x cur_reg_val %x\r\n", curpc, OA, cur_reg_val);
 					if (arg_defer) begin
 						cpu_size <= `O_LONG;
 						state <= `S_READMEM;
@@ -398,12 +498,37 @@ module cpu(
 		end
 
 		/*
+		 * need estra state to get pc to increment.
+		 */
+		`S_POSTINC0: begin
+			state <= `S_WREG;
+			OA <= cur_reg_val;
+			if (arg_defer) begin
+				fillstate <= `S_POSTINC;
+				greg_wbdata <= cur_reg_val + 32'd4;
+			end else begin
+				fillstate <= `S_INDOA;
+				greg_wbdata <= cur_reg_val +
+				    { 28'b0, op_size_ary };
+			end
+		end
+
+		`S_POSTINC: begin
+			cpu_addr <= OA;
+			cpu_size <= `O_LONG;
+			state <= `S_READMEM;
+			fillstate <= `S_INDOA;
+		end
+
+		/*
 		 * Ended up here either via defer read state or directly
 		 * from RDCDATA.
 		 */
 		`S_INDOA: begin
 			OA <= OA + IA;
+//$fdisplay(32'h80000002, "INDOA: OA %x OP %x arg_R %d\r\n", OA, OP, arg_R);
 			if (arg_R) begin
+				cpu_addr <= OA;
 				cpu_size <= arg_size;
 				state <= `S_READMEM;
 				fillstate <= `S_ARGEND;
@@ -427,6 +552,7 @@ module cpu(
 		 * Store the argument results in their next slot.
 		 */
 		`S_ARGEND: begin
+//if (arg_R) $fdisplay(32'h80000002, "ARGEND: numarg %d OP %x \r\n", num_arg, OP);
 			if (arg_R) begin
 				case (num_arg)
 				1'b0: arg1 <= OP;
@@ -484,6 +610,15 @@ module cpu(
 			`I_BVS: if (psw[`PSL_V] == 1) set_branch_pc <= 1;
 			`I_BCC: if (psw[`PSL_C] == 0) set_branch_pc <= 1;
 			`I_BCS: if (psw[`PSL_C] == 1) set_branch_pc <= 1;
+			`I_JMP: begin
+				set_branch_pc <= 1;
+			end
+
+			`I_INCL: begin
+				{ Ctmp, argd1 } <= { 1'b0, arg1 } + 33'h1;
+				writeback <= 1;
+				calc_vnzc <= 1;
+			end
 			`I_ADDL2, `I_ADDL3, `I_ADWC: begin
 				{ Ctmp, argd1 } <=
 				    { 1'b0, arg1 } + { 1'b0, arg2 } +
@@ -491,6 +626,18 @@ module cpu(
 				    { 32'b0, psw[`PSL_C] } : 33'd0);
 				writeback <= 1;
 				calc_vnzc <= 1;
+			end
+			`I_XORL2, `I_XORL3: begin
+				argd1 <= arg2 ^ arg1;
+//$fdisplay(32'h80000002, "BICL: arg1 %x arg2 %x\r\n", arg1, arg2);
+				writeback <= 1;
+				set_vnz_dest <= 1;
+			end
+			`I_BICL2, `I_BICL3: begin
+				argd1 <= arg2 & ~arg1;
+//$fdisplay(32'h80000002, "BICL: arg1 %x arg2 %x\r\n", arg1, arg2);
+				writeback <= 1;
+				set_vnz_dest <= 1;
 			end
 			`I_MOVAB, `I_MOVAW, `I_MOVAL: begin
 				argd1 <= arg1p;
@@ -505,9 +652,27 @@ module cpu(
 				writeback <= 1;
 				set_vnz_dest <= 1;
 			end
+			`I_MTPR: begin
+				argd1 <= arg1;
+				if (anyfault == 0)
+					state <= `S_MTPR;
+			end
+			`I_MFPR: begin
+				cur_reg_num_save <= `REG_SP;
+				writeback <= 1;
+				set_vnz_dest <= 1;
+				if (anyfault == 0)
+					state <= `S_MFPR;
+			end
 			`I_CLRB, `I_CLRW, `I_CLRL: begin
+//$fdisplay(32'h80000002, "CLRL: arg1p %x \r\n", arg1p);
 				argd1 <= 0;
 				writeback <= 1;
+				set_vnz_dest <= 1;
+			end
+			`I_TSTB, `I_TSTW, `I_TSTL: begin
+//$fdisplay(32'h80000002, "TSTL: arg1p %x arg1 %x\r\n", arg1p, arg1);
+				argd1 <= arg1;
 				set_vnz_dest <= 1;
 			end
 			`I_BISPSW, `I_BICPSW: begin
@@ -539,6 +704,7 @@ module cpu(
 				regnum <= 4'b0001;
 			cur_reg_num_save <= `REG_PC;
 			OA <= 0;
+			arg_defer <= 0;
 			state <= `S_RDCDATA;
 		end
 
@@ -550,22 +716,27 @@ module cpu(
 			state <= `S_FETCH;
 			writeback <= 0;
 			calc_vnzc <= 0;
+			set_vnz_dest <= 0;
 
 			if (anyfault) begin
 				haltpos <= 5;
 				state <= `S_HALT;
+		//		resopflt <= 0;
 			end else if (writeback & (arg1p_isreg == 0)) begin
+// $fdisplay(32'h80000002, "WB MEM: addr %x val %x\r\n", arg1p, argd1);
 				cpu_addr <= arg1p;
 				cpu_wdata <= argd1;
 				cpu_size <= arg1p_size;
 				state <= `S_WRITEMEM;
 				fillstate <= `S_ENDINST;
 			end else if (writeback) begin
+// $fdisplay(32'h80000002, "WB REG: reg %x val %x\r\n", arg1p_regnum, greg_wback);
 				greg_wbdata <= greg_wback;
 				greg_wregnum <= arg1p_regnum;
 				fillstate <= `S_FETCH;
 				state <= `S_WREG;
 			end
+// $fdisplay(32'h80000002, "brpc: arg1p %x curpc %x\r\n", arg1p, curpc);
 			if (set_branch_pc)
 				curpc <= arg1p;
 			set_branch_pc <= 0;
@@ -586,22 +757,174 @@ module cpu(
 				delay_halt <= 1;
 		end
 
+		`S_MTPR: begin
+			state <= `S_ENDINST;
+			ipr_write <= 0;
+			if (|arg2[31:6])
+				resopflt <= 1;
+			else
+			casez (arg2[5:0])
+			`IPR_KSP, `IPR_SSP, `IPR_ESP, `IPR_USP: begin
+				if (psl_is == 0 && arg2[1:0] == cur_mod) begin
+					arg1p_size <= `O_LONG;
+					argd1 <= arg1;
+					arg1p_regnum <= `REG_SP;
+					arg1p_isreg <= 1;
+					writeback <= 1;
+				end
+				ipr_write <= 1;
+			end
+			`IPR_ISP: begin
+				if (psl_is == 1) begin
+					arg1p_size <= `O_LONG;
+					argd1 <= arg1;
+					arg1p_regnum <= `REG_SP;
+					arg1p_isreg <= 1;
+					writeback <= 1;
+				end
+				ipr_write <= 1;
+			end
+			`IPR_SCBB: scbb <= arg1[23:9];
+			`IPR_PCBB: ;
+			`IPR_IPL: psl_ipl <= arg1[4:0];
+			default: resopflt <= 1;
+			endcase
+		end
+
+		/*
+		 * XXX check if current sp is the same
+		 */
+		`S_MFPR: begin
+			state <= `S_ENDINST;
+			if (|arg2[31:6])
+				resopflt <= 1;
+			else
+			casez (arg2[5:0])
+			`IPR_KSP, `IPR_SSP, `IPR_ESP, `IPR_USP: begin
+				if (arg2[1:0] == cur_mod)
+					argd1 <= cur_reg_val;
+				else
+					argd1 <= ipr_val;
+			end
+			`IPR_ISP: begin
+				if (psl_is)
+					argd1 <= cur_reg_val;
+				else
+					argd1 <= ipr_val;
+			end
+			`IPR_SCBB: argd1 <= { 8'b0, scbb, 9'b0 };
+			`IPR_PCBB: ;
+			`IPR_IPL: argd1 <= { 27'b0, psl_ipl };
+			default: resopflt <= 1;
+			endcase
+		end
+
+		/*
+		 * Got a machine check.
+		 * Fetch SCB mcheck address and jump there.
+		 */
+		`S_MCHECK: begin
+			arg1 <= `VEC_MCHECK;
+			state <= `S_GETVEC;
+		//	haltpos <= 8;
+			fillstate <= `S_MCHECK1;
+		end
+
+		/*
+		 * Address from SCB in argd1. Do stack change.
+		 * (mcheck should always be served on the interrupt stack)
+		 */
+		`S_MCHECK1: begin
+			arg2 <= 0;
+			state <= `S_SETSTK;
+			fillstate <= `S_MCHECK2;
+		end
+
+		`S_MCHECK2: begin
+			state <= `S_PUSH;
+			cur_reg_num_save <= `REG_SP;
+			fillstate <= `S_MCHECK2;
+			arg2 <= arg2 + 1;
+			case (arg2[3:0])
+			4'd0: cpu_wdata <=
+	{ 5'd0, psl_is, cur_mod, prv_mod, 1'b0, psl_ipl, 8'b0, psw };
+			4'd1: cpu_wdata <= oldpc;
+			4'd12: cpu_wdata <= 32'h28;
+			default: cpu_wdata <= 0;
+			endcase
+			if (arg2[3:0] == 4'd12)
+				fillstate <= `S_MCHECK3;
+		end
+
+		`S_MCHECK3: begin
+			psl_ipl <= 5'h1f;
+			psl_is <= argd1[0];
+			curpc <= { argd1[31:2], 2'b0 };
+			state <= `S_FETCH;
+		end
+
+		/*
+		 * push cpu_wdata onto stack.
+		 */
+		`S_PUSH: begin
+			cpu_addr <= cur_reg_val - 4;
+			cpu_size <= `O_LONG;
+			state <= `S_WRITEMEM;
+			fillstate <= `S_PUSH2;
+		end
+
+		/*
+		 * Set new stack based on ivec (in argd1).
+		 */
+		`S_SETSTK: begin
+			/* save current stack */
+			cpu_addr <= psl_is ? 32'd4 : { 30'b0, cur_mod };
+			cpu_wdata <= cur_reg_val; /* XXX */
+			cpu_write <= 1;
+			cpu_stb <= 1;
+			state <= `S_SETSTK1;
+		end
+
+		`S_SETSTK1: if (cpu_acki) begin
+			cpu_write <= 0;
+			cpu_stb <= 0;
+			state <= `S_SETSTK2;
+		end
+
+		`S_SETSTK2: begin
+			/* fetch new stack */
+			cpu_addr <= argd1[0] ? 32'd4 : 32'd0;
+			cpu_stb <= 1;
+			state <= `S_SETSTK3;
+		end
+
+		`S_SETSTK3: if (cpu_acki) begin
+			cpu_stb <= 0;
+			greg_wregnum <= `REG_SP;
+			greg_wbdata <= CPU_DAT_I;
+			state <= `S_WREG;
+		end
+
 		`S_FILLUP: begin
 			/* Fetch new longword */
 			cpu_addr <= { curpc[31:2], 2'b00 };
 			cpu_write <= 0;
 			cpu_stb <= 1;
 			cpu_size <= `O_LONG;
-			if (cpu_ack) begin
-				inslword <= cpu_rdata;
+			if (cpu_acki) begin
+				inslword <= CPU_DAT_I;
 				itag <= curpc[31:2];
 				ivalid <= 1;
 				cpu_stb <= 0;
-				state <= fillstate;
+				state <= mcheck ? `S_MCHECK : fillstate;
 			end
 		end
 
-		`S_WREG: state <= fillstate;
+		`S_WREG: begin 
+			if (greg_wregnum == `REG_PC)
+				curpc <= greg_wbdata;
+			state <= fillstate;
+		end
 		
 		`S_WRITEMEM: begin
 			cpu_write <= 1;
@@ -609,10 +932,10 @@ module cpu(
 			state <= `S_WRITEMEM2;
 		end
 
-		`S_WRITEMEM2: if (cpu_ack) begin
+		`S_WRITEMEM2: if (cpu_acki) begin
 			cpu_write <= 0;
 			cpu_stb <= 0;
-			state <= fillstate;
+			state <= mcheck ? `S_MCHECK : fillstate;
 		end
 
 		`S_READMEM: begin
@@ -621,12 +944,39 @@ module cpu(
 			state <= `S_READMEM2;
 		end
 
-		`S_READMEM2: if (cpu_ack) begin
+		`S_READMEM2: if (cpu_acki) begin
 			notrash <= 0;
 			if (notrash == 0)
-				OA <= cpu_rdata;
-			OP <= cpu_rdata;
+				OA <= CPU_DAT_I;
+			OP <= CPU_DAT_I;
 			cpu_stb <= 0;
+			state <= mcheck ? `S_MCHECK : fillstate;
+		end
+
+		`S_GETVEC: begin
+			cpu_addr <= { 26'b0, `IPR_SCBB };
+			cpu_write <= 0;
+			cpu_stb <= 1;
+			state <= `S_GETVEC1;
+		end
+
+		`S_GETVEC1: if (CPU_ACK_I) begin
+			cpu_stb <= 0;
+			cpu_addr <= CPU_DAT_I + arg1;
+			state <= `S_GETVEC2;
+		end
+
+		`S_GETVEC2: begin
+			cpu_stb <= 1;
+			cpu_pmem <= 1;
+			cpu_size <= `O_LONG;
+			state <= `S_GETVEC3;
+		end
+
+		`S_GETVEC3: if (CPU_ACK_I) begin
+			cpu_stb <= 0;
+			cpu_pmem <= 0;
+			argd1 <= CPU_DAT_I;
 			state <= fillstate;
 		end
 

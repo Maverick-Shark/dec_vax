@@ -82,14 +82,11 @@ module console(
 	input		  	ACK_I,
 
 	/* signals for what we want to reference */
-	output reg	con_mem,	// raw memory
 	output reg	con_pmem,	// phys memory
 	output reg	con_vmem,	// virt memory
 	output reg	con_reg,	// general reg
 	output reg	con_ipr,	// internal processor reg
 
-
-//	input [1:0]	hreason,
 
 	output reg step, 
 	output reg cont,
@@ -113,18 +110,18 @@ module console(
 	wire ttibusy, ttobusy, ttidone, ttodone;
 	/* verilator lint_on UNUSED */
 	wire [7:0] iodatain;
-	reg start, clear;
-	reg [7:0] iodataut;
-	wire ttiintreq, ttointreq;
+	reg clear;
+	wire ttiintreq;
 
-	reg seltti, seltto, ttodata;
+	reg seltti;
 
 	/* verilator lint_off UNUSED */
-	wire ttiintmsk, ttointmsk, intreq;
+	wire ttiintmsk, ttointmsk, intreq, start;
 	/* verilator lint_on UNUSED */
 	assign ttiintmsk = 1'b0;
 	assign ttointmsk = 1'b0;
-	assign intreq = ttiintreq | ttointreq;
+	assign intreq = ttiintreq;
+	assign start = 1'b0;
 
 	tti tti(
 		.clk(clk),
@@ -144,6 +141,7 @@ module console(
 		.tti_rx(tti_rx)
 	);
 
+`ifdef notdef
 	tto tto(
 		.clk(clk),
 		.iorst(rst),
@@ -162,6 +160,8 @@ module console(
 
 		.tto_tx(tto_tx)
 	);
+`endif
+	assign tto_tx = 1'b1;
 
 	reg [3:0] htoa;
 	reg [7:0] hexd;
@@ -200,6 +200,7 @@ module console(
 	end
 
 	always @(posedge clk) begin
+
 		if (halted) begin
 			cont <= 0;
 		end
@@ -219,15 +220,16 @@ module console(
 		end
 		`CONSOLE0: if (ACK_I) begin
 			utnum <= DAT_I;
+			con_reg <= 0;
 			STB_O <= 0;
 			CYC_O <= 0;
+//$fdisplay(32'h80000002, "CONSOLE0: read utnum %x\r\n", DAT_I);
 			writenum_next <= `WRITNUM_NEXT_C2;
 			state <= `WRITENUM;
 		end
 
 		`CONSOLE2: begin
 			state <= `CRLFEXC;
-			con_mem <= 0;
 			con_reg <= 0;
 			con_pmem <= 0;
 			con_vmem <= 0;
@@ -254,9 +256,11 @@ module console(
 				CYC_O <= 1;
 				state <= `MEMREFS;
 				if (tmp == "/")
-					con_mem <= 1;
+					con_pmem <= 1;
 				else if (tmp == "R") begin
 					con_reg <= 1;
+				end else if (tmp == "I") begin
+					con_ipr <= 1;
 				end else if (tmp == "P") begin
 					con_pmem <= 1;
 				end else if (tmp == "V") begin
@@ -280,7 +284,7 @@ module console(
 			writenum_next <= `WRITNUM_NEXT_M2;
 			state <= `WRITENUM;
 		end
-		`MEMREFS2: begin
+		`MEMREFS2: if (ACK_I == 0) begin
 			tmp <= " ";
 			state <= `PUTCHAR;
 			putchar_next <= `PUTCHAR_NEXT_M3;
@@ -306,11 +310,17 @@ module console(
 				putchar_next <= `PUTCHAR_NEXT_C2;
 			end
 		end
-		`MEMREFS5: if (ACK_I) begin
+		`MEMREFS5: begin
+			if (ACK_I) begin
 			STB_O <= 0;
 			CYC_O <= 0;
 			WE_O <= 0;
+			con_reg <= 0;
+			con_pmem <= 0;
+			con_vmem <= 0;
+			con_ipr <= 0;
 			state <= `CONSOLE2;
+		end
 		end
 
 		/*
@@ -331,6 +341,60 @@ module console(
 			clear <= 0;
 			state <= `READNUM2;
 		end
+
+		/*
+		 * Print out char in tmp
+		 */
+		`PUTCHAR: begin
+//$fdisplay(32'h80000002, "PUTCHAR:\r\n");
+			ADR_O <= 32'h20001f74;
+			WE_O <= 0;
+			STB_O <= 1;
+			CYC_O <= 1;
+			con_pmem <= 1;
+			state <= `PUTCHAR2;
+		end
+		`PUTCHAR2: if (ACK_I) begin
+//$fdisplay(32'h80000002, "PUTCHAR2: dat_i %x\r\n", DAT_I);
+			STB_O <= 0;
+			CYC_O <= 0;
+			if (DAT_I[7])
+				state <= `PUTCHAR21;
+			else
+				state <= `PUTCHAR;
+		end
+		`PUTCHAR21: begin
+			ADR_O <= 32'h20001f76;
+			DAT_O <= {24'b0, tmp };
+			WE_O <= 1;
+			STB_O <= 1;
+			CYC_O <= 1;
+			state <= `PUTCHAR3;
+		end
+		`PUTCHAR3: if (ACK_I) begin
+			STB_O <= 0;
+			CYC_O <= 0;
+			con_pmem <= 0;
+			case (putchar_next)
+			`PUTCHAR_NEXT_C2: state <= `CONSOLE2;
+			`PUTCHAR_NEXT_M3: state <= `MEMREFS3;
+			`PUTCHAR_NEXT_C3: state <= `CONSOLE3;
+			`PUTCHAR_NXT_CL2: state <= `CRLFEXC2;
+			`PUTCHAR_NXT_CL3: state <= `CRLFEXC3;
+			`PUTCHAR_NEXT_W2: state <= `WRITENUM2;
+			`PUTCHAR_NEXT_W3: state <= `WRITENUM3;
+			`PUTCHAR_NEXT_W4: state <= `WRITENUM4;
+			`PUTCHAR_NEXT_W5: state <= `WRITENUM5;
+			`PUTCHAR_NEXT_W51: state <= `WRITENUM51;
+			`PUTCHAR_NEXT_W52: state <= `WRITENUM52;
+			`PUTCHAR_NEXT_W6: state <= `WRITENUM6;
+			`PUTCHAR_NEXT_R3: state <= `READNUM3;
+			`PUTCHAR_NEXT_M2: state <= `MEMREFS2;
+			default: state <= `CONSOLE2;
+			endcase
+		end
+
+`ifdef notdef
 		/*
 		 * Print out char in tmp
 		 */
@@ -368,6 +432,11 @@ module console(
 			default: state <= `CONSOLE2;
 			endcase
 		end
+`endif
+
+
+
+
 		/*
 		 * Print out \r\n!
 		 */
@@ -391,6 +460,7 @@ module console(
 		 */
 		`WRITENUM: begin
 			tmp <= hexd;
+//$fdisplay(32'h80000002, "WRITENUM: hexd %x\r\n", hexd);
 			state <= `PUTCHAR;
 			putchar_next <= `PUTCHAR_NEXT_W2;
 		end
@@ -470,6 +540,10 @@ module console(
 				/* verilator lint_on CASEINCOMPLETE */
 			end
 		end
+
+
+
+
 		endcase
 		/* verilator lint_on CASEINCOMPLETE */
 	end
