@@ -10,11 +10,12 @@ TANAME=${TSUBDIR}/Vnvax__ALL.a
 VPATH=..
 DEST=nvax
 TDEST=nvax_trace
-OBJS=nvax.o ttotest.o ttitest.o verilated.o sdramtest.o
+OBJS=nvax.o ttotest.o ttitest.o verilated.o sdramtest.o disasm.o
 CFLAGS=-g
 
 TOP=sbi.v
-SRCS=console.v cpu.v decode.v opspec.v sbi.v sdram.v tti.v tto.v vcache.v
+SRCS=console.v cpu.v decode.v opspec.v sbi.v sdram.v tti.v tto.v vcache.v \
+	ipr.v qbus.v dl11_tto.v
 
 all:  ${DEST} # ${TDEST}
 

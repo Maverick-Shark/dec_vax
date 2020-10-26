@@ -1,11 +1,15 @@
 /*	$Id$	*/
 
+#include <sys/socket.h>
+#include <netinet/in.h>
+
 #include <stdlib.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <signal.h>
 #include <unistd.h>
 #include <termios.h>
+#include <err.h>
 
 #include "Vnvax.h"
 #include "verilated.h"
@@ -14,6 +18,7 @@
 
 volatile int ttisig;
 int tti_active;
+int sfd;
 
 static void
 sig_io(int signo)
@@ -25,18 +30,46 @@ void
 ttiinit()
 {
 	struct termios p, op;
-	int i;
+	struct sockaddr_in soin, cin;
+	int i, lfd, ff;
+	unsigned int clen;
 	char c;
 
 	signal(SIGIO, sig_io);
-	fcntl(0, F_SETFL, O_NONBLOCK|O_ASYNC);
+	if (nflag) {
+		if ((lfd = socket(AF_INET, SOCK_STREAM, 0)) < 0)
+			err(1, "socket");
 
-	tcgetattr(0, &op);
-	tcgetattr(0, &p);
-	cfmakeraw(&p);
-	p.c_lflag |= ISIG;
-	tcsetattr(0, TCSANOW, &p);
-	ttisig = 0;
+		memset(&soin, 0, sizeof(soin));
+		soin.sin_family = AF_INET;
+		soin.sin_addr.s_addr = INADDR_ANY;
+		soin.sin_port = htons(port);
+		if (bind(lfd, (struct sockaddr *) &soin, sizeof(soin)) < 0)
+			err(1, "bind");
+		listen(lfd, 5);
+		clen = sizeof(cin);
+		if ((sfd = accept(lfd, (struct sockaddr *)&cin, &clen)) < 0)
+			err(1, "accept");
+
+		if (fcntl(sfd, F_SETOWN, getpid()) < 0)
+			err(1, "F_SETOWN");
+		if ((ff = fcntl(sfd, F_GETFL)) < 0)
+			err(1, "F_GETFL");
+		if (fcntl(sfd, F_SETFL, ff | FNDELAY | FASYNC) < 0)
+			err(1, "F_SETFL");
+
+	} else {
+		sfd = 0;
+		if (fcntl(sfd, F_SETFL, O_NONBLOCK|O_ASYNC) < 0)
+			err(1, "fcntl");
+
+		tcgetattr(0, &op);
+		tcgetattr(0, &p);
+		cfmakeraw(&p);
+		p.c_lflag |= ISIG;
+		tcsetattr(0, TCSANOW, &p);
+		ttisig = 0;
+	}
 }
 
 /*
@@ -56,7 +89,7 @@ ttiexec(Vnvax *tb)
 	switch (tti_active) {
 	case 0: /* got signal */
 		ttisig = 0;
-		if ((i = read(0, &inchar, 1)) < 0)
+		if ((i = read(sfd, &inchar, 1)) < 0)
 			return;
 		intickcnt = SERIAL_TICKCNT; // start bit
 		tb->tti_rx = 0;

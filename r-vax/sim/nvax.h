@@ -12,3 +12,4 @@ void loadfile(char *, int);
 extern int tto_active, tti_active;
 extern volatile int ttisig;
 extern unsigned long nticks;
+extern int nflag, port;

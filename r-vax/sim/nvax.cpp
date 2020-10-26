@@ -1,5 +1,4 @@
-/*	$Id$	*/
-
+/*	$Id$	*/ 
 #include <err.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -9,9 +8,15 @@
 
 #include "nvax.h"
 
+int cpubusdebug, itrace;
+
 unsigned long nticks;
 void dumpvcache(Vnvax *tb);
+void cpubusdump(Vnvax *tb);
+void itracedump(Vnvax *tb);
 void loadfile(char *, int);
+
+int nflag, port;
 
 int main(int argc, char **argv)
 {
@@ -20,16 +25,36 @@ int main(int argc, char **argv)
 	int needeval, off, ch;
 	char *fn;
 
+	port = 10000;
 	fn = NULL;
 	off = 0;
-	while ((ch = getopt(argc, argv, "o:f:")) != -1)
+	while ((ch = getopt(argc, argv, "o:f:np:d:")) != -1)
 		switch (ch) {
 		case 'o': // offset
 			off = strtol(optarg, 0, 0);
 			break;
+
+		case 'n':
+			nflag++;
+			break;
+
+		case 'p':
+			port = strtol(optarg, 0, 0);
+			break;
+
 		case 'f': // offset
 			fn = optarg;
 			break;
+
+		case 'd': // debug
+			if (strcmp(optarg, "cpubus") == 0)
+				cpubusdebug++;
+			else if (strcmp(optarg, "itrace") == 0)
+				itrace++;
+			else
+				errx(1, "unknown flag %s", optarg);
+			break;
+
 		default:
 			errx(1, "unknown arg");
 		}
@@ -57,9 +82,16 @@ int main(int argc, char **argv)
 			needeval++;
 		}
 
+//if (tb->sbi__DOT__qbus__DOT__dl11_tto__DOT__state > 1)
+//	fprintf(stderr, "dl11 state %d)\r\n", tb->sbi__DOT__qbus__DOT__dl11_tto__DOT__state);
+
 		if (needeval)
 			tb->eval();
 
+		if (itrace && tb->sbi__DOT__cpu__DOT__state == 16) // S_DECODE
+			itracedump(tb);
+		if (cpubusdebug && tb->sbi__DOT__cpu_cyc)
+			cpubusdump(tb);
 //		if (tb->sbi__DOT__con_stb != 0)
 //			dumpvcache(tb);
 
@@ -84,6 +116,37 @@ tick(Vnvax *tb)
 }
 
 void
+cpubusdump(Vnvax *tb)
+{
+	static long lasttick, firsttick;
+
+	if (lasttick+1 < nticks) {
+		firsttick = nticks;
+		lasttick = nticks;
+		fprintf(stderr, "--- NEWCYC\r\n");
+	} else if (lasttick+1 == nticks)
+		lasttick = nticks;
+
+	if (firsttick+128 < nticks) {
+		fprintf(stderr, "cpubus hung\r\n");
+fprintf(stderr, "caddrl %x caddrh %x state %d\r\n", tb->sbi__DOT__vcache__DOT__caddrl, tb->sbi__DOT__vcache__DOT__caddrh, tb->sbi__DOT__vcache__DOT__state);
+		fflush(stderr);
+		sleep(1);
+		exit(1);
+	}
+
+	fprintf(stderr, "CPUBUS %ld) ", nticks);
+	fprintf(stderr, "dest %s stb %d addr %#x we %d wdata %#x ",
+	    tb->sbi__DOT__cpu__DOT__cpu_pmem ? "P" : "V",
+	    tb->sbi__DOT__cpu_stb, tb->sbi__DOT__cpu_addr, 
+	    tb->sbi__DOT__cpu_write, tb->sbi__DOT__cpu_wdata);
+	fprintf(stderr, "rdata %#x ack %d resopflt %d\r\n", 
+	    tb->sbi__DOT__cpu_rdata, tb->sbi__DOT__cpu_ack,
+	    tb->sbi__DOT__cpu__DOT__resopflt);
+}
+
+#if 0
+void
 dumpvcache(Vnvax *tb)
 {
 	const static char *states[] = { "IDLE", "FASTPATH", "SLOWRMEM", 
@@ -105,4 +168,4 @@ dumpvcache(Vnvax *tb)
 	printf("state %s\r\n", states[tb->sbi__DOT__vcache__DOT__state]);
 	printf("-------\r\n");
 }
-
+#endif

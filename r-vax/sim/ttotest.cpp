@@ -23,6 +23,7 @@ ttoexec(Vnvax *tb)
 	}
 	switch (tto_active) {
 	case 0: /* got start bit. */
+//fprintf(stderr, "start bit \r\n");
 		intickcnt = 30;
 		tto_active++;
 		utchar = 0;
@@ -32,6 +33,7 @@ ttoexec(Vnvax *tb)
 		intickcnt = 20;
 		if (tb->tto_tx) utchar |= (1 << (tto_active-1));
 		if (tto_active++ == 8) {
+//fprintf(stderr, "print char %x\r\n", utchar);
 			putchar(utchar);
 			fflush(stdout);
 		}
