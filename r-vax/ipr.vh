@@ -14,3 +14,5 @@
 `define IPR_RXDB	6'h21
 `define IPR_TXCS	6'h22
 `define IPR_TXDB	6'h23
+
+`define IPR_SID		6'h3e

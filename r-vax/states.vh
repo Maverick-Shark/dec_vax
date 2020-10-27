@@ -20,8 +20,8 @@
 `define	S_INDOA		15
 `define	S_DECODE	16
 `define	S_MTPR		17
-//`define	S_MTPR2		18
-//`define	S_MTPR3		19
+`define	S_TXCS_R	18
+`define	S_TXDB_W	19
 `define	S_MFPR		20
 //`define	S_MFPR2		21
 `define	S_POSTINC	22

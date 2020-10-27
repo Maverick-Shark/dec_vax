@@ -58,9 +58,9 @@ module qbus(
 	 */
 	always @(posedge clk) begin
 		tto_start <= 0;
+		if (request == 0 || rst)
+			qio_ack <= 0;
 		if (~|ADR_I[27:13] & request) begin
-			if (rst | ~STB_I)
-				qio_ack <= 0;
 			case (ADR_I[12:0])
 			13'o17564: begin
 //$fdisplay(32'h80000002, "txcs: adr %x \r\n", ADR_I);

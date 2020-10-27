@@ -93,7 +93,6 @@ defparam console.tto.CLKPERBIT = 2604;
 	wire [31:0] con_cpu_addr, con_cpu_wdata, con_cpu_rdata;
 	wire con_cpu_cyc, con_cpu_write, con_cpu_stb, con_cpu_ack;
 	wire con_cpu_vmem, con_cpu_pmem, con_cpu_ipr, con_cpu_reg;
-	wire con_tto_tx;
 
 	cpu cpu(
 		.clk(clk),
@@ -166,10 +165,13 @@ defparam console.tto.CLKPERBIT = 2604;
 	);
 
 	wire		qbus_cyc, qbus_ack;
-	wire		dl11_tx;
 	wire [31:0]	qbus_wdata;
-	assign	qbus_cyc = mmu_to_sw_addr[29];
-	assign tto_tx = dl11_tx & con_tto_tx;
+	assign	qbus_cyc = mmu_to_sw_addr[29] & mmu_to_sw_stb;
+
+//always @(posedge clk)
+//	if (halted == 0 && qbus_cyc)
+//		$fdisplay(32'h80000002, "qbcyc: stb %d adr %x rdata %x ack %d\r\n",
+//	mmu_to_sw_stb, mmu_to_sw_addr, qbus_wdata, qbus_ack);
 
 	/*
 	 * Qbus controller.
@@ -186,7 +188,7 @@ defparam console.tto.CLKPERBIT = 2604;
 		.DAT_O(qbus_wdata),
 		.ACK_O(qbus_ack),
 
-		.tto_tx(dl11_tx)
+		.tto_tx(tto_tx)
 	);
 
 
@@ -288,8 +290,7 @@ defparam console.tto.CLKPERBIT = 2604;
 		.con_pmem(con_cpu_pmem),
 		.con_vmem(con_cpu_vmem),
 
-		.tti_rx(tti_rx),
-		.tto_tx(con_tto_tx)
+		.tti_rx(tti_rx)
 	);
 
 endmodule

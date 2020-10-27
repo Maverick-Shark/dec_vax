@@ -658,6 +658,7 @@ initial psl_ipl = 5'h1f;
 					state <= `S_MTPR;
 			end
 			`I_MFPR: begin
+//$fdisplay(32'h80000002, "I_MFPR: arg1 %x anyfault %d\r\n", arg1, anyfault);
 				cur_reg_num_save <= `REG_SP;
 				writeback <= 1;
 				set_vnz_dest <= 1;
@@ -787,6 +788,14 @@ initial psl_ipl = 5'h1f;
 			`IPR_SCBB: scbb <= arg1[23:9];
 			`IPR_PCBB: ;
 			`IPR_IPL: psl_ipl <= arg1[4:0];
+			`IPR_TXDB: begin
+				cpu_addr <= 32'h20001f76;
+				cpu_wdata <= arg1;
+				cpu_size <= `O_LONG;
+				cpu_pmem <= 1;
+				state <= `S_WRITEMEM;
+				fillstate <= `S_TXDB_W;
+			end
 			default: resopflt <= 1;
 			endcase
 		end
@@ -795,13 +804,14 @@ initial psl_ipl = 5'h1f;
 		 * XXX check if current sp is the same
 		 */
 		`S_MFPR: begin
+//$fdisplay(32'h80000002, "S_MFPR: arg1 %x arg2 %x\r\n", arg1, arg2);
 			state <= `S_ENDINST;
-			if (|arg2[31:6])
+			if (|arg1[31:6])
 				resopflt <= 1;
 			else
-			casez (arg2[5:0])
+			casez (arg1[5:0])
 			`IPR_KSP, `IPR_SSP, `IPR_ESP, `IPR_USP: begin
-				if (arg2[1:0] == cur_mod)
+				if (arg1[1:0] == cur_mod)
 					argd1 <= cur_reg_val;
 				else
 					argd1 <= ipr_val;
@@ -815,8 +825,29 @@ initial psl_ipl = 5'h1f;
 			`IPR_SCBB: argd1 <= { 8'b0, scbb, 9'b0 };
 			`IPR_PCBB: ;
 			`IPR_IPL: argd1 <= { 27'b0, psl_ipl };
+			`IPR_TXCS: begin
+//$fdisplay(32'h80000002, "IPR_TXCS: pmem %d \r\n", cpu_pmem);
+				state <= `S_READMEM;
+				fillstate <= `S_TXCS_R;
+				cpu_addr <= 32'h20001f74;
+				cpu_size <= `O_LONG;
+				cpu_pmem <= 1;
+			end
+			`IPR_SID: argd1 <= 32'h0A000006;
 			default: resopflt <= 1;
 			endcase
+		end
+
+		`S_TXCS_R: begin
+			state <= `S_ENDINST;
+			argd1 <= OP;
+//$fdisplay(32'h80000002, "S_TXCS_R: OP %x \r\n", OP);
+			cpu_pmem <= 0;
+		end
+
+		`S_TXDB_W: begin
+			state <= `S_ENDINST;
+			cpu_pmem <= 0;
 		end
 
 		/*
