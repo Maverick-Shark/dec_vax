@@ -76,8 +76,8 @@ defparam console.tto.CLKPERBIT = 2604;
 	 * mem_f_pc_* -> data to memory from pcache (after conditional)
 	 */
 
-	wire brk, rst;
-	assign rst = !n_rst | brk;
+	wire rst;
+	assign rst = !n_rst;
 
 	assign buzzer = 1;
 
@@ -188,6 +188,7 @@ defparam console.tto.CLKPERBIT = 2604;
 		.DAT_O(qbus_wdata),
 		.ACK_O(qbus_ack),
 
+		.tti_rx(tti_rx),
 		.tto_tx(tto_tx)
 	);
 
@@ -273,7 +274,6 @@ defparam console.tto.CLKPERBIT = 2604;
 		.rst(rst),
 
 		.halted(halted),	// Handle commands
-		.break_o(brk),	// want to halt
 		.cont(cont),
 		.step(step),
 
@@ -288,9 +288,9 @@ defparam console.tto.CLKPERBIT = 2604;
 		.con_reg(con_cpu_reg),
 		.con_ipr(con_cpu_ipr),
 		.con_pmem(con_cpu_pmem),
-		.con_vmem(con_cpu_vmem),
+		.con_vmem(con_cpu_vmem)
 
-		.tti_rx(tti_rx)
+//		.tti_rx(tti_rx)
 	);
 
 endmodule

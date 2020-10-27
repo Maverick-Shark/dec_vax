@@ -90,11 +90,7 @@ module console(
 
 	output reg step, 
 	output reg cont,
-	input halted,
-
-	output break_o,
-	input tti_rx
-
+	input halted
 );
 
 	reg [5:0]	state;		/* 33 states */
@@ -110,40 +106,6 @@ module console(
 	reg		was_reg;	// general reg
 	reg		was_ipr;	// internal processor reg
 	reg [31:0]	was_addr;
-
-	/* verilator lint_off UNUSED */
-	wire ttibusy, ttidone;
-	/* verilator lint_on UNUSED */
-	wire [7:0] iodatain;
-	reg clear;
-	wire ttiintreq;
-
-	reg seltti;
-
-	/* verilator lint_off UNUSED */
-	wire ttiintmsk, intreq, start;
-	/* verilator lint_on UNUSED */
-	assign ttiintmsk = 1'b0;
-	assign intreq = ttiintreq;
-	assign start = 1'b0;
-
-	tti tti(
-		.clk(clk),
-		.iorst(rst),
-
-		.start(start),
-		.clear(clear),
-		.devsel(seltti),
-		.intmsk(ttiintmsk),
-
-		.busy(ttibusy),
-		.done(ttidone),
-		.outdata(iodatain),
-		.intreq(ttiintreq),
-		.gotbreak(break_o),
-
-		.tti_rx(tti_rx)
-	);
 
 	reg [3:0] htoa;
 	reg [7:0] hexd;
@@ -325,18 +287,31 @@ module console(
 		 * Get char and put in tmp
 		 */
 		`GETCHAR: begin
-			seltti <= 1;
+			ADR_O <= 32'h20001f70;
+			WE_O <= 0;
+			STB_O <= 1;
+			CYC_O <= 1;
+			con_pmem <= 1;
 			state <= `GETCHAR2;
 		end
-		`GETCHAR2: if (ttidone) begin
-			tmp <= iodatain;
-			clear <= 1;
-			state <= `GETCHAR3;
+		`GETCHAR2: if (ACK_I) begin
+			STB_O <= 0;
+			CYC_O <= 0;
+			if (DAT_I[7])
+				state <= `GETCHAR3;
+			else
+				state <= `GETCHAR;
 		end
-		`GETCHAR3: state <= `GETCHAR4;
-		`GETCHAR4: begin
-			seltti <= 0;
-			clear <= 0;
+		`GETCHAR3: begin
+			ADR_O <= 32'h20001f72;
+			STB_O <= 1;
+			CYC_O <= 1;
+			state <= `GETCHAR4;
+		end
+		`GETCHAR4: if (ACK_I) begin
+			tmp <= DAT_I[7:0];
+			STB_O <= 0;
+			CYC_O <= 1;
 			state <= `READNUM2;
 		end
 

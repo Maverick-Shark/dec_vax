@@ -24,6 +24,7 @@ module qbus(
 	output [31:0]	DAT_O,
 	output		ACK_O,
 
+	input		tti_rx,
 	output		tto_tx
 );
 
@@ -54,14 +55,45 @@ module qbus(
 	);
 
 	/*
+	 * DL11 receiver.
+	 */
+	wire 		tti_done;
+	wire [7:0]	tti_data;
+	reg		tti_clr;
+
+	dl11_tti dl11_tti(
+		.clk(clk),
+		.rst(rst),
+
+		.clear(tti_clr),
+		.done(tti_done),
+		.outdata(tti_data),
+
+		.tti_rx(tti_rx)
+	);
+
+
+	/*
 	 * Qbus I/O space.
 	 */
 	always @(posedge clk) begin
 		tto_start <= 0;
+		tti_clr <= 0;
 		if (request == 0 || rst)
 			qio_ack <= 0;
 		if (~|ADR_I[27:13] & request) begin
 			case (ADR_I[12:0])
+			13'o17560: begin
+//if (tti_done) $fdisplay(32'h80000002, "rxcs: ttidone %d\r\n", tti_done);
+				qio_dato <= { 24'b0, tti_done, 7'b0 };
+				qio_ack <= 1;
+			end
+			13'o17562: begin
+//if (tti_done) $fdisplay(32'h80000002, "rxdb: %x\r\n", tti_data);
+				qio_dato <= { 24'b0, tti_data };
+				qio_ack <= 1;
+				tti_clr <= 1;
+			end
 			13'o17564: begin
 //$fdisplay(32'h80000002, "txcs: adr %x \r\n", ADR_I);
 				qio_dato <= { 24'b0, tto_ready, 7'b0 };
