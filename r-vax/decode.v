@@ -50,17 +50,19 @@ module decode(
 	always @(posedge clk) begin
 		case (insn)
 		default: numarg <= 3'd0;
-		`I_BRB: numarg <= 3'd1;		// 11
+		`I_RSB: numarg <= 0;			// 05
+
+		`I_BRB: numarg <= 3'd1;			// 11
 		`I_BNEQ: numarg <= 3'd1;		// 12
 		`I_BEQL: numarg <= 3'd1;		// 13
 		`I_BGTR: numarg <= 3'd1;		// 14
 		`I_BLEQ: numarg <= 3'd1;		// 15
-
+		`I_JSB: numarg <= 3'd1;			// 16
 		`I_JMP: numarg <= 3'd1;			// 17
 		`I_BGEQ: numarg <= 3'd1;		// 18
 		`I_BLSS: numarg <= 3'd1;		// 19
-		`I_BGTRU: numarg <= 3'd1;	// 1a
-		`I_BLEQU: numarg <= 3'd1;	// 1b
+		`I_BGTRU: numarg <= 3'd1;		// 1a
+		`I_BLEQU: numarg <= 3'd1;		// 1b
 		`I_BVC:	 numarg <= 3'd1;		// 1c
 		`I_BVS:	 numarg <= 3'd1;		// 1d
 		`I_BCC:	 numarg <= 3'd1;		// 1e
@@ -99,6 +101,7 @@ module decode(
 
 		`I_MTPR: numarg <= 2;			// da
 		`I_MFPR: numarg <= 2;			// db
+		`I_MOVPSL: numarg <= 1;			// dc
 
 		`I_MOVAL: numarg <= 2;			// de
 		endcase
@@ -110,12 +113,15 @@ module decode(
 	always @(posedge clk) begin
 		case (insn)
 		default: argtbl <= 30'b0;
+
+		`I_RSB: argtbl <= 30'b0;			// 05
+
 		`I_BRB: argtbl <= { 25'b0, `O_BYTE, `O_B };	// 11
 		`I_BNEQ: argtbl <= { 25'b0, `O_BYTE, `O_B };	// 12
 		`I_BEQL: argtbl <= { 25'b0, `O_BYTE, `O_B };	// 13
 		`I_BGTR: argtbl <= { 25'b0, `O_BYTE, `O_B };	// 14
 		`I_BLEQ: argtbl <= { 25'b0, `O_BYTE, `O_B };	// 15
-
+		`I_JSB: argtbl <= { 25'b0, `O_BYTE, `O_A };	// 16
 		`I_JMP: argtbl <= { 25'b0, `O_BYTE, `O_A };	// 17
 		`I_BGEQ: argtbl <= { 25'b0, `O_BYTE, `O_B };	// 18
 		`I_BLSS: argtbl <= { 25'b0, `O_BYTE, `O_B };	// 19
@@ -171,6 +177,7 @@ module decode(
 			{ 20'b0, `O_LONG, `O_R, `O_LONG, `O_R };	// da
 		`I_MFPR: argtbl <=
 			{ 20'b0, `O_LONG, `O_W, `O_LONG, `O_R };	// db
+		`I_MOVPSL: argtbl <= { 25'b0, `O_LONG, `O_W };		// dc
 
 		`I_MOVAL: argtbl <=
 			{ 20'b0, `O_LONG, `O_W, `O_LONG, `O_A };	// de

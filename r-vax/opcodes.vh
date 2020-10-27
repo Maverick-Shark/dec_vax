@@ -32,6 +32,7 @@
 `define	I_REI	8'h02
 `define	I_BPT	8'h03
 `define	I_RET	8'h04
+`define	I_RSB	8'h05
 `define	I_LDPCTX	8'h06
 `define	I_SVPCTX	8'h07
 
@@ -40,7 +41,7 @@
 `define	I_BEQL	8'h13
 `define	I_BGTR	8'h14
 `define	I_BLEQ	8'h15
-
+`define	I_JSB	8'h16
 `define	I_JMP	8'h17
 `define	I_BGEQ	8'h18
 `define	I_BLSS	8'h19
@@ -90,6 +91,7 @@
 
 `define I_MTPR	8'hda
 `define I_MFPR	8'hdb
+`define I_MOVPSL	8'hdc
 
 `define I_MOVAL	8'hde
 

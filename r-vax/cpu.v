@@ -594,12 +594,23 @@ initial psl_ipl = 5'h1f;
 		`S_EXECUTE: begin
 			state <= `S_ENDINST;
 			case (cur_inst)
+			`I_RSB: begin
+				cur_reg_num_save <= `REG_SP;
+				set_branch_pc <= 1;
+				state <= `S_RSB;
+			end
 			`I_BRB, `I_BRW: set_branch_pc <= 1;
 			`I_BNEQ: if (psw[`PSL_Z] == 0) set_branch_pc <= 1;
 			`I_BEQL: if (psw[`PSL_Z] == 1) set_branch_pc <= 1;
 			`I_BGTR: if (psw[3:2] == 2'b00) set_branch_pc <= 1;
 			`I_BLEQ: if (psw[3:2] == 2'b11) set_branch_pc <= 1;
-
+			`I_JSB: begin
+				cur_reg_num_save <= `REG_SP;
+				set_branch_pc <= 1;
+				state <= `S_JSB;
+// $fdisplay(32'h80000002, "I_JSB: arg1p %x\r\n", arg1p);
+			end
+			`I_JMP: set_branch_pc <= 1;
 			`I_BGEQ: if (psw[`PSL_N] == 0) set_branch_pc <= 1;
 			`I_BLSS: if (psw[`PSL_N] == 1) set_branch_pc <= 1;
 			`I_BGTRU: if ((psw[`PSL_Z]|psw[`PSL_C]) == 0)
@@ -610,10 +621,6 @@ initial psl_ipl = 5'h1f;
 			`I_BVS: if (psw[`PSL_V] == 1) set_branch_pc <= 1;
 			`I_BCC: if (psw[`PSL_C] == 0) set_branch_pc <= 1;
 			`I_BCS: if (psw[`PSL_C] == 1) set_branch_pc <= 1;
-			`I_JMP: begin
-				set_branch_pc <= 1;
-			end
-
 			`I_INCL: begin
 				{ Ctmp, argd1 } <= { 1'b0, arg1 } + 33'h1;
 				writeback <= 1;
@@ -664,6 +671,11 @@ initial psl_ipl = 5'h1f;
 				set_vnz_dest <= 1;
 				if (anyfault == 0)
 					state <= `S_MFPR;
+			end
+			`I_MOVPSL: begin
+				argd1 <=
+		{ 5'd0, psl_is, cur_mod, prv_mod, 1'b0, psl_ipl, 8'b0, psw };
+				writeback <= 1;
 			end
 			`I_CLRB, `I_CLRW, `I_CLRL: begin
 //$fdisplay(32'h80000002, "CLRL: arg1p %x \r\n", arg1p);
@@ -756,6 +768,37 @@ initial psl_ipl = 5'h1f;
 			end
 			if (step)
 				delay_halt <= 1;
+		end
+
+		`S_JSB: begin
+			greg_wbdata <= cur_reg_val - 4;
+			cpu_addr <= cur_reg_val - 4;
+			greg_wregnum <= `REG_SP;
+			state <= `S_WREG;
+			fillstate <= `S_JSB2;
+//$fdisplay(32'h80000002, "S_JSB: spval %x\r\n", cur_reg_val);
+		end
+
+		`S_JSB2: begin
+			cpu_size <= `O_LONG;
+			cpu_wdata <= curpc;
+			state <= `S_WRITEMEM;
+			fillstate <= `S_ENDINST;
+//$fdisplay(32'h80000002, "S_JSB2: spval %x\r\n", cur_reg_val);
+		end
+
+		`S_RSB: begin
+			cpu_addr <= cur_reg_val;
+			greg_wbdata <= cur_reg_val + 4;
+			greg_wregnum <= `REG_SP;
+			state <= `S_READMEM;
+			fillstate <= `S_RSB2;
+		end
+
+		`S_RSB2: begin
+			arg1p <= OP;
+			state <= `S_WREG;
+			fillstate <= `S_ENDINST;
 		end
 
 		`S_MTPR: begin

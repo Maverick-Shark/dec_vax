@@ -23,7 +23,7 @@
 `define	S_TXCS_R	18
 `define	S_TXDB_W	19
 `define	S_MFPR		20
-//`define	S_MFPR2		21
+`define	S_JSB		21
 `define	S_POSTINC	22
 `define	S_POSTINC0	23
 `define	S_GETVEC	24
@@ -40,6 +40,9 @@
 `define	S_MCHECK3	35
 `define	S_PUSH		36
 `define	S_PUSH2		37
+`define	S_JSB2		38
+`define	S_RSB		39
+`define	S_RSB2		40
 
 
 `define B_HALT		8'd0
