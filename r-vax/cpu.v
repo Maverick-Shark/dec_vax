@@ -825,11 +825,14 @@ initial psl_ipl = 5'h1f;
 			`IPR_SCBB: argd1 <= { 8'b0, scbb, 9'b0 };
 			`IPR_PCBB: ;
 			`IPR_IPL: argd1 <= { 27'b0, psl_ipl };
-			`IPR_TXCS: begin
+			`IPR_RXCS, `IPR_TXCS: begin
 //$fdisplay(32'h80000002, "IPR_TXCS: pmem %d \r\n", cpu_pmem);
 				state <= `S_READMEM;
 				fillstate <= `S_TXCS_R;
-				cpu_addr <= 32'h20001f74;
+				if (arg1[1])
+					cpu_addr <= 32'h20001f74;
+				else
+					cpu_addr <= 32'h20001f70;
 				cpu_size <= `O_LONG;
 				cpu_pmem <= 1;
 			end
