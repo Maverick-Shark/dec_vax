@@ -36,6 +36,7 @@
 `define	I_LDPCTX	8'h06
 `define	I_SVPCTX	8'h07
 
+`define	I_BSBB	8'h10
 `define	I_BRB	8'h11
 `define	I_BNEQ	8'h12
 `define	I_BEQL	8'h13
@@ -52,14 +53,23 @@
 `define	I_BCC	8'h1e
 `define	I_BCS	8'h1f
 
+`define	I_BSBW	8'h30
 `define	I_BRW	8'h31
 
 `define I_MOVAW	8'h3e
+
+`define I_CMPB	8'h91
+
+`define I_BITB	8'h93
 
 `define I_CLRB	8'h94
 `define I_TSTB	8'h95
 
 `define I_MOVAB	8'h9e
+
+`define I_CMPW	8'hb1
+
+`define I_BITW	8'hb3
 
 `define I_CLRW	8'hb4
 `define I_TSTW	8'hb5
@@ -75,18 +85,21 @@
 `define	I_MULL3	8'hc5
 `define	I_DIVL2	8'hc6
 `define	I_DIVL3	8'hc7
-
+`define	I_BISL2	8'hc8
+`define	I_BISL3	8'hc9
 `define	I_BICL2	8'hca
 `define	I_BICL3	8'hcb
 `define	I_XORL2	8'hcc
 `define	I_XORL3	8'hcd
 
 `define	I_MOVL	8'hd0
+`define I_CMPL	8'hd1
 
+`define I_BITL	8'hd3
 `define I_CLRL	8'hd4
 `define I_TSTL	8'hd5
 `define I_INCL	8'hd6
-
+`define I_DECL	8'hd7
 `define I_ADWC	8'hd8
 
 `define I_MTPR	8'hda

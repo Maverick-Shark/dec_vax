@@ -52,6 +52,7 @@ module decode(
 		default: numarg <= 3'd0;
 		`I_RSB: numarg <= 0;			// 05
 
+		`I_BSBB: numarg <= 3'd1;		// 10
 		`I_BRB: numarg <= 3'd1;			// 11
 		`I_BNEQ: numarg <= 3'd1;		// 12
 		`I_BEQL: numarg <= 3'd1;		// 13
@@ -68,15 +69,22 @@ module decode(
 		`I_BCC:	 numarg <= 3'd1;		// 1e
 		`I_BCS:	 numarg <= 3'd1;		// 1f
 
+		`I_BSBW: numarg <= 3'd1;		// 30
 		`I_BRW:	 numarg <= 3'd1;		// 31
 
 		`I_MOVAW: numarg <= 2;			// 3e
 
+		`I_CMPB: numarg <= 2;			// 91
+
+		`I_BITB: numarg <= 2;			// 93
 		`I_CLRB: numarg <= 3'd1;		// 94
 		`I_TSTB: numarg <= 3'd1;		// 95
 
 		`I_MOVAB: numarg <= 2;			// 9e
 
+		`I_CMPW: numarg <= 2;			// b1
+
+		`I_BITW: numarg <= 2;			// b3
 		`I_CLRW: numarg <= 3'd1;		// b4
 		`I_TSTW: numarg <= 3'd1;		// b5
 
@@ -86,13 +94,17 @@ module decode(
 		`I_ADDL2: numarg <= 3'd2;		// c0
 		`I_ADDL3: numarg <= 3'd3;		// c1
 
+		`I_BISL2: numarg <= 3'd2;		// c8
+		`I_BISL3: numarg <= 3'd3;		// c9
 		`I_BICL2: numarg <= 3'd2;		// ca
 		`I_BICL3: numarg <= 3'd3;		// cb
 		`I_XORL2: numarg <= 3'd2;		// cc
 		`I_XORL3: numarg <= 3'd3;		// cd
 
 		`I_MOVL: numarg <= 3'd2;		// d0
+		`I_CMPL: numarg <= 2;			// d1
 
+		`I_BITL: numarg <= 2;			// d3
 		`I_CLRL: numarg <= 3'd1;		// d4
 		`I_TSTL: numarg <= 3'd1;		// d5
 		`I_INCL: numarg <= 3'd1;		// d6
@@ -116,6 +128,7 @@ module decode(
 
 		`I_RSB: argtbl <= 30'b0;			// 05
 
+		`I_BSBB: argtbl <= { 25'b0, `O_BYTE, `O_B };	// 10
 		`I_BRB: argtbl <= { 25'b0, `O_BYTE, `O_B };	// 11
 		`I_BNEQ: argtbl <= { 25'b0, `O_BYTE, `O_B };	// 12
 		`I_BEQL: argtbl <= { 25'b0, `O_BYTE, `O_B };	// 13
@@ -132,17 +145,28 @@ module decode(
 		`I_BCC:	 argtbl <= { 25'b0, `O_BYTE, `O_B };	// 1e
 		`I_BCS:	 argtbl <= { 25'b0, `O_BYTE, `O_B };	// 1f
 
+		`I_BSBW: argtbl <= { 25'b0, `O_WORD, `O_B };	// 30
 		`I_BRW:	 argtbl <= { 25'b0, `O_WORD, `O_B };	// 31
 
 		`I_MOVAW: argtbl <=
 			{ 20'b0, `O_LONG, `O_W, `O_WORD, `O_A };	// 3e
 
+		`I_CMPB: argtbl <=
+			{ 20'b0, `O_BYTE, `O_R, `O_BYTE, `O_R };	// 91
+
+		`I_BITB: argtbl <=
+			{ 20'b0, `O_BYTE, `O_R, `O_BYTE, `O_R };	// 93
 		`I_CLRB: argtbl <= { 25'b0, `O_BYTE, `O_W };		// 94
 		`I_TSTB: argtbl <= { 25'b0, `O_BYTE, `O_R };		// 95
 
 		`I_MOVAB: argtbl <=
 			{ 20'b0, `O_LONG, `O_W, `O_BYTE, `O_A };	// de
 
+		`I_CMPW: argtbl <=
+			{ 20'b0, `O_WORD, `O_R, `O_WORD, `O_R };	// b1
+
+		`I_BITW: argtbl <=
+			{ 20'b0, `O_WORD, `O_R, `O_WORD, `O_R };	// b3
 		`I_CLRW: argtbl <= { 25'b0, `O_WORD, `O_W };		// b4
 		`I_TSTW: argtbl <= { 25'b0, `O_WORD, `O_R };		// b5
 
@@ -154,6 +178,10 @@ module decode(
 		`I_ADDL3: argtbl <= { 15'b0,  `O_LONG, `O_W,
 				`O_LONG, `O_R, `O_LONG, `O_R };		// c1
 
+		`I_BISL2: argtbl <=
+			{ 20'b0, `O_LONG, `O_M, `O_LONG, `O_R };	// c8
+		`I_BISL3: argtbl <= { 15'b0,  `O_LONG, `O_W,
+				`O_LONG, `O_R, `O_LONG, `O_R };		// c9
 		`I_BICL2: argtbl <=
 			{ 20'b0, `O_LONG, `O_M, `O_LONG, `O_R };	// ca
 		`I_BICL3: argtbl <= { 15'b0,  `O_LONG, `O_W,
@@ -165,11 +193,16 @@ module decode(
 
 		`I_MOVL: argtbl <=
 			{ 20'b0, `O_LONG, `O_W, `O_LONG, `O_R };	// d0
+		`I_CMPL: argtbl <=
+			{ 20'b0, `O_LONG, `O_R, `O_LONG, `O_R };	// d1
 
+
+		`I_BITL: argtbl <=
+			{ 20'b0, `O_LONG, `O_R, `O_LONG, `O_R };	// d3
 		`I_CLRL: argtbl <= { 25'b0, `O_LONG, `O_W };		// d4
 		`I_TSTL: argtbl <= { 25'b0, `O_LONG, `O_R };		// d5
 		`I_INCL: argtbl <= { 25'b0, `O_LONG, `O_M };		// d6
-
+		`I_DECL: argtbl <= { 25'b0, `O_LONG, `O_M };		// d7
 		`I_ADWC: argtbl <=
 			{ 20'b0, `O_LONG, `O_M, `O_LONG, `O_R };	// d8
 

@@ -267,7 +267,7 @@ initial psl_ipl = 5'h1f;
 	/*
 	 * evaluation definitions.
 	 */
-	reg		calc_vnzc, set_vnz_dest;
+	reg		calc_vnzc, set_vnz_dest, clear_c_dest, set_c_cmp;
 
 	/*
 	 * Program counter mgmt. curpc is the "live" version. greg[15] is
@@ -604,7 +604,7 @@ initial psl_ipl = 5'h1f;
 			`I_BEQL: if (psw[`PSL_Z] == 1) set_branch_pc <= 1;
 			`I_BGTR: if (psw[3:2] == 2'b00) set_branch_pc <= 1;
 			`I_BLEQ: if (psw[3:2] == 2'b11) set_branch_pc <= 1;
-			`I_JSB: begin
+			`I_BSBB, `I_BSBW, `I_JSB: begin
 				cur_reg_num_save <= `REG_SP;
 				set_branch_pc <= 1;
 				state <= `S_JSB;
@@ -621,8 +621,14 @@ initial psl_ipl = 5'h1f;
 			`I_BVS: if (psw[`PSL_V] == 1) set_branch_pc <= 1;
 			`I_BCC: if (psw[`PSL_C] == 0) set_branch_pc <= 1;
 			`I_BCS: if (psw[`PSL_C] == 1) set_branch_pc <= 1;
+
 			`I_INCL: begin
 				{ Ctmp, argd1 } <= { 1'b0, arg1 } + 33'h1;
+				writeback <= 1;
+				calc_vnzc <= 1;
+			end
+			`I_DECL: begin
+				{ Ctmp, argd1 } <= { 1'b0, arg1 } - 33'h1;
 				writeback <= 1;
 				calc_vnzc <= 1;
 			end
@@ -634,8 +640,24 @@ initial psl_ipl = 5'h1f;
 				writeback <= 1;
 				calc_vnzc <= 1;
 			end
+			`I_CMPB, `I_CMPW, `I_CMPL: begin
+				{ Ctmp, argd1 } <=
+				    { 1'b0, arg1 } - { 1'b0, arg2 };
+				set_vnz_dest <= 1;
+				set_c_cmp <= 1;
+			end
+			`I_BITL: begin
+				argd1 <= arg1 & arg2;
+				set_vnz_dest <= 1;
+			end
 			`I_XORL2, `I_XORL3: begin
 				argd1 <= arg2 ^ arg1;
+//$fdisplay(32'h80000002, "BICL: arg1 %x arg2 %x\r\n", arg1, arg2);
+				writeback <= 1;
+				set_vnz_dest <= 1;
+			end
+			`I_BISL2, `I_BISL3: begin
+				argd1 <= arg2 | arg1;
 //$fdisplay(32'h80000002, "BICL: arg1 %x arg2 %x\r\n", arg1, arg2);
 				writeback <= 1;
 				set_vnz_dest <= 1;
@@ -687,6 +709,7 @@ initial psl_ipl = 5'h1f;
 //$fdisplay(32'h80000002, "TSTL: arg1p %x arg1 %x\r\n", arg1p, arg1);
 				argd1 <= arg1;
 				set_vnz_dest <= 1;
+				clear_c_dest <= 1;
 			end
 			`I_BISPSW, `I_BICPSW: begin
 				//  XXX handle exceptions in instr read
@@ -730,6 +753,8 @@ initial psl_ipl = 5'h1f;
 			writeback <= 0;
 			calc_vnzc <= 0;
 			set_vnz_dest <= 0;
+			clear_c_dest <= 0;
+			set_c_cmp <= 0;
 
 			if (anyfault) begin
 				haltpos <= 5;
@@ -763,9 +788,13 @@ initial psl_ipl = 5'h1f;
 				psw[`PSL_N] <= argd1[31];
 				psw[`PSL_Z] <= ~|argd1;
 				psw[`PSL_V] <= 
-				    ((arg1[31] & arg2[31]) &&
+				    ((~arg1[31] & arg2[31]) &&
 				     (arg1[31] ^ argd1[31]));
 			end
+			if (clear_c_dest)
+				psw[`PSL_C] <= 0;
+			if (set_c_cmp)
+				psw[`PSL_C] <= (arg1 < arg2);
 			if (step)
 				delay_halt <= 1;
 		end
