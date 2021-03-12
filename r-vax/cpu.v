@@ -70,6 +70,11 @@
 `define	RMEM_RSB2	2
 `define	RMEM_TXCS_R	3
 
+/* WRITEMEM return states */
+`define	WMEM_ENDINST	0
+`define	WMEM_TXDB_W	1
+`define	WMEM_PUSH2	2
+
 module cpu(
 	input clk,
 	input rst,
@@ -174,7 +179,7 @@ module cpu(
 
 	reg [`STATBITS-1:0]	state, fillstate;
 	reg [3:0]	wregstate;
-	reg [1:0]	rmemstate;
+	reg [1:0]	rmemstate, wmemstate;
 	// synthesis attribute INIT of state is "0"
 	reg [7:0]	haltpos;
 
@@ -827,7 +832,7 @@ initial psl_ipl = 5'h1f;
 				cpu_wdata <= argd1;
 				cpu_size <= arg1p_size;
 				state <= `S_WRITEMEM;
-				fillstate <= `S_ENDINST;
+				wmemstate <= `WMEM_ENDINST;
 			end else if (writeback) begin
 // $fdisplay(32'h80000002, "WB REG: reg %x val %x\r\n", arg1p_regnum, greg_wback);
 				greg_wbdata <= greg_wback;
@@ -873,7 +878,7 @@ initial psl_ipl = 5'h1f;
 			cpu_size <= `O_LONG;
 			cpu_wdata <= curpc;
 			state <= `S_WRITEMEM;
-			fillstate <= `S_ENDINST;
+			wmemstate <= `WMEM_ENDINST;
 //$fdisplay(32'h80000002, "S_JSB2: spval %x\r\n", cur_reg_val);
 		end
 
@@ -927,7 +932,7 @@ initial psl_ipl = 5'h1f;
 				cpu_size <= `O_LONG;
 				cpu_pmem <= 1;
 				state <= `S_WRITEMEM;
-				fillstate <= `S_TXDB_W;
+				wmemstate <= `WMEM_TXDB_W;
 			end
 			default: resopflt <= 1;
 			endcase
@@ -1037,7 +1042,7 @@ initial psl_ipl = 5'h1f;
 			cpu_addr <= cur_reg_val - 4;
 			cpu_size <= `O_LONG;
 			state <= `S_WRITEMEM;
-			fillstate <= `S_PUSH2;
+			wmemstate <= `WMEM_PUSH2;
 		end
 
 		/*
@@ -1112,7 +1117,15 @@ initial psl_ipl = 5'h1f;
 		`S_WRITEMEM2: if (cpu_acki) begin
 			cpu_write <= 0;
 			cpu_stb <= 0;
-			state <= mcheck ? `S_MCHECK : fillstate;
+			if (mcheck)
+				state <= mcheck ? `S_MCHECK : fillstate;
+			else
+				case (wmemstate)
+				`WMEM_ENDINST: state <= `S_ENDINST;
+				`WMEM_TXDB_W: state <= `S_TXDB_W;
+				`WMEM_PUSH2: state <= `S_PUSH2;
+				default: state <= `S_HALT;
+				endcase
 		end
 
 		`S_READMEM: begin
