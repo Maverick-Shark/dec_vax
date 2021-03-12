@@ -1,3 +1,4 @@
+set -tmpdir "xst/projnav.tmp"
 set -xsthdpdir "xst"
 run
 -ifn sbi.prj

@@ -1,7 +1,8 @@
 #	$Id$
 #
 #
-SYSINC=/opt/local/share/verilator/include
+#SYSINC=/opt/local/share/verilator/include
+SYSINC=/opt/pkg/share/verilator/include
 VERCPP=${SYSINC}/verilated.cpp
 SUBDIR=nvaxdir
 TSUBDIR=nvaxtracedir
@@ -11,7 +12,7 @@ VPATH=..
 DEST=nvax
 TDEST=nvax_trace
 OBJS=nvax.o ttotest.o ttitest.o verilated.o sdramtest.o disasm.o
-CFLAGS=-g
+CFLAGS=-g -std=c++11
 
 TOP=sbi.v
 SRCS=console.v cpu.v decode.v opspec.v sbi.v sdram.v tti.v tto.v vcache.v \

@@ -64,6 +64,12 @@
 `define	WREG_ENDINST	7
 `define	WREG_MCHECK2	8
 
+/* READMEM return states */
+`define	RMEM_INDOA	0
+`define	RMEM_ARGEND	1
+`define	RMEM_RSB2	2
+`define	RMEM_TXCS_R	3
+
 module cpu(
 	input clk,
 	input rst,
@@ -168,6 +174,7 @@ module cpu(
 
 	reg [`STATBITS-1:0]	state, fillstate;
 	reg [3:0]	wregstate;
+	reg [1:0]	rmemstate;
 	// synthesis attribute INIT of state is "0"
 	reg [7:0]	haltpos;
 
@@ -540,7 +547,7 @@ initial psl_ipl = 5'h1f;
 					if (arg_defer) begin
 						cpu_size <= `O_LONG;
 						state <= `S_READMEM;
-						fillstate <= `S_INDOA;
+						rmemstate <= `RMEM_INDOA;
 					end else begin
 						state <= `S_INDOA;
 					end
@@ -571,7 +578,7 @@ initial psl_ipl = 5'h1f;
 			cpu_addr <= OA;
 			cpu_size <= `O_LONG;
 			state <= `S_READMEM;
-			fillstate <= `S_INDOA;
+			rmemstate <= `RMEM_INDOA;
 		end
 
 		/*
@@ -585,7 +592,7 @@ initial psl_ipl = 5'h1f;
 				cpu_addr <= OA;
 				cpu_size <= arg_size;
 				state <= `S_READMEM;
-				fillstate <= `S_ARGEND;
+				rmemstate <= `RMEM_ARGEND;
 				notrash <= 1;
 			end else
 				state <= `S_ARGEND;
@@ -598,8 +605,8 @@ initial psl_ipl = 5'h1f;
 			notrash <= 1;
 			cpu_addr <= OA;
 			cpu_size <= arg_size;
-			fillstate <= `S_ARGEND;
 			state <= `S_READMEM;
+			rmemstate <= `RMEM_ARGEND;
 		end
 
 		/*
@@ -875,7 +882,7 @@ initial psl_ipl = 5'h1f;
 			greg_wbdata <= cur_reg_val + 4;
 			greg_wregnum <= `REG_SP;
 			state <= `S_READMEM;
-			fillstate <= `S_RSB2;
+			rmemstate <= `RMEM_RSB2;
 		end
 
 		`S_RSB2: begin
@@ -954,7 +961,7 @@ initial psl_ipl = 5'h1f;
 			`IPR_RXCS, `IPR_TXCS: begin
 //$fdisplay(32'h80000002, "IPR_TXCS: pmem %d \r\n", cpu_pmem);
 				state <= `S_READMEM;
-				fillstate <= `S_TXCS_R;
+				rmemstate <= `RMEM_TXCS_R;
 				if (arg1[1])
 					cpu_addr <= 32'h20001f74;
 				else
@@ -1120,7 +1127,15 @@ initial psl_ipl = 5'h1f;
 				OA <= CPU_DAT_I;
 			OP <= CPU_DAT_I;
 			cpu_stb <= 0;
-			state <= mcheck ? `S_MCHECK : fillstate;
+			if (mcheck)
+				state <= `S_MCHECK;
+			else
+				case (rmemstate)
+				`RMEM_INDOA: state <= `S_INDOA;
+				`RMEM_ARGEND: state <= `S_ARGEND;
+				`RMEM_RSB2: state <= `S_RSB2;
+				`RMEM_TXCS_R: state <= `S_TXCS_R;
+				endcase
 		end
 
 		`S_GETVEC: begin
