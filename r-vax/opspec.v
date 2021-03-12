@@ -1,7 +1,6 @@
 /*	$Id$	*/
 `timescale 1ns / 1ps
 
-`include "states.vh"
 `include "opcodes.vh"
 
 /*

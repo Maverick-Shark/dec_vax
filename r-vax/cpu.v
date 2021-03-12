@@ -2,7 +2,6 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
-`include "states.vh"
 `include "opcodes.vh"
 `include "ipr.vh"
 `include "scb.vh"
@@ -10,6 +9,60 @@
 /*
  * VAX CPU
  */
+`define STATBITS	8
+
+`define S_HALT		0
+`define S_FETCH		1
+`define S_WREG		2
+`define S_FILLUP	3
+`define S_ENDINST	4
+`define S_READMEM	5
+`define S_RDCDATA	6
+`define S_OAREAD	7
+`define S_READMEM2	8
+`define S_WRITEMEM	9
+`define S_WRITEMEM2	10
+`define S_EXECUTE	11
+`define S_BRARGS	12
+`define S_ARG		13
+`define S_ARGEND	14
+`define S_INDOA		15
+`define S_DECODE	16
+`define S_MTPR		17
+`define S_TXCS_R	18
+`define S_TXDB_W	19
+`define S_MFPR		20
+`define S_JSB		21
+`define S_POSTINC	22
+`define S_POSTINC0	23
+`define S_GETVEC	24
+`define S_GETVEC1	25
+`define S_GETVEC2	26
+`define S_GETVEC3	27
+`define S_MCHECK	28
+`define S_MCHECK1	29
+`define S_MCHECK2	30
+`define S_SETSTK	31
+`define S_SETSTK1	32
+`define S_SETSTK2	33
+`define S_SETSTK3	34
+`define S_MCHECK3	35
+`define S_PUSH		36
+`define S_PUSH2		37
+`define S_JSB2		38
+`define S_RSB		39
+`define S_RSB2		40
+
+/* WREG return states */
+`define	WREG_HALT	0
+`define	WREG_OAREAD	1
+`define	WREG_ARGEND	2
+`define	WREG_POSTINC	3
+`define	WREG_INDOA	4
+`define	WREG_FETCH	5
+`define	WREG_JSB2	6
+`define	WREG_ENDINST	7
+`define	WREG_MCHECK2	8
 
 module cpu(
 	input clk,
@@ -114,6 +167,7 @@ module cpu(
 	assign ipr_wdata = halted ? CON_DAT_I : arg1;
 
 	reg [`STATBITS-1:0]	state, fillstate;
+	reg [3:0]	wregstate;
 	// synthesis attribute INIT of state is "0"
 	reg [7:0]	haltpos;
 
@@ -340,7 +394,7 @@ initial psl_ipl = 5'h1f;
 				greg_wbdata <= CON_DAT_I;
 				con_ack_o_reg <= 1;
 				state <= `S_WREG;
-				fillstate <= `S_HALT;
+				wregstate <= `WREG_HALT;
 			end
 		end
 
@@ -430,8 +484,8 @@ initial psl_ipl = 5'h1f;
 					greg_wbdata <= cur_reg_val_subsz + IA;
 					greg_wregnum <= cur_byte[3:0];
 					state <= `S_WREG;
-					fillstate <=
-					    arg_R ? `S_OAREAD : `S_ARGEND;
+					wregstate <=
+					    arg_R ? `WREG_OAREAD : `WREG_ARGEND;
 				end
 
 				`OPS_AINC, `OPS_AINCD: begin // 8-9
@@ -504,10 +558,10 @@ initial psl_ipl = 5'h1f;
 			state <= `S_WREG;
 			OA <= cur_reg_val;
 			if (arg_defer) begin
-				fillstate <= `S_POSTINC;
+				wregstate <= `WREG_POSTINC;
 				greg_wbdata <= cur_reg_val + 32'd4;
 			end else begin
-				fillstate <= `S_INDOA;
+				wregstate <= `WREG_INDOA;
 				greg_wbdata <= cur_reg_val +
 				    { 28'b0, op_size_ary };
 			end
@@ -771,7 +825,7 @@ initial psl_ipl = 5'h1f;
 // $fdisplay(32'h80000002, "WB REG: reg %x val %x\r\n", arg1p_regnum, greg_wback);
 				greg_wbdata <= greg_wback;
 				greg_wregnum <= arg1p_regnum;
-				fillstate <= `S_FETCH;
+				wregstate <= `WREG_FETCH;
 				state <= `S_WREG;
 			end
 // $fdisplay(32'h80000002, "brpc: arg1p %x curpc %x\r\n", arg1p, curpc);
@@ -804,7 +858,7 @@ initial psl_ipl = 5'h1f;
 			cpu_addr <= cur_reg_val - 4;
 			greg_wregnum <= `REG_SP;
 			state <= `S_WREG;
-			fillstate <= `S_JSB2;
+			wregstate <= `WREG_JSB2;
 //$fdisplay(32'h80000002, "S_JSB: spval %x\r\n", cur_reg_val);
 		end
 
@@ -827,7 +881,7 @@ initial psl_ipl = 5'h1f;
 		`S_RSB2: begin
 			arg1p <= OP;
 			state <= `S_WREG;
-			fillstate <= `S_ENDINST;
+			wregstate <= `WREG_ENDINST;
 		end
 
 		`S_MTPR: begin
@@ -943,7 +997,7 @@ initial psl_ipl = 5'h1f;
 		`S_MCHECK1: begin
 			arg2 <= 0;
 			state <= `S_SETSTK;
-			fillstate <= `S_MCHECK2;
+			wregstate <= `WREG_MCHECK2;
 		end
 
 		`S_MCHECK2: begin
@@ -1029,7 +1083,17 @@ initial psl_ipl = 5'h1f;
 		`S_WREG: begin 
 			if (greg_wregnum == `REG_PC)
 				curpc <= greg_wbdata;
-			state <= fillstate;
+			case (wregstate)
+			`WREG_OAREAD: state <= `S_OAREAD;
+			`WREG_ARGEND: state <= `S_ARGEND;
+			`WREG_POSTINC: state <= `S_POSTINC;
+			`WREG_INDOA: state <= `S_INDOA;
+			`WREG_FETCH: state <= `S_FETCH;
+			`WREG_JSB2: state <= `S_JSB2;
+			`WREG_ENDINST: state <= `S_ENDINST;
+			`WREG_MCHECK2: state <= `S_MCHECK2;
+			default: state <= `S_HALT;
+			endcase
 		end
 		
 		`S_WRITEMEM: begin
