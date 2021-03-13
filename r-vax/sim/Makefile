@@ -13,6 +13,7 @@ DEST=nvax
 TDEST=nvax_trace
 OBJS=nvax.o ttotest.o ttitest.o verilated.o sdramtest.o disasm.o
 CFLAGS=-g -std=c++11
+VFLAGS=-Wno-fatal -Wall
 
 TOP=sbi.v
 SRCS=console.v cpu.v decode.v opspec.v sbi.v sdram.v tti.v tto.v vcache.v \
@@ -36,11 +37,11 @@ ${TDEST}: nvax.cpp ${TANAME}
 	${SYSINC}/verilated_vcd_c.cpp -o ${TDEST}
 
 ${ANAME}: ${SRCS}
-	verilator -Wall -Mdir ${SUBDIR} --prefix Vnvax -cc -y .. ${TOP}
+	verilator ${VFLAGS} -Mdir ${SUBDIR} --prefix Vnvax -cc -y .. ${TOP}
 	(cd ${SUBDIR}; make -f Vnvax.mk)
 
 ${TANAME}: ${SRCS}
-	verilator --trace -Wall -Mdir ${TSUBDIR} --prefix Vnvax -cc -y .. ${TOP}
+	verilator --trace ${VFLAGS} -Mdir ${TSUBDIR} --prefix Vnvax -cc -y .. ${TOP}
 	(cd ${TSUBDIR}; make -f Vnvax.mk)
 
 clean:

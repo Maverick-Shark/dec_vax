@@ -75,6 +75,11 @@
 `define	WMEM_TXDB_W	1
 `define	WMEM_PUSH2	2
 
+/* FILLUP return states */
+`define	FUP_FETCH	0
+`define	FUP_ARG		1
+`define	FUP_RDCDATA	2
+
 module cpu(
 	input clk,
 	input rst,
@@ -177,9 +182,9 @@ module cpu(
 	assign ipr_regwaddr = halted ? CON_ADR_I[3:0] : arg2[3:0];
 	assign ipr_wdata = halted ? CON_DAT_I : arg1;
 
-	reg [`STATBITS-1:0]	state, fillstate;
+	reg [`STATBITS-1:0]	state;
 	reg [3:0]	wregstate;
-	reg [1:0]	rmemstate, wmemstate;
+	reg [1:0]	rmemstate, wmemstate, fupstate;
 	// synthesis attribute INIT of state is "0"
 	reg [7:0]	haltpos;
 
@@ -432,7 +437,7 @@ initial psl_ipl = 5'h1f;
 				state <= `S_DECODE;
 			end else begin
 				state <= `S_FILLUP;
-				fillstate <= `S_FETCH;
+				fupstate <= `FUP_FETCH;
 			end
 		end
 
@@ -517,7 +522,7 @@ initial psl_ipl = 5'h1f;
 				endcase
 			end else begin
 				state <= `S_FILLUP;
-				fillstate <= `S_ARG;
+				fupstate <= `FUP_ARG;
 			end
 		end
 
@@ -559,7 +564,7 @@ initial psl_ipl = 5'h1f;
 				end
 			end else begin
 				state <= `S_FILLUP;
-				fillstate <= `S_RDCDATA;
+				fupstate <= `FUP_RDCDATA;
 			end
 		end
 
@@ -999,7 +1004,6 @@ initial psl_ipl = 5'h1f;
 			arg1 <= `VEC_MCHECK;
 			state <= `S_GETVEC;
 		//	haltpos <= 8;
-			fillstate <= `S_MCHECK1;
 		end
 
 		/*
@@ -1013,9 +1017,10 @@ initial psl_ipl = 5'h1f;
 		end
 
 		`S_MCHECK2: begin
-			state <= `S_PUSH;
+	//		state <= `S_PUSH;
+			state <= `S_HALT;
 			cur_reg_num_save <= `REG_SP;
-			fillstate <= `S_MCHECK2;
+	//		fillstate <= `S_MCHECK2;
 			arg2 <= arg2 + 1;
 			case (arg2[3:0])
 			4'd0: cpu_wdata <=
@@ -1024,8 +1029,8 @@ initial psl_ipl = 5'h1f;
 			4'd12: cpu_wdata <= 32'h28;
 			default: cpu_wdata <= 0;
 			endcase
-			if (arg2[3:0] == 4'd12)
-				fillstate <= `S_MCHECK3;
+	//		if (arg2[3:0] == 4'd12)
+	//			fillstate <= `S_MCHECK3;
 		end
 
 		`S_MCHECK3: begin
@@ -1088,7 +1093,15 @@ initial psl_ipl = 5'h1f;
 				itag <= curpc[31:2];
 				ivalid <= 1;
 				cpu_stb <= 0;
-				state <= mcheck ? `S_MCHECK : fillstate;
+				if (mcheck)
+					state <= `S_MCHECK;
+				else
+					case (fupstate)
+					`FUP_FETCH: state <= `S_FETCH;
+					`FUP_ARG: state <= `S_ARG;
+					`FUP_RDCDATA: state <= `S_RDCDATA;
+					default: state <= `S_HALT;
+					endcase
 			end
 		end
 
@@ -1118,7 +1131,7 @@ initial psl_ipl = 5'h1f;
 			cpu_write <= 0;
 			cpu_stb <= 0;
 			if (mcheck)
-				state <= mcheck ? `S_MCHECK : fillstate;
+				state <= `S_MCHECK;
 			else
 				case (wmemstate)
 				`WMEM_ENDINST: state <= `S_ENDINST;
@@ -1175,7 +1188,7 @@ initial psl_ipl = 5'h1f;
 			cpu_stb <= 0;
 			cpu_pmem <= 0;
 			argd1 <= CPU_DAT_I;
-			state <= fillstate;
+			state <= `S_MCHECK1;
 		end
 
 		default: begin state <= `S_HALT; haltpos <= 7; end
