@@ -52,6 +52,7 @@
 `define S_JSB2		38
 `define S_RSB		39
 `define S_RSB2		40
+`define ASETUP		41
 
 /* WREG return states */
 `define	WREG_HALT	0
@@ -79,6 +80,7 @@
 `define	FUP_FETCH	0
 `define	FUP_ARG		1
 `define	FUP_RDCDATA	2
+`define	FUP_ASETUP	3
 
 module cpu(
 	input clk,
@@ -335,6 +337,41 @@ initial psl_ipl = 5'h1f;
 	assign cur_reg_val =
 	    (greg_addr == `REG_PC ? curpc : general_reg[greg_addr]);
 
+	/* "microcode" */
+	wire [7:0]	i_argoff, a_argoff, a_arg;
+	wire		i_enable, i_hasargs, i_emul, i_dohalt;
+	wire		a_enable, a_emul, a_last;
+	wire [2:0]	a_argcode;
+	wire [1:0]	a_argsz;
+	wire [3:0]	a_argno;
+	reg [7:0]	acounter, curarg;
+
+	assign i_enable = (state == `S_FETCH) && isvalid;
+	assign a_enable = 1; /* (state == `S_DECODE); */
+	assign a_argoff = a_enable ? i_argoff : acounter;
+
+	ucode ucode(
+		.clk(clk),
+
+		.i_enable(i_enable),
+		.i_opcode(cur_byte),
+
+		.i_argoff(i_argoff),
+		.i_hasargs(i_hasargs),
+		.i_emul(i_emul),
+
+		.i_dohalt(i_dohalt),
+
+		.a_enable(a_enable),
+		.a_argoff(a_argoff),
+		.a_argcode(a_argcode),
+		.a_argsz(a_argsz),
+		.a_argno(a_argno),
+		.a_emul(a_emul),
+		.a_last(a_last),
+		.a_arg(a_arg)
+	);
+
 	/*
 	 * evaluation definitions.
 	 */
@@ -441,13 +478,39 @@ initial psl_ipl = 5'h1f;
 			end
 		end
 
+		/*
+		 * Instruction directives are available. Fetch argument
+		 * directives if necessary.
+		 */
 		`S_DECODE: begin
-			if (num_args == 3'b0)
+//$fdisplay(32'h80000002, "S_DECODE: i_hasargs %d\r", i_hasargs);
+			acounter <= i_argoff;
+			if (i_dohalt)
+				state <= `S_HALT;
+			else if (i_hasargs == 0) // XXX emul
 				state <= `S_EXECUTE;
-			else if (arg_R == 0 && (arg_W & arg_A))
-				state <= `S_BRARGS;
 			else
-				state <= `S_ARG;
+				state <= `ASETUP;
+		end
+
+		/*
+		 * Argument "loop".  acounter updated, argument directives
+		 * available.
+		 */
+		`ASETUP: begin
+//$fdisplay(32'h80000002, "ASETUP: a_argcode %x a_emul %d cur_byte %x\r", a_argcode, a_emul, cur_byte);
+			state <= `S_ARG;
+			if (a_argcode == 3'b011) begin
+				state <= `S_BRARGS; // never emulated
+			end else if (a_emul) begin
+				curarg <= a_arg;
+			end else if (isvalid) begin
+				curarg <= cur_byte;
+			end else begin
+				state <= `S_FILLUP;
+				fupstate <= `FUP_ASETUP;
+			end
+			
 		end
 
 		/* Read a longword and put into current arg reg */
@@ -1100,7 +1163,7 @@ initial psl_ipl = 5'h1f;
 					`FUP_FETCH: state <= `S_FETCH;
 					`FUP_ARG: state <= `S_ARG;
 					`FUP_RDCDATA: state <= `S_RDCDATA;
-					default: state <= `S_HALT;
+					`FUP_ASETUP: state <= `ASETUP;
 					endcase
 			end
 		end

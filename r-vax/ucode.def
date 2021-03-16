@@ -1,0 +1,66 @@
+#	$Id$
+#
+# r saves the final value
+# w saves the ptr value
+# m saves the ptr value, then also save the final value
+# a saves the ptr as final value
+# b just fetches the the next byte/word
+#
+# useadd	- use add path
+# usebr		- use branch path
+# usemfpr	- move from processor register
+# usemtpr	- move to processor register
+# usebic	- use bit clear
+#
+# setnz		- set nz flags based on result
+# setaddc	- set c based on result of last add
+# setaddv	- set v based on result of last add
+# clv		- clear v
+#
+# zero		- hidden arg is zero (argno hidden first)
+# one		- hidden arg is one (argno hidden first)
+#
+# wback		- write result to destination
+#
+#BRB	bb		usebr
+#
+BEQL	bb		flagz flagset 			# 13
+#
+#JSB	rl,wl,ab	usejmp 0zero 1-(sp) usebis wback # 16
+#JMP	ab,rl		usejmp 1zero usebis wback	# 17
+#
+BRW	bw		usebr				# 31
+#
+#CLRB	rl,rl,wb	useadd setnz 0zero 1zero wback	# 94 addl3 rl,rl,wb
+#TSTB	rb		setnz clv setaddc		# 95
+#
+BISPSW	rw		setbits				# b8
+BICPSW	rw		clrbits				# b9
+# 
+#ADDL2	rl,ml		useadd setnz setaddv setaddc wback # c0 addl3 rl,rl,wl
+#ADDL3	rl,rl,wl	useadd setnz setaddv setaddc wback # c1 addl3 rl,rl,wl
+#
+#BICL2	rl,ml		usebic setnz clv setaddc wback	# ca
+#
+#XORL3	rl,rl,wl	usexor setnz clv wback		# cd
+#
+#MOVL	rl,rl,wl	usebis setnz clv setaddc 1zero wback # d0
+#
+#CLRL	rl,rl,wl	useadd setnz 0zero 1zero wback	# d4 addl3 rl,rl,wl
+#TSTL	rl,rl		useadd setnz 0zero		# d5 addl3 rl,rl
+#INCL	rl,ml		useadd setnz 0one setaddv setaddc wback # d6
+#
+#MTPR	rl,rl		usemtpr 			# da
+#MFPR	rl,wl		usemfpr wback			# db
+#MOVPSL	wl		usemovpsl wback			# dc
+#
+#MOVAL	al,rl,wl	useadd setnz 1zero wback clv	# de addl3 al,rl,wl
+#
+# MOVL	rl,0,wl	useadd vnz		# addl3 rl,0,wl
+#
+# INCL	0,ml	useadd vnz		# addl3 rl,1,wl
+#
+# PUSHL rl,0,2				# addl3 rl,0,-(sp)
+#
+# CLRL	0,0,wl				# addl3 0,0,wl
+#

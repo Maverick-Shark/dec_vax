@@ -1,3 +1,4 @@
+verilog work "ucode.v"
 verilog work "dl11_tto.v"
 verilog work "dl11_tti.v"
 verilog work "decode.v"

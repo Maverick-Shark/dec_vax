@@ -16,8 +16,8 @@ CFLAGS=-g -std=c++11
 VFLAGS=-Wno-fatal -Wall
 
 TOP=sbi.v
-SRCS=console.v cpu.v decode.v opspec.v sbi.v sdram.v tti.v tto.v vcache.v \
-	ipr.v qbus.v dl11_tto.v
+SRCS=console.v cpu.v decode.v opspec.v sbi.v sdram.v vcache.v \
+	ipr.v qbus.v dl11_tto.v ucode.v
 
 all:  ${DEST} # ${TDEST}
 
