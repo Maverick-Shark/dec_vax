@@ -70,7 +70,7 @@ function bitset(lst, bit) {
 
 function line2hex(ln, lst,   i, n, rv) {
 	if (length(lst) != 64)
-		err("bad len " length(lst) " line " ln);
+		err("bad len " length(lst) " line " ln ": " lst);
 	for (i = 1; i < 64; i+= 4) {
 		n = substr(lst, i, 1) * 8 + \
 		    substr(lst, i+1, 1) * 4 + \
@@ -122,6 +122,10 @@ BEGIN {
 #	hiddenbits["one"] = "101";
 #	hiddenbits["-(sp)"] = "110";
 #	hiddenbits["(sp)+"] = "111";
+	fakearg["0"] = "00000000";
+	fakearg["1"] = "00000001";
+	fakearg["pc"] = "01011111";
+	fakearg["(sp)+"] = "10001110";
 
 	curargoff=0;
 
@@ -143,6 +147,7 @@ BEGIN {
 		    ($2 != "-" ? "1" : "0") num2bit(curargoff,8);
 # print "insnr " insnr " num2bit(curargoff,8) " num2bit(curargoff,8);
 
+		if ($2 != "-")
 		for (i = 1; i <= n; i++) {
 			c = substr(a[i], 1, 1);
 			if (c == "r") al = "100";
@@ -159,10 +164,24 @@ BEGIN {
 			else if (c == "q") al = "11" al;
 			else err("bad c2 " c);
 
+			earg = "00000000";
+			isearg = "0";
+			if (length(a[i]) > 2) {
+				if (substr(a[i], 3, 1) != "#")
+					err("bad arg " a[i]);
+				c = substr(a[i], 4);
+				if (c in fakearg) {
+					earg = fakearg[c];
+					isearg = "1";
+				} else
+					err("bad fake arg " a[i]);
+			}
+
 			arglist[curargoff++] = \
 			    "00000000000000000000000000000000000000000000" \
-			    num2bit(i-1,4) "000000000" \
-			    (i==n? "1" : "0") "0" al;
+			    num2bit(i-1,4) earg "0" \
+			    (i==n? "1" : "0") isearg al;
+
 		}
 
 		for (i = 3; i <= NF; i++) {

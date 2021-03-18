@@ -22,17 +22,28 @@
 #
 # wback		- write result to destination
 #
-#BRB	bb		usebr
+#RSB	rl#(sp)+,rl#0,wl#pc	usebic wback			# 05
+RSB	-
+#
+BSBB	bb
+BRB	bb		usebr				# 11
 #
 BEQL	bb		flagz flagset 			# 13
 #
-#JSB	rl,wl,ab	usejmp 0zero 1-(sp) usebis wback # 16
-#JMP	ab,rl		usejmp 1zero usebis wback	# 17
+#	ab-> t1, pc-> -(sp), t1 -> pc
+# JSB	3ab,rl#pc,rl#0,wl#-(sp),wl	usebis wback wback2
+JSB	ab		usejmp usebis wback 		# 16
+JMP	ab,rl#0,wl#pc	usebic wback			# 17
 #
+BSBW	bw
 BRW	bw		usebr				# 31
 #
-#CLRB	rl,rl,wb	useadd setnz 0zero 1zero wback	# 94 addl3 rl,rl,wb
-#TSTB	rb		setnz clv setaddc		# 95
+CMPB	rb,rb		setnz clv			# 91
+#
+CLRB	rl#0,rl#0,wb	usebis setnz clv wback		# 94
+TSTB	rb,rl#0		usebis setnz clv clc		# 95
+#
+CMPW	rw,rw		setnz clv			# b1
 #
 BISPSW	rw		setbits				# b8
 BICPSW	rw		clrbits				# b9
@@ -40,21 +51,22 @@ BICPSW	rw		clrbits				# b9
 #ADDL2	rl,ml		useadd setnz setaddv setaddc wback # c0 addl3 rl,rl,wl
 #ADDL3	rl,rl,wl	useadd setnz setaddv setaddc wback # c1 addl3 rl,rl,wl
 #
-#BICL2	rl,ml		usebic setnz clv setaddc wback	# ca
+BICL2	rl,ml		usebic setnz clv wback		# ca
 #
-#XORL3	rl,rl,wl	usexor setnz clv wback		# cd
+XORL3	rl,rl,wl	usexor setnz clv wback		# cd
 #
-#MOVL	rl,rl,wl	usebis setnz clv setaddc 1zero wback # d0
+MOVL	rl,rl#0,wl	usebis setnz clv wback		# d0
+CMPL	rl,rl		setnz clv			# d1
 #
-#CLRL	rl,rl,wl	useadd setnz 0zero 1zero wback	# d4 addl3 rl,rl,wl
-#TSTL	rl,rl		useadd setnz 0zero		# d5 addl3 rl,rl
-#INCL	rl,ml		useadd setnz 0one setaddv setaddc wback # d6
+CLRL	rl#0,rl#0,wl	usebis setnz clv wback		# d4
+TSTL	rl,rl#0		usebis setnz clv clc		# d5
+INCL	rl#1,rl,ml	useadd setnz setaddv setaddc wback	# d6
 #
-#MTPR	rl,rl		usemtpr 			# da
-#MFPR	rl,wl		usemfpr wback			# db
-#MOVPSL	wl		usemovpsl wback			# dc
+MTPR	rl,rl		usemtpr 			# da
+MFPR	rl,wl		usemfpr wback			# db
+MOVPSL	wl		usemovpsl wback			# dc
 #
-#MOVAL	al,rl,wl	useadd setnz 1zero wback clv	# de addl3 al,rl,wl
+MOVAL	al,rl#0,wl	usebis setnz clv wback		# de
 #
 # MOVL	rl,0,wl	useadd vnz		# addl3 rl,0,wl
 #

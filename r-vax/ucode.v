@@ -27,6 +27,7 @@
 `define	USEBIS		55
 `define	USEJMP		56
 `define	USEMOVPSL	57
+`define	CLC		58
 
 `define	DOHALT		63
 

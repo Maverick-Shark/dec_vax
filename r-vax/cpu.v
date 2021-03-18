@@ -462,6 +462,7 @@ initial psl_ipl = 5'h1f;
 				delay_halt <= 0;
 				haltpos <= 6;
 			end else if (isvalid) begin
+//$fdisplay(32'h80000002, "FETCH: pc %x curbyte %x\r", curpc, cur_byte);
 				/* put insbyte in decode reg */
 				cur_inst <= cur_byte;
 				num_arg <= 0;
