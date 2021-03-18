@@ -14,7 +14,6 @@ module qbus(
 	input		clk,
 	input		rst,
 
-	input		CYC_I,
 	input		STB_I,
 /* verilator lint_off UNUSED */
 	input [27:0]	ADR_I,
@@ -29,7 +28,7 @@ module qbus(
 );
 
 	wire request;
-	assign request = CYC_I & STB_I;
+	assign request = STB_I;
 
 	reg		qio_ack;
 	reg [31:0]	qio_dato;

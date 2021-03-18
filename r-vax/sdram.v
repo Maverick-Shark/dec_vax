@@ -37,7 +37,6 @@ module sdram #(
 	output [1:0]	sdram_ba,
 	inout [15:0]	sdram_data,
 
-	input		CYC_I,
 	input		STB_I,
 	input [21:0]	ADR_I,	// note: longword addressing.
 	input		WE_I,
@@ -63,7 +62,7 @@ module sdram #(
 	reg		need_refresh, setdout;
 	wire [15:0]	indata;
 	wire		request;
-	assign		request = CYC_I & STB_I;
+	assign		request = STB_I;
 
 	/* RAS/CAS/WE command triple */
 	localparam	NOP = 3'b111,

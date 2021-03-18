@@ -41,7 +41,6 @@ module vcache(
 
 //	output [1:0]	ut_sz,
 
-//	output		UT_CYC_O,
 	output 		UT_STB_O,
 	output [29:0]	UT_ADR_O,
 	output [31:0]	UT_DAT_O,
@@ -58,7 +57,6 @@ module vcache(
 	reg [29:0]	caddrl, caddrh;
 	reg [1:0]	coff, csz;
 
-	/* only output if CYC */
 	wire in_stb;
 	reg [31:0] in_rdata;
 	reg in_ack;
@@ -70,7 +68,6 @@ module vcache(
 	reg [29:0]	ut_addr;
 	reg [31:0]	ut_wdata;
 //	reg [1:0]	ut_sz;
-//	assign UT_CYC_O = ut_stb;
 	assign UT_STB_O = ut_stb;
 	assign UT_ADR_O = ut_addr;
 	assign UT_DAT_O = ut_wdata;

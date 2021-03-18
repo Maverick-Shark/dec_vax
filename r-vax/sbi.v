@@ -133,7 +133,6 @@ defparam console.tto.CLKPERBIT = 2604;
 
 //		.ut_sz(),
 
-//		.UT_CYC_O(),
 		.UT_STB_O(mmu_to_sw_stb),
 		.UT_ADR_O(mmu_to_sw_addr),
 		.UT_DAT_O(mmu_to_sw_wdata),
@@ -142,9 +141,9 @@ defparam console.tto.CLKPERBIT = 2604;
 		.UT_ACK_I(pc_to_mmu_ack)
 	);
 
-	wire		qbus_cyc, qbus_ack;
+	wire		qbus_stb, qbus_ack;
 	wire [31:0]	qbus_wdata;
-	assign	qbus_cyc = mmu_to_sw_addr[29] & mmu_to_sw_stb;
+	assign	qbus_stb = mmu_to_sw_addr[29] & mmu_to_sw_stb;
 
 	/*
 	 * Qbus controller.
@@ -153,8 +152,7 @@ defparam console.tto.CLKPERBIT = 2604;
 		.clk(clk),
 		.rst(rst),
 
-		.CYC_I(qbus_cyc),
-		.STB_I(mmu_to_sw_stb),
+		.STB_I(qbus_stb),
 		.ADR_I(mmu_to_sw_addr[27:0]),
 		.DAT_I(mmu_to_sw_wdata),
 		.WE_I(mmu_to_sw_write),
@@ -233,11 +231,10 @@ defparam console.tto.CLKPERBIT = 2604;
 		.sdram_ba(sdram_ba),
 		.sdram_data(sdram_data),
 		
-		.CYC_I(~|sw_to_mem_addr[29:24]),
 		.ADR_I(sw_to_mem_addr[23:2]),		// i
 		.WE_I(sw_to_mem_write),		// i
 		.DAT_I(sw_to_mem_wdata),		// i
-		.STB_I(sw_to_mem_stb),		// i
+		.STB_I(~|sw_to_mem_addr[29:24] & sw_to_mem_stb), // i
 		.DAT_O(mem_to_pc_rdata),		// o
 		.ACK_O(mem_to_pc_ack)		// o
 	);
