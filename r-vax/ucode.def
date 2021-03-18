@@ -48,8 +48,8 @@ CMPW	rw,rw		setnz clv			# b1
 BISPSW	rw		setbits				# b8
 BICPSW	rw		clrbits				# b9
 # 
-#ADDL2	rl,ml		useadd setnz setaddv setaddc wback # c0 addl3 rl,rl,wl
-#ADDL3	rl,rl,wl	useadd setnz setaddv setaddc wback # c1 addl3 rl,rl,wl
+ADDL2	rl,ml		useadd setnz setaddv setaddc wback # c0 addl3 rl,rl,wl
+ADDL3	rl,rl,wl	useadd setnz setaddv setaddc wback # c1 addl3 rl,rl,wl
 #
 BICL2	rl,ml		usebic setnz clv wback		# ca
 #
