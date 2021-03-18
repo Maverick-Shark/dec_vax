@@ -120,7 +120,7 @@ cpubusdump(Vnvax *tb)
 {
 	static long lasttick, firsttick;
 
-if ((tb->sbi__DOT__cpu_addr == 0x20001f76 || tb->sbi__DOT__cpu_addr == 0x20001f74) && tb->sbi__DOT__halted == 0)
+if ((tb->sbi__DOT__cpu_addr == 0x20001f76 || tb->sbi__DOT__cpu_addr == 0x20001f74) && tb->sbi__DOT__cpu__DOT__halted == 0)
 	return;
 
 	if (lasttick+1 < nticks) {

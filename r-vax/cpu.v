@@ -86,19 +86,6 @@ module cpu(
 	input clk,
 	input rst,
 
-	input		CON_CYC_I,
-	input [31:0]	CON_ADR_I,
-	input [31:0]	CON_DAT_I,
-	input		CON_WE_I,
-	input		CON_STB_I,
-	output [31:0]	CON_DAT_O,
-	output 		CON_ACK_O,
-
-	input		con_reg,
-	input		con_ipr,
-	input		con_pmem,
-	input		con_vmem,
-
 	output		CPU_CYC_O,
 	output [31:0] 	CPU_ADR_O,
 	output [31:0] 	CPU_DAT_O,
@@ -111,23 +98,52 @@ module cpu(
 
 	output		CPU_PMEM_O,
 
-	output		cpu_mcheck,
+	output		cpu_mcheck
 
-	input		cont,
-	input		step,
-	output		halted
 
 );
 
 	/*
 	 * Console communications.
 	 */
+	wire		CON_CYC_I;
+	wire [31:0]	CON_ADR_I;
+	wire [31:0]	CON_DAT_I;
+	wire		CON_WE_I;
+	wire		CON_STB_I;
+	wire [31:0]	CON_DAT_O;
+	wire 		CON_ACK_O;
+	wire		con_reg, con_ipr, con_pmem, con_vmem;
+	wire		cont, step, halted;
+
 	reg [31:0]	con_dat_o_reg;
 	reg 		con_ack_o_reg;
 	wire		con_passthru;
 	assign con_passthru = CON_CYC_I & (con_vmem | con_pmem);
 	assign CON_DAT_O = con_passthru ? CPU_DAT_I : con_dat_o_reg;
 	assign CON_ACK_O = con_passthru ? CPU_ACK_I : con_ack_o_reg;
+
+	console console(
+		.clk(clk),
+		.rst(rst),
+
+		.halted(halted),	// Handle commands
+		.cont(cont),
+		.step(step),
+
+		.CYC_O(CON_CYC_I),
+		.ADR_O(CON_ADR_I),
+		.WE_O(CON_WE_I),
+		.DAT_O(CON_DAT_I),
+		.STB_O(CON_STB_I),
+		.DAT_I(CON_DAT_O),
+		.ACK_I(CON_ACK_O),
+
+		.con_reg(con_reg),
+		.con_ipr(con_ipr),
+		.con_pmem(con_pmem),
+		.con_vmem(con_vmem)
+	);
 
 	/*
 	 * CPU to memory/IPR communications.

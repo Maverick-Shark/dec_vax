@@ -82,7 +82,7 @@ defparam console.tto.CLKPERBIT = 2604;
 	assign buzzer = 1;
 
 	/* wires from CPU */
-	wire halted, mcheck;
+	wire mcheck;
 	wire [31:0] cpu_addr, cpu_wdata, cpu_rdata;
 	wire cpu_write, cpu_stb, cpu_ack, cpu_cyc;
 	wire cpu_pmem;
@@ -90,26 +90,10 @@ defparam console.tto.CLKPERBIT = 2604;
 
 	/* cpu - console wires */
 	wire cont, step;
-	wire [31:0] con_cpu_addr, con_cpu_wdata, con_cpu_rdata;
-	wire con_cpu_cyc, con_cpu_write, con_cpu_stb, con_cpu_ack;
-	wire con_cpu_vmem, con_cpu_pmem, con_cpu_ipr, con_cpu_reg;
 
 	cpu cpu(
 		.clk(clk),
 		.rst(rst),
-
-		.CON_CYC_I(con_cpu_cyc),
-		.CON_ADR_I(con_cpu_addr),
-		.CON_WE_I(con_cpu_write),
-		.CON_DAT_I(con_cpu_wdata),
-		.CON_STB_I(con_cpu_stb),
-		.CON_DAT_O(con_cpu_rdata),
-		.CON_ACK_O(con_cpu_ack),
-
-		.con_reg(con_cpu_reg),
-		.con_ipr(con_cpu_ipr),
-		.con_pmem(con_cpu_pmem),
-		.con_vmem(con_cpu_vmem),
 
 		.CPU_CYC_O(cpu_cyc),
 		.CPU_ADR_O(cpu_addr),
@@ -123,11 +107,7 @@ defparam console.tto.CLKPERBIT = 2604;
 
 		.CPU_PMEM_O(cpu_pmem),
 
-		.cpu_mcheck(mcheck),
-
-		.step(step),
-		.cont(cont),
-		.halted(halted)
+		.cpu_mcheck(mcheck)
 	);
 
 	/* wires between mmu and pcache */
@@ -167,11 +147,6 @@ defparam console.tto.CLKPERBIT = 2604;
 	wire		qbus_cyc, qbus_ack;
 	wire [31:0]	qbus_wdata;
 	assign	qbus_cyc = mmu_to_sw_addr[29] & mmu_to_sw_stb;
-
-//always @(posedge clk)
-//	if (halted == 0 && qbus_cyc)
-//		$fdisplay(32'h80000002, "qbcyc: stb %d adr %x rdata %x ack %d\r\n",
-//	mmu_to_sw_stb, mmu_to_sw_addr, qbus_wdata, qbus_ack);
 
 	/*
 	 * Qbus controller.
@@ -267,30 +242,6 @@ defparam console.tto.CLKPERBIT = 2604;
 		.STB_I(sw_to_mem_stb),		// i
 		.DAT_O(mem_to_pc_rdata),		// o
 		.ACK_O(mem_to_pc_ack)		// o
-	);
-
-	console console(
-		.clk(clk),
-		.rst(rst),
-
-		.halted(halted),	// Handle commands
-		.cont(cont),
-		.step(step),
-
-		.CYC_O(con_cpu_cyc),
-		.ADR_O(con_cpu_addr),
-		.WE_O(con_cpu_write),
-		.DAT_O(con_cpu_wdata),
-		.STB_O(con_cpu_stb),
-		.DAT_I(con_cpu_rdata),
-		.ACK_I(con_cpu_ack),
-
-		.con_reg(con_cpu_reg),
-		.con_ipr(con_cpu_ipr),
-		.con_pmem(con_cpu_pmem),
-		.con_vmem(con_cpu_vmem)
-
-//		.tti_rx(tti_rx)
 	);
 
 endmodule
