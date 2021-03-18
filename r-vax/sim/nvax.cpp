@@ -90,7 +90,7 @@ int main(int argc, char **argv)
 
 		if (itrace && tb->sbi__DOT__cpu__DOT__state == 16) // S_DECODE
 			itracedump(tb);
-		if (cpubusdebug && tb->sbi__DOT__cpu_cyc)
+		if (cpubusdebug && tb->sbi__DOT__cpu_stb)
 			cpubusdump(tb);
 //		if (tb->sbi__DOT__con_stb != 0)
 //			dumpvcache(tb);

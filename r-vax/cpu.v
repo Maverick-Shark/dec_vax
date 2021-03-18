@@ -86,7 +86,6 @@ module cpu(
 	input clk,
 	input rst,
 
-	output		CPU_CYC_O,
 	output [31:0] 	CPU_ADR_O,
 	output [31:0] 	CPU_DAT_O,
 	output 		CPU_STB_O,
@@ -106,7 +105,6 @@ module cpu(
 	/*
 	 * Console communications.
 	 */
-	wire		CON_CYC_I;
 	wire [31:0]	CON_ADR_I;
 	wire [31:0]	CON_DAT_I;
 	wire		CON_WE_I;
@@ -119,7 +117,7 @@ module cpu(
 	reg [31:0]	con_dat_o_reg;
 	reg 		con_ack_o_reg;
 	wire		con_passthru;
-	assign con_passthru = CON_CYC_I & (con_vmem | con_pmem);
+	assign con_passthru = CON_STB_I & (con_vmem | con_pmem);
 	assign CON_DAT_O = con_passthru ? CPU_DAT_I : con_dat_o_reg;
 	assign CON_ACK_O = con_passthru ? CPU_ACK_I : con_ack_o_reg;
 
@@ -131,7 +129,6 @@ module cpu(
 		.cont(cont),
 		.step(step),
 
-		.CYC_O(CON_CYC_I),
 		.ADR_O(CON_ADR_I),
 		.WE_O(CON_WE_I),
 		.DAT_O(CON_DAT_I),
@@ -156,11 +153,10 @@ module cpu(
 	wire		cpu_acki;
 	assign cpu_mcheck  = mcheck;
 	assign cpu_acki = CPU_ACK_I | mcheck;
-	assign CPU_CYC_O = halted & ~(con_reg | con_ipr) ? CON_CYC_I : cpu_stb;
+	assign CPU_STB_O = halted & ~(con_reg | con_ipr) ? CON_STB_I : cpu_stb;
 	assign CPU_ADR_O = halted ? CON_ADR_I : cpu_addr;
 	assign CPU_DAT_O = halted ? CON_DAT_I : cpu_wdata;
 	assign CPU_WE_O  = halted ? CON_WE_I  : cpu_write;
-	assign CPU_STB_O = halted ? CON_STB_I : cpu_stb;
 
 	assign CPU_PMEM_O = halted ? con_pmem : cpu_pmem;
 	assign CPU_SIZE_O = halted ? `O_LONG : cpu_size;
@@ -404,10 +400,10 @@ initial psl_ipl = 5'h1f;
 
 	/* console communications */
 	wire ref_greg_read, ref_greg_write, ipr_greg_read, ipr_greg_write;
-	assign ref_greg_read = CON_STB_I & CON_CYC_I & (CON_WE_I == 0) &con_reg;
-	assign ref_greg_write = CON_STB_I & CON_CYC_I & CON_WE_I & con_reg;
-	assign ipr_greg_read = CON_STB_I & CON_CYC_I & (CON_WE_I == 0) &con_ipr;
-	assign ipr_greg_write = CON_STB_I & CON_CYC_I & CON_WE_I & con_ipr;
+	assign ref_greg_read = CON_STB_I & (CON_WE_I == 0) &con_reg;
+	assign ref_greg_write = CON_STB_I & CON_WE_I & con_reg;
+	assign ipr_greg_read = CON_STB_I & (CON_WE_I == 0) &con_ipr;
+	assign ipr_greg_write = CON_STB_I & CON_WE_I & con_ipr;
 
 	always @(posedge clk) begin
 		if (rst)

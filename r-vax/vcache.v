@@ -25,7 +25,6 @@ module vcache(
 	input		clk,
 	input		rst,
 
-	input		IN_CYC_I,
 	input		IN_STB_I,
 	output [31:0]	IN_DAT_O,
 	output		IN_ACK_O,
@@ -63,9 +62,9 @@ module vcache(
 	wire in_stb;
 	reg [31:0] in_rdata;
 	reg in_ack;
-	assign in_stb = IN_CYC_I & IN_STB_I;
-	assign IN_DAT_O = IN_CYC_I ? in_rdata : 32'b0;
-	assign IN_ACK_O = IN_CYC_I ? in_ack : 1'b0;
+	assign in_stb = IN_STB_I;
+	assign IN_DAT_O = IN_STB_I ? in_rdata : 32'b0;
+	assign IN_ACK_O = IN_STB_I ? in_ack : 1'b0;
 
 	reg		ut_stb, ut_write;
 	reg [29:0]	ut_addr;

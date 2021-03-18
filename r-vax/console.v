@@ -73,7 +73,6 @@ module console(
 	input clk,
 	input rst,
 
-	output reg	  	CYC_O,
 	output reg [`WBITS-1:0]	ADR_O,
 	output reg	  	WE_O,
 	output reg [`WBITS-1:0] DAT_O,
@@ -158,7 +157,6 @@ module console(
 			ADR_O <= 32'hf;
 			WE_O <= 0;
 			STB_O <= 1;
-			CYC_O <= 1;
 			con_reg <= 1;
 			state <= `CONSOLE0;
 		end
@@ -166,7 +164,6 @@ module console(
 			utnum <= DAT_I;
 			con_reg <= 0;
 			STB_O <= 0;
-			CYC_O <= 0;
 			writenum_next <= `WRITNUM_NEXT_C2;
 			state <= `WRITENUM;
 		end
@@ -197,7 +194,6 @@ module console(
 				ADR_O <= innum;
 				WE_O <= 0;
 				STB_O <= 1;
-				CYC_O <= 1;
 				was_reg <= 0;
 				was_pmem <= 0;
 				was_vmem <= 0;
@@ -222,7 +218,7 @@ module console(
 					tmp <= "?";
 					state <= `PUTCHAR;
 					putchar_next <= `PUTCHAR_NEXT_C2;
-					CYC_O <= 0;
+					STB_O <= 0;
 				end
 			end
 		end
@@ -233,7 +229,6 @@ module console(
 		`MEMREFS: if (ACK_I) begin
 			utnum <= DAT_I;
 			STB_O <= 0;
-			CYC_O <= 0;
 			con_reg <= 0;
 			con_pmem <= 0;
 			con_vmem <= 0;
@@ -258,7 +253,6 @@ module console(
 					DAT_O <= innum;
 					WE_O <= 1;
 					STB_O <= 1;
-					CYC_O <= 1;
 					con_pmem <= was_pmem;
 					con_vmem <= was_vmem;
 					con_ipr <= was_ipr;
@@ -274,7 +268,6 @@ module console(
 		end
 		`MEMREFS5: if (ACK_I) begin
 			STB_O <= 0;
-			CYC_O <= 0;
 			WE_O <= 0;
 			con_reg <= 0;
 			con_pmem <= 0;
@@ -290,13 +283,11 @@ module console(
 			ADR_O <= 32'h20001f70;
 			WE_O <= 0;
 			STB_O <= 1;
-			CYC_O <= 1;
 			con_pmem <= 1;
 			state <= `GETCHAR2;
 		end
 		`GETCHAR2: if (ACK_I) begin
 			STB_O <= 0;
-			CYC_O <= 0;
 			if (DAT_I[7])
 				state <= `GETCHAR3;
 			else
@@ -305,13 +296,11 @@ module console(
 		`GETCHAR3: begin
 			ADR_O <= 32'h20001f72;
 			STB_O <= 1;
-			CYC_O <= 1;
 			state <= `GETCHAR4;
 		end
 		`GETCHAR4: if (ACK_I) begin
 			tmp <= DAT_I[7:0];
 			STB_O <= 0;
-			CYC_O <= 1;
 			state <= `READNUM2;
 		end
 
@@ -322,13 +311,11 @@ module console(
 			ADR_O <= 32'h20001f74;
 			WE_O <= 0;
 			STB_O <= 1;
-			CYC_O <= 1;
 			con_pmem <= 1;
 			state <= `PUTCHAR2;
 		end
 		`PUTCHAR2: if (ACK_I) begin
 			STB_O <= 0;
-			CYC_O <= 0;
 			if (DAT_I[7])
 				state <= `PUTCHAR21;
 			else
@@ -339,12 +326,10 @@ module console(
 			DAT_O <= {24'b0, tmp };
 			WE_O <= 1;
 			STB_O <= 1;
-			CYC_O <= 1;
 			state <= `PUTCHAR3;
 		end
 		`PUTCHAR3: if (ACK_I) begin
 			STB_O <= 0;
-			CYC_O <= 0;
 			con_pmem <= 0;
 			case (putchar_next)
 			`PUTCHAR_NEXT_C2: state <= `CONSOLE2;

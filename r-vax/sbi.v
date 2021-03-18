@@ -84,7 +84,7 @@ defparam console.tto.CLKPERBIT = 2604;
 	/* wires from CPU */
 	wire mcheck;
 	wire [31:0] cpu_addr, cpu_wdata, cpu_rdata;
-	wire cpu_write, cpu_stb, cpu_ack, cpu_cyc;
+	wire cpu_write, cpu_stb, cpu_ack;
 	wire cpu_pmem;
 	wire [1:0] cpu_size;
 
@@ -95,7 +95,6 @@ defparam console.tto.CLKPERBIT = 2604;
 		.clk(clk),
 		.rst(rst),
 
-		.CPU_CYC_O(cpu_cyc),
 		.CPU_ADR_O(cpu_addr),
 		.CPU_DAT_O(cpu_wdata),
 		.CPU_WE_O(cpu_write),
@@ -120,7 +119,6 @@ defparam console.tto.CLKPERBIT = 2604;
 		.clk(clk),
 		.rst(rst),
 
-		.IN_CYC_I(cpu_cyc),
 		.IN_STB_I(cpu_stb),
 		.IN_ADR_I(cpu_addr),
 		.IN_DAT_I(cpu_wdata),
