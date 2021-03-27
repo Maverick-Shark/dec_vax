@@ -1,3 +1,31 @@
+#	$Id$
+#
+# Constraints first
+#
+# Hynix chip setup time (tDS2) 1.5ns plus board delay ca .5ns.
+#
+NET sdram_addr<*> OFFSET = OUT : 2 : BEFORE : clkin ;
+NET sdram_data<*> OFFSET = OUT : 2 : BEFORE : clkin ;
+NET sdram_ras OFFSET = OUT : 2 : BEFORE : clkin ;
+NET sdram_cas OFFSET = OUT : 2 : BEFORE : clkin ;
+NET sdram_we OFFSET = OUT : 2 : BEFORE : clkin ;
+NET sdram_ba<*> OFFSET = OUT : 2 : BEFORE : clkin ;
+#
+# Hynix chip acccess time (tAC2) 6ns + board delay ca .5ns.
+#
+#NET sdram_data<*> OFFSET = IN : 6.5 : VALID : 6.5 : AFTER : clkin ;
+
+#
+# Ignore timings for async in/out pins.
+#
+NET "n_rst" TIG;
+NET "tti_rx" TIG;
+NET "tto_tx" TIG;
+
+#
+# Pin definitions
+#
+
 # CPU pins
 NET "clkin" LOC = P184 | IOSTANDARD = LVTTL;
 NET "n_rst" LOC = P101 | IOSTANDARD = LVTTL;
@@ -90,3 +118,5 @@ NET "sdram_data<0>"	LOC = P128 | IOSTANDARD = LVTTL | DRIVE=12 | SLEW=FAST;
 #NET "digit<2>"  LOC = "U17"  | IOSTANDARD = LVTTL  | DRIVE = 24 ;	# digit 2
 #NET "digit<3>"  LOC = "AA17" | IOSTANDARD = LVTTL  | DRIVE = 24 ;	# digit 1
 # NET "SEG_LED_SELECT<4>"  LOC = "V17"  | IOSTANDARD = LVTTL  | DRIVE = 24 ;	-- colon and upper point.
+
+
