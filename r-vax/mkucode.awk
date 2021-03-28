@@ -126,6 +126,8 @@ BEGIN {
 	fakearg["1"] = "00000001";
 	fakearg["pc"] = "01011111";
 	fakearg["(sp)+"] = "10001110";
+	fakearg["(pc)+"] = "10001111";
+	fakearg["w^d(pc)"] = "11001111";
 
 	curargoff=0;
 
