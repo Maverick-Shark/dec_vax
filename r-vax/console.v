@@ -158,7 +158,7 @@ end
 		if (rst) begin
 			state <= `CONSOLE;
 			cont <= 0;
-		end
+		end else
 		/* verilator lint_off CASEINCOMPLETE */
 		case (state)
 		`CONSOLE1: begin
