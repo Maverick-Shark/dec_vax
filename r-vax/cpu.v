@@ -113,6 +113,7 @@ module cpu(
 	wire 		CON_ACK_O;
 	wire		con_reg, con_ipr, con_pmem, con_vmem;
 	wire		cont, step, halted;
+	reg [7:0]	haltpos;
 
 	reg [31:0]	con_dat_o_reg;
 	reg 		con_ack_o_reg;
@@ -121,6 +122,11 @@ module cpu(
 	assign CON_DAT_O = con_passthru ? CPU_DAT_I : con_dat_o_reg;
 	assign CON_ACK_O = con_passthru ? CPU_ACK_I : con_ack_o_reg;
 
+	/* different traps/faults */
+	reg	resinflt,	/* reserved instruction fault (FFFF) */
+		resadflt,	/* reserved addressing mode fault (movl r0,$3) */
+		resopflt;	/* reserved operand fault */
+
 	console console(
 		.clk(clk),
 		.rst(rst),
@@ -128,6 +134,9 @@ module cpu(
 		.halted(halted),	// Handle commands
 		.cont(cont),
 		.step(step),
+
+		.haltpos(haltpos),
+		.resopflt(resopflt),
 
 		.ADR_O(CON_ADR_I),
 		.WE_O(CON_WE_I),
@@ -200,7 +209,6 @@ module cpu(
 	reg [3:0]	wregstate;
 	reg [1:0]	rmemstate, wmemstate, fupstate;
 	// synthesis attribute INIT of state is "0"
-	reg [7:0]	haltpos;
 
 /* verilator lint_off UNDRIVEN */
 	reg		psl_is;
@@ -210,10 +218,6 @@ module cpu(
 initial psl_is = 1'b1;
 initial psl_ipl = 5'h1f;
 
-	/* different traps/faults */
-	reg	resinflt,	/* reserved instruction fault (FFFF) */
-		resadflt,	/* reserved addressing mode fault (movl r0,$3) */
-		resopflt;	/* reserved operand fault */
 /* verilator lint_on UNDRIVEN */
 
 	/* instruction word "cache" */
@@ -351,7 +355,7 @@ initial psl_ipl = 5'h1f;
 
 	/* "microcode" */
 	wire [7:0]	i_argoff, a_argoff, a_arg;
-	wire		i_enable, i_hasargs, i_emul, i_dohalt;
+	wire		i_enable, i_hasargs, i_emul, i_dohalt, i_newflow;
 	wire		a_enable, a_emul, a_last;
 	wire [2:0]	a_argcode;
 	wire [1:0]	a_argsz;
@@ -371,6 +375,7 @@ initial psl_ipl = 5'h1f;
 		.i_argoff(i_argoff),
 		.i_hasargs(i_hasargs),
 		.i_emul(i_emul),
+		.i_newflow(i_newflow),
 
 		.i_dohalt(i_dohalt),
 
@@ -397,6 +402,8 @@ initial psl_ipl = 5'h1f;
 	wire [31:0] pc_plus_1;
 	assign pc_plus_1 = curpc + 1;
 
+wire debug;
+assign debug = 0;
 
 	/* console communications */
 	wire ref_greg_read, ref_greg_write, ipr_greg_read, ipr_greg_write;
@@ -474,7 +481,7 @@ initial psl_ipl = 5'h1f;
 				delay_halt <= 0;
 				haltpos <= 6;
 			end else if (isvalid) begin
-//$fdisplay(32'h80000002, "FETCH: pc %x curbyte %x\r", curpc, cur_byte);
+if (debug) $fdisplay(32'h80000002, "FETCH: pc %x curbyte %x\r", curpc, cur_byte);
 				/* put insbyte in decode reg */
 				cur_inst <= cur_byte;
 				num_arg <= 0;
@@ -496,11 +503,12 @@ initial psl_ipl = 5'h1f;
 		 * directives if necessary.
 		 */
 		`S_DECODE: begin
-//$fdisplay(32'h80000002, "S_DECODE: i_hasargs %d\r", i_hasargs);
+if (debug) $fdisplay(32'h80000002, "S_DECODE: i_hasargs %d\r", i_hasargs);
 			acounter <= i_argoff;
-			if (i_dohalt)
+			if (i_dohalt) begin
 				state <= `S_HALT;
-			else if (i_hasargs == 0) // XXX emul
+				haltpos <= 1;
+			end else if (i_hasargs == 0) // XXX emul
 				state <= `S_EXECUTE;
 			else
 				state <= `ASETUP;
@@ -511,7 +519,7 @@ initial psl_ipl = 5'h1f;
 		 * available.
 		 */
 		`ASETUP: begin
-//$fdisplay(32'h80000002, "ASETUP: a_argcode %x a_emul %d cur_byte %x\r", a_argcode, a_emul, cur_byte);
+if (debug) $fdisplay(32'h80000002, "ASETUP: a_argcode %x a_emul %d cur_byte %x\r", a_argcode, a_emul, cur_byte);
 			state <= `S_ARG;
 			if (a_argcode == 3'b011) begin
 				state <= `S_BRARGS; // never emulated
@@ -529,11 +537,11 @@ initial psl_ipl = 5'h1f;
 		/* Read a longword and put into current arg reg */
 		`S_ARG: begin
 			arg_defer <= cur_byte[4];
+if (debug) $fdisplay(32'h80000002, "ARG: curpc %x curbyte %x isvalid %d\r\n", curpc, cur_byte, isvalid);
 			if (isvalid) begin
 				curpc <= pc_plus_1;
 				state <= `S_ARGEND;
 				cur_reg_num_save <= cur_byte[3:0];
-//$fdisplay(32'h80000002, "ARG: curpc %x curbyte %x\r\n", curpc, cur_byte);
 
 				casez (cur_byte[7:4])
 				`OPS_LIT: begin
@@ -607,6 +615,7 @@ initial psl_ipl = 5'h1f;
 		 * the instruction stream.
 		 */
 		`S_RDCDATA: begin
+if (debug) $fdisplay(32'h80000002, "RDCDATA: curpc %x oa %x cur_reg_val %x isvalid %d\r", curpc, OA, cur_reg_val, isvalid);
 			if (isvalid) begin
 				if (regnum[0]) begin
 					OA <= { {24{cur_byte[7]}}, cur_byte };
@@ -673,7 +682,7 @@ initial psl_ipl = 5'h1f;
 		 */
 		`S_INDOA: begin
 			OA <= OA + IA;
-//$fdisplay(32'h80000002, "INDOA: OA %x OP %x arg_R %d\r\n", OA, OP, arg_R);
+if (debug) $fdisplay(32'h80000002, "INDOA: OA %x OP %x arg_R %d\r\n", OA, OP, arg_R);
 			if (arg_R) begin
 				cpu_addr <= OA;
 				cpu_size <= arg_size;
@@ -699,7 +708,7 @@ initial psl_ipl = 5'h1f;
 		 * Store the argument results in their next slot.
 		 */
 		`S_ARGEND: begin
-//if (arg_R) $fdisplay(32'h80000002, "ARGEND: numarg %d OP %x \r\n", num_arg, OP);
+if (debug) $fdisplay(32'h80000002, "ARGEND: numarg %d OP %x cur_arg_number %d num_args %d\r\n", num_arg, OP, cur_arg_number, num_args);
 			if (arg_R) begin
 				case (num_arg)
 				1'b0: arg1 <= OP;
@@ -739,6 +748,7 @@ initial psl_ipl = 5'h1f;
 		 * We cannot end up here if an argument fault occurred.
 		 */
 		`S_EXECUTE: begin
+if (debug) $fdisplay(32'h80000002, "S_EXECUTE: arg1p %x\r\n", arg1p);
 			state <= `S_ENDINST;
 			case (cur_inst)
 			`I_RSB: begin
@@ -896,6 +906,7 @@ initial psl_ipl = 5'h1f;
 		 * and set flags. Resulting value is always in arg[2].
 		 */
 		`S_ENDINST: begin
+if (debug) $fdisplay(32'h80000002, "S_ENDINST: pc %x halted %d cont %d\r", curpc, halted, cont);
 			state <= `S_FETCH;
 			writeback <= 0;
 			calc_vnzc <= 0;

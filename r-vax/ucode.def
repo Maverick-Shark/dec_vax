@@ -36,7 +36,7 @@ JSB	ab		usejmp usebis wback 		# 16
 JMP	ab,rl#0,wl#pc	usebic wback			# 17
 #
 BSBW	bw
-BRW	bw		usebr				# 31
+BRW	bw,rl#pc,wl#pc	useadd wback newflow		# 31
 #
 CMPB	rb,rb		setnz clv			# 91
 #

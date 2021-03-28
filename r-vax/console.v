@@ -47,6 +47,7 @@
 `define	WRITENUM51	6'd36
 `define	WRITENUM52	6'd37
 `define	CONSOLE0	6'd38
+`define	CONSOLE1	6'd39
 
 `define	READNUM_NEXT_C4	2'd0
 `define	READNUM_NEXT_M4	2'd2
@@ -86,8 +87,10 @@ module console(
 	output reg	con_reg,	// general reg
 	output reg	con_ipr,	// internal processor reg
 
+	input [7:0]	haltpos,
+	input		resopflt,
 
-	output reg step, 
+	output reg step,
 	output reg cont,
 	input halted
 );
@@ -142,28 +145,36 @@ module console(
 		endcase
 	end
 
-	always @(posedge clk) begin
+wire debug;
+assign debug = 0;
+always @(posedge clk) begin
+	if (cont) begin
+if (debug)$fdisplay(32'h80000002, "CSTATE %d\r", state);
+	end
+end
 
-		if (halted) begin
-			cont <= 0;
-		end
+	initial state = `CONSOLE;
+	always @(posedge clk) begin
 		if (rst) begin
 			state <= `CONSOLE;
 			cont <= 0;
-		end else if (halted)
+		end
 		/* verilator lint_off CASEINCOMPLETE */
 		case (state)
-		`CONSOLE: begin
-			ADR_O <= 32'hf;
-			WE_O <= 0;
-			STB_O <= 1;
-			con_reg <= 1;
-			state <= `CONSOLE0;
+		`CONSOLE1: begin
+			if (halted == 0) begin
+if (debug)$fdisplay(32'h80000002, "CONSOLE1: halted %x \r", halted);
+				state <= `CONSOLE;
+				cont <= 0;
+			end
 		end
-		`CONSOLE0: if (ACK_I) begin
-			utnum <= DAT_I;
-			con_reg <= 0;
-			STB_O <= 0;
+		`CONSOLE: begin
+			if (halted) 
+				state <= `CONSOLE0;
+		end
+		`CONSOLE0: begin
+			utnum <= { 23'b0, resopflt, haltpos };
+if (debug)$fdisplay(32'h80000002, "CONSOLE0: haltpos %x \r", haltpos);
 			writenum_next <= `WRITNUM_NEXT_C2;
 			state <= `WRITENUM;
 		end
@@ -181,11 +192,11 @@ module console(
 		end
 		`CONSOLE4: begin
 			if (tmp == "G") begin
-				state <= `CONSOLE;
+				state <= `CONSOLE1;
 				step <= 0;
 				cont <= 1;
 			end else if (tmp == "S") begin
-				state <= `CONSOLE;
+				state <= `CONSOLE1;
 				step <= 1;
 				cont <= 1;
 			end else begin
