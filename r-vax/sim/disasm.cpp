@@ -85,10 +85,10 @@ preg_or_pos(Vnvax *tb)
 void
 preg_or_pos2(Vnvax *tb)
 {
-	if (tb->sbi__DOT__cpu__DOT__arg2p_isreg)
-		F("r%d", tb->sbi__DOT__cpu__DOT__arg2p_regnum);
-	else
-		F("%x", tb->sbi__DOT__cpu__DOT__arg2p);
+//	if (tb->sbi__DOT__cpu__DOT__arg2p_isreg)
+//		F("r%d", tb->sbi__DOT__cpu__DOT__arg2p_regnum);
+//	else
+//		F("%x", tb->sbi__DOT__cpu__DOT__arg2p);
 }
 
 extern unsigned short sdramet[];
