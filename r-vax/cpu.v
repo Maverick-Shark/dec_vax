@@ -85,6 +85,7 @@
 `define	WMEM_ENDINST	0
 `define	WMEM_TXDB_W	1
 `define	WMEM_PUSH2	2
+`define	WMEM_xENDINST	3
 
 /* FILLUP return states */
 `define	FUP_FETCH	0
@@ -443,6 +444,15 @@ initial psl_ipl = 5'h1f;
 		2'b11: pos_arg_size = 4'h8;
 		endcase
 
+	/* used for -(Rx) */
+	reg [3:0]	neg_arg_size;
+	always @(a_argsz)
+		case (a_argsz)
+		2'b00: neg_arg_size = 4'hf;
+		2'b01: neg_arg_size = 4'he;
+		2'b10: neg_arg_size = 4'hc;
+		2'b11: neg_arg_size = 4'h8;
+		endcase
 
 	/*
 	 * evaluation definitions.
@@ -586,6 +596,8 @@ if (debug) $fdisplay(32'h80000002, "ASETUP: a_argcode %x a_emul %d cur_byte %x a
 					acounter <= acounter + 1;
 				state <= `ARG_GETBWL;
 				if (a_emul | isvalid) begin
+					if (a_emul == 0)
+						curpc <= pc_plus_1;
 					curarg <= cur_mux;
 					if (cur_mux[7:6] == 0) // literal
 						state <= `ARG_READ;
@@ -614,14 +626,14 @@ if (debug) $fdisplay(32'h80000002, "ASETUP: a_argcode %x a_emul %d cur_byte %x a
 		`ARG_GETBWL: begin
 if (debug)$fdisplay(32'h80000002, "ARG_GETBWL: pc %x arg_rdbmsk %x bcnt %x argsh %x\r",
 	curpc, arg_rdbmsk, bcnt, arg_sh);
-//			if (arg_adec)
-//				OAt <= { 28'hfffffff, neg_arg_size };
-//			if (arg_adec)
-//				arg_radd <= { 1'b1, neg_arg_size };
+			if (arg_adec)
+				OAt <= { 28'hfffffff, neg_arg_size };
+			if (arg_adec)
+				arg_radd <= { 1'b1, neg_arg_size };
 			if (arg_ainc)
 				arg_radd <= { 1'b0, pos_arg_size };
-//			if (arg_aincd)
-//				arg_radd <= 5'd4;
+			if (arg_aincd)
+				arg_radd <= 5'd4;
 			if (arg_sh[0]) begin
 				if (arg_rdbmsk[0]) begin
 if (debug)$fdisplay(32'h80000002, "ARG_GETBWL2: isvalid %x OAt %x cur_byte %x\r", isvalid, OAt, cur_byte);
@@ -647,12 +659,13 @@ if (debug)$fdisplay(32'h80000002, "ARG_GETBWL2: isvalid %x OAt %x cur_byte %x\r"
 		end
 
 		`ARG_ADDTO: begin
-if (debug)$fdisplay(32'h80000002, "ARG_ADDTO: OAt %x cur_reg_val %x\r", OAt, cur_reg_val);
+if (debug)$fdisplay(32'h80000002, "ARG_ADDTO: OAt %x cur_reg_val %x cur_reg_num_save %d\r", OAt, cur_reg_val, cur_reg_num_save);
 			OA <= OAt + cur_reg_val;
 			wregstate <= `WREG_ARG_INDIR;
 			if (arg_adec|arg_ainc|arg_aincd) begin
 				greg_wbdata <= cur_reg_val +
 				    { {27{arg_radd[4]}}, arg_radd };
+				greg_wregnum <= cur_reg_num_save;
 				state <= `S_WREG;
 			end else
 				state <= `ARG_INDIR;
@@ -861,7 +874,7 @@ if (debug) $fdisplay(32'h80000002, "INDOA: OA %x OP %x arg_R %d\r\n", OA, OP, ar
 		 * Store the argument results in their next slot.
 		 */
 		`ARGEND: begin
-if (debug) $fdisplay(32'h80000002, "ARGEND: OP %x OA %x acounter %d \r\n", OP, OA, acounter);
+if (debug) $fdisplay(32'h80000002, "ARGEND: OP %x OA %x acounter %d isreg %d regnum %d\r\n", OP, OA, acounter, OA_isreg, OA_regnum);
 			state <= a_last ? `EXECUTE : `ASETUP;
 			if (arg_aR|arg_aA) begin
 				case (a_rargno)
@@ -932,7 +945,7 @@ if (debug) $fdisplay(32'h80000002, "ARGEND: numarg %d OP %x cur_arg_number %d nu
 
 		`EXECUTE: begin
 			state <= `ENDINST;
-if (debug) $fdisplay(32'h80000002, "EXECUTE: arg1 %x arg2 %x useadd %d wback %d\r", arg1, arg2, i_useadd, i_wback);
+if (debug) $fdisplay(32'h80000002, "EXECUTE: pc %x arg1 %x arg2 %x useadd %d wback %d\r", curpc, arg1, arg2, i_useadd, i_wback);
 			if (i_useadd)
 				{ Ctmp, argd1 } <=
 				    { 1'b0, arg1 } + { 1'b0, arg2 };
@@ -952,7 +965,6 @@ if (debug) $fdisplay(32'h80000002, "S_EXECUTE: arg1p %x\r\n", arg1p);
 				set_branch_pc <= 1;
 				state <= `S_RSB;
 			end
-			`I_BRB, `I_BRW: set_branch_pc <= 1;
 			`I_BNEQ: if (psw[`PSL_Z] == 0) set_branch_pc <= 1;
 			`I_BEQL: if (psw[`PSL_Z] == 1) set_branch_pc <= 1;
 			`I_BGTR: if (psw[3:2] == 2'b00) set_branch_pc <= 1;
@@ -1116,7 +1128,7 @@ if (debug) $fdisplay(32'h80000002, "WB MEM: addr %x val %x\r\n", arg1p, argd1);
 				cpu_wdata <= argd1;
 				cpu_size <= arg1p_size;
 				state <= `S_WRITEMEM;
-				wmemstate <= `WMEM_ENDINST;
+				wmemstate <= `WMEM_xENDINST;
 			end else if (writeback) begin
 if (debug) $fdisplay(32'h80000002, "WB REG: reg %x val %x\r\n", arg1p_regnum, greg_wback);
 				greg_wbdata <= greg_wback;
@@ -1425,6 +1437,7 @@ if (debug) $fdisplay(32'h80000002, "S_ENDINST: pc %x halted %d cont %d\r", curpc
 		end
 
 		`S_WREG: begin 
+// $fdisplay(32'h80000002, "S_WREG: regnum %x wbdata %x\r\n", greg_wregnum, greg_wbdata);
 			if (greg_wregnum == `REG_PC)
 				curpc <= greg_wbdata;
 			case (wregstate)
@@ -1436,6 +1449,7 @@ if (debug) $fdisplay(32'h80000002, "S_ENDINST: pc %x halted %d cont %d\r", curpc
 			`WREG_JSB2: state <= `S_JSB2;
 			`WREG_ENDINST: state <= `S_ENDINST;
 			`WREG_MCHECK2: state <= `S_MCHECK2;
+			`WREG_ARG_INDIR: state <= `ARG_INDIR;
 			default: state <= `S_HALT;
 			endcase
 		end
@@ -1456,6 +1470,7 @@ if (debug) $fdisplay(32'h80000002, "S_ENDINST: pc %x halted %d cont %d\r", curpc
 				`WMEM_ENDINST: state <= `S_ENDINST;
 				`WMEM_TXDB_W: state <= `S_TXDB_W;
 				`WMEM_PUSH2: state <= `S_PUSH2;
+				`WMEM_xENDINST: state <= `ENDINST;
 				default: state <= `S_HALT;
 				endcase
 		end

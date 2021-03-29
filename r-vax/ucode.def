@@ -26,7 +26,7 @@
 RSB	-
 #
 BSBB	bb
-BRB	bb		usebr				# 11
+BRB	aw#b^d(pc),rl#0,wl#pc	useadd wback newflow		# 11
 #
 BEQL	bb		flagz flagset 			# 13
 #
@@ -66,7 +66,7 @@ MTPR	rl,rl		usemtpr 			# da
 MFPR	rl,wl		usemfpr wback			# db
 MOVPSL	wl		usemovpsl wback			# dc
 #
-MOVAL	al,rl#0,wl	usebis setnz clv wback		# de
+MOVAL	al,rl#0,wl	useadd setnz clv wback newflow		# de
 #
 # MOVL	rl,0,wl	useadd vnz		# addl3 rl,0,wl
 #
