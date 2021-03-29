@@ -369,12 +369,13 @@ initial psl_ipl = 5'h1f;
 	wire [7:0]	i_argoff, a_argoff, a_arg, cur_mux;
 	wire		i_enable, i_hasargs, i_emul, i_dohalt, i_newflow;
 	wire		a_enable, a_emul, a_last;
-	wire		i_useadd, i_wback;
+	wire		i_useadd, i_wback, i_isspsw, i_iscpsw;
 	wire		arg_aR, arg_aW, arg_aA;
 	wire [2:0]	a_argcode;
 	wire [1:0]	a_argsz;
 	wire [2:0]	a_rargno;
 	wire		a_wargno;
+	wire [3:0]	i_pswbits;
 	reg [7:0]	acounter, curarg;
 
 	assign i_enable = (state == `S_FETCH) && isvalid;
@@ -398,6 +399,10 @@ initial psl_ipl = 5'h1f;
 
 		.i_useadd(i_useadd),
 		.i_wback(i_wback),
+
+		.i_pswbits(i_pswbits),
+		.i_isspsw(i_isspsw),
+		.i_iscpsw(i_iscpsw),
 
 		.i_dohalt(i_dohalt),
 
@@ -874,7 +879,7 @@ if (debug) $fdisplay(32'h80000002, "INDOA: OA %x OP %x arg_R %d\r\n", OA, OP, ar
 		 * Store the argument results in their next slot.
 		 */
 		`ARGEND: begin
-if (debug) $fdisplay(32'h80000002, "ARGEND: OP %x OA %x acounter %d isreg %d regnum %d\r\n", OP, OA, acounter, OA_isreg, OA_regnum);
+if (debug) $fdisplay(32'h80000002, "ARGEND: OP %x OA %x acounter %d isreg %d regnum %d argsz %d\r\n", OP, OA, acounter, OA_isreg, OA_regnum, arg_size);
 			state <= a_last ? `EXECUTE : `ASETUP;
 			if (arg_aR|arg_aA) begin
 				case (a_rargno)
@@ -891,14 +896,14 @@ if (debug) $fdisplay(32'h80000002, "ARGEND: OP %x OA %x acounter %d isreg %d reg
 					arg1p <= OA;
 					arg1p_isreg  <= OA_isreg;
 					arg1p_regnum <= OA_regnum;
-					arg1p_size <= arg_size;
+					arg1p_size <= a_argsz;
 					num_argp <= 1;
 				end
 				if (a_wargno == 1) begin
 					arg2p <= OA;
 					arg2p_isreg  <= OA_isreg;
 					arg2p_regnum <= OA_regnum;
-					arg2p_size <= arg_size;
+					arg2p_size <= a_argsz;
 				end
 			end
 			OA_isreg <= 0;
@@ -946,10 +951,15 @@ if (debug) $fdisplay(32'h80000002, "ARGEND: numarg %d OP %x cur_arg_number %d nu
 		`EXECUTE: begin
 			state <= `ENDINST;
 if (debug) $fdisplay(32'h80000002, "EXECUTE: pc %x arg1 %x arg2 %x useadd %d wback %d\r", curpc, arg1, arg2, i_useadd, i_wback);
+if (debug) $fdisplay(32'h80000002, "EXECUTE2: i_isspsw %d i_iscpsw %d i_pswbits %x\r", i_isspsw, i_iscpsw, i_pswbits);
+			writeback <= i_wback;
 			if (i_useadd)
 				{ Ctmp, argd1 } <=
 				    { 1'b0, arg1 } + { 1'b0, arg2 };
-			writeback <= i_wback;
+			if (i_isspsw && (|(psw[3:0] & i_pswbits)) == 0)
+				writeback <= 0;
+			if (i_iscpsw && (|(psw[3:0] & i_pswbits)))
+				writeback <= 0;
 		end
 
 		/*
@@ -965,8 +975,8 @@ if (debug) $fdisplay(32'h80000002, "S_EXECUTE: arg1p %x\r\n", arg1p);
 				set_branch_pc <= 1;
 				state <= `S_RSB;
 			end
-			`I_BNEQ: if (psw[`PSL_Z] == 0) set_branch_pc <= 1;
-			`I_BEQL: if (psw[`PSL_Z] == 1) set_branch_pc <= 1;
+//			`I_BNEQ: if (psw[`PSL_Z] == 0) set_branch_pc <= 1;
+//			`I_BEQL: if (psw[`PSL_Z] == 1) set_branch_pc <= 1;
 			`I_BGTR: if (psw[3:2] == 2'b00) set_branch_pc <= 1;
 			`I_BLEQ: if (psw[3:2] == 2'b11) set_branch_pc <= 1;
 			`I_BSBB, `I_BSBW, `I_JSB: begin
@@ -1107,6 +1117,7 @@ if (debug) $fdisplay(32'h80000002, "S_EXECUTE: arg1p %x\r\n", arg1p);
 		 */
 		`ENDINST: begin
 if (debug) $fdisplay(32'h80000002, "ENDINST: pc %x argd1 %x arg1p %x isreg %d regno %d wb %d\r", curpc, argd1, arg1p, arg1p_isreg, arg1p_regnum, writeback);
+if (debug) $fdisplay(32'h80000002, "ENDINST2: greg_wback %x\r", greg_wback);
 			state <= `S_FETCH;
 			writeback <= 0;
 
@@ -1122,7 +1133,7 @@ if (debug) $fdisplay(32'h80000002, "WB MEM: addr %x val %x\r\n", arg1p, argd1);
 				state <= `S_WRITEMEM;
 				wmemstate <= `WMEM_xENDINST;
 			end else if (writeback) begin
-if (debug) $fdisplay(32'h80000002, "WB REG: reg %x val %x\r\n", arg1p_regnum, greg_wback);
+if (debug) $fdisplay(32'h80000002, "WB REG: reg %x val %x size %d\r\n", arg1p_regnum, greg_wback, arg1p_size);
 				greg_wbdata <= greg_wback;
 				greg_wregnum <= arg1p_regnum;
 				wregstate <= `WREG_FETCH;

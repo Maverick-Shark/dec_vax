@@ -28,7 +28,7 @@ RSB	-
 BSBB	bb
 BRB	aw#b^d(pc),rl#0,wl#pc	useadd wback newflow		# 11
 #
-BEQL	bb		flagz flagset 			# 13
+BEQL	ab#b^d(pc),rl#0,wl#pc	useadd wback newflow ccz isspsw # 13
 #
 #	ab-> t1, pc-> -(sp), t1 -> pc
 # JSB	3ab,rl#pc,rl#0,wl#-(sp),wl	usebis wback wback2

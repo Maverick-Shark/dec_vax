@@ -8,19 +8,21 @@
 `define	NEWFLOW		10
 `define	USEADD		11
 `define	WBACK		12
+`define	ISSPSW		13
+`define	ISCPSW		14
 
-`define	FLAGC		36
-`define	FLAGV		37
-`define	FLAGZ		38
-`define	FLAGN		39
+/* 16/19 nmatches psw bits */
+`define	CCC		16
+`define	CCV		17
+`define	CCZ		18
+`define	CCN		19
+
 `define	SETNZ		41
 `define	SETADDC		42
 `define	SETADDV		43
 `define	USEBR		44
 `define	SETBITS		45
 `define	CLRBITS		46
-`define	FLAGSET		47
-`define	FLAGCLR		48
 `define	CLV		50
 `define	USEMTPR		51
 `define	USEMFPR		52
@@ -49,6 +51,10 @@ module ucode(
 
 	output			i_useadd,
 	output			i_wback,
+
+	output [3:0]		i_pswbits,
+	output			i_isspsw,
+	output			i_iscpsw,
 
 	/* Argument ROM */
 	input			a_enable,
@@ -92,6 +98,9 @@ parameter	A_ROM_ADDRS = 256;
 	assign i_dohalt = ucinsn_data[`DOHALT];
 	assign i_useadd = ucinsn_data[`USEADD];
 	assign i_wback = ucinsn_data[`WBACK];
+	assign i_pswbits = ucinsn_data[19:16];
+	assign i_isspsw = ucinsn_data[`ISSPSW];
+	assign i_iscpsw = ucinsn_data[`ISCPSW];
 
 	assign a_argcode = ucargs_data[2:0];
 	assign a_argsz = ucargs_data[4:3];
@@ -126,7 +135,6 @@ parameter	A_ROM_ADDRS = 256;
 	assign setbits = ucode_data[`SETBITS];
 	assign clrbits = ucode_data[`CLRBITS];
 
-	assign ccmask = ucode_data[39:36];
 	assign ccset = ucode_data[`FLAGSET];
 	assign ccclr = ucode_data[`FLAGCLR];
 	assign ccclv = ucode_data[`CLV];
