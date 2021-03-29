@@ -149,14 +149,17 @@ BEGIN {
 		    ($2 != "-" ? "1" : "0") num2bit(curargoff,8);
 # print "insnr " insnr " num2bit(curargoff,8) " num2bit(curargoff,8);
 
+		rdcnt = 0;
+		wrcnt = 0;
 		if ($2 != "-")
 		for (i = 1; i <= n; i++) {
+			setrd = setwr = 0;
 			c = substr(a[i], 1, 1);
-			if (c == "r") al = "100";
-			else if (c == "w") al = "010";
-			else if (c == "m") al = "110";
-			else if (c == "a") al = "001";
-			else if (c == "b") al = "011";
+			if (c == "r") { al = "100"; setrd = 1; }
+			else if (c == "w") { al = "010"; setwr = 1; }
+			else if (c == "m") { al = "110"; setwr = setrd = 1; }
+			else if (c == "a") { al = "001"; setrd = 1; }
+			else if (c == "b") { al = "011"; setrd = 1; } # XXX
 			else err("bad c " c);
 
 			c = substr(a[i], 2, 1);
@@ -179,10 +182,20 @@ BEGIN {
 					err("bad fake arg " a[i]);
 			}
 
+			rdwr = "0000";
+			if (setrd) {
+				rdwr = num2bit(rdcnt,3);
+				rdcnt++;
+			} else
+				rdwr = "000";
+			if (setwr) {
+				rdwr = wrcnt rdwr;
+				wrcnt++;
+			} else
+				rdwr = "0" rdwr;
 			arglist[curargoff++] = \
 			    "00000000000000000000000000000000000000000000" \
-			    num2bit(i-1,4) earg "0" \
-			    (i==n? "1" : "0") isearg al;
+			    rdwr earg "0" (i==n? "1" : "0") isearg al;
 
 		}
 

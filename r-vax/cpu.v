@@ -57,6 +57,9 @@
 `define ARG_ADDTO	43
 `define ARG_INDIR	44
 `define ARG_READ	45
+`define ARGEND		46
+`define EXECUTE		47
+`define ENDINST		48
 
 /* WREG return states */
 `define	WREG_HALT	0
@@ -76,6 +79,7 @@
 `define	RMEM_RSB2	2
 `define	RMEM_TXCS_R	3
 `define	RMEM_ARG_READ	4
+`define	RMEM_xARGEND	5
 
 /* WRITEMEM return states */
 `define	WMEM_ENDINST	0
@@ -361,17 +365,24 @@ initial psl_ipl = 5'h1f;
 	    (greg_addr == `REG_PC ? curpc : general_reg[greg_addr]);
 
 	/* "microcode" */
-	wire [7:0]	i_argoff, a_argoff, a_arg;
+	wire [7:0]	i_argoff, a_argoff, a_arg, cur_mux;
 	wire		i_enable, i_hasargs, i_emul, i_dohalt, i_newflow;
 	wire		a_enable, a_emul, a_last;
+	wire		i_useadd, i_wback;
+	wire		arg_aR, arg_aW, arg_aA;
 	wire [2:0]	a_argcode;
 	wire [1:0]	a_argsz;
-	wire [3:0]	a_argno;
+	wire [2:0]	a_rargno;
+	wire		a_wargno;
 	reg [7:0]	acounter, curarg;
 
 	assign i_enable = (state == `S_FETCH) && isvalid;
-	assign a_enable = 1; /* (state == `S_DECODE); */
-	assign a_argoff = a_enable ? i_argoff : acounter;
+	assign a_enable = (state == `S_DECODE) || (state == `ARGEND);
+	assign a_argoff = (state == `S_DECODE) ? i_argoff : acounter;
+	assign arg_aR = a_argcode[2];
+	assign arg_aW = a_argcode[1];
+	assign arg_aA = a_argcode[0];
+	assign cur_mux = a_emul ? a_arg : cur_byte;
 
 	ucode ucode(
 		.clk(clk),
@@ -384,13 +395,17 @@ initial psl_ipl = 5'h1f;
 		.i_emul(i_emul),
 		.i_newflow(i_newflow),
 
+		.i_useadd(i_useadd),
+		.i_wback(i_wback),
+
 		.i_dohalt(i_dohalt),
 
 		.a_enable(a_enable),
 		.a_argoff(a_argoff),
 		.a_argcode(a_argcode),
 		.a_argsz(a_argsz),
-		.a_argno(a_argno),
+		.a_rargno(a_rargno),
+		.a_wargno(a_wargno),
 		.a_emul(a_emul),
 		.a_last(a_last),
 		.a_arg(a_arg)
@@ -561,19 +576,27 @@ if (debug) $fdisplay(32'h80000002, "S_DECODE: i_hasargs %d\r", i_hasargs);
 		`ASETUP: begin
 if (debug) $fdisplay(32'h80000002, "ASETUP: a_argcode %x a_emul %d cur_byte %x a_arg %x\r", a_argcode, a_emul, cur_byte, a_arg);
 			state <= `S_ARG;
-			arg_rdbmsk <= a_emul ?
-			    { {2{&a_arg[6:5]}}, a_arg[6], |a_arg[6:5]} :
-			    { {2{&cur_byte[6:5]}}, cur_byte[6], |cur_byte[6:5]};
-			cur_reg_num_save <= a_emul ? a_arg[3:0] : cur_byte[3:0];
+			arg_rdbmsk <=
+			    { {2{&cur_mux[6:5]}}, cur_mux[6], |cur_mux[6:5]};
+			cur_reg_num_save <= cur_mux[3:0];
 			OAt <= 0;
 			bcnt <= 1;
 			if (i_newflow) begin
-				if (a_emul) begin
-					state <= `ARG_GETBWL;
-					curarg <= a_arg;
+				if (a_emul || isvalid)
+					acounter <= acounter + 1;
+				state <= `ARG_GETBWL;
+				if (a_emul | isvalid) begin
+					curarg <= cur_mux;
+					if (cur_mux[7:6] == 0) // literal
+						state <= `ARG_READ;
+					else if (cur_mux[7:4] == 4'b0101) begin
+						OA_isreg <= 1;
+						OA_regnum <= cur_mux[3:0];
+						state <= `ARGEND;
+					end
 				end else begin
-					state <= `S_HALT;
-					haltpos <= 9;
+					state <= `S_FILLUP;
+					fupstate <= `FUP_ASETUP;
 				end
 			end else if (a_argcode == 3'b011) begin
 				state <= `S_BRARGS; // never emulated
@@ -624,7 +647,7 @@ if (debug)$fdisplay(32'h80000002, "ARG_GETBWL2: isvalid %x OAt %x cur_byte %x\r"
 		end
 
 		`ARG_ADDTO: begin
-if (debug)$fdisplay(32'h80000002, "ARG_ADDTO: OAt %x cur_reg_val %x\r\n", OAt, cur_reg_val);
+if (debug)$fdisplay(32'h80000002, "ARG_ADDTO: OAt %x cur_reg_val %x\r", OAt, cur_reg_val);
 			OA <= OAt + cur_reg_val;
 			wregstate <= `WREG_ARG_INDIR;
 			if (arg_adec|arg_ainc|arg_aincd) begin
@@ -636,7 +659,7 @@ if (debug)$fdisplay(32'h80000002, "ARG_ADDTO: OAt %x cur_reg_val %x\r\n", OAt, c
 		end
 
 		`ARG_INDIR: begin
-if (debug)$fdisplay(32'h80000002, "ARG_INDIR\r\n");
+if (debug)$fdisplay(32'h80000002, "ARG_INDIR\r");
 			if (arg_indir) begin
 				cpu_addr <= OA;
 				cpu_size <= `O_LONG;
@@ -649,18 +672,19 @@ if (debug)$fdisplay(32'h80000002, "ARG_INDIR\r\n");
 
 		`ARG_READ: begin
 if (debug)$fdisplay(32'h80000002, "ARG_READ: OA %x cur_byte %x curarg %x\r", OA, cur_byte, curarg);
-			state <= `S_ARGEND;
+			state <= `ARGEND;
 			if (arg_lit) begin
 				OP <= { 24'b0, curarg};
 			end else if (arg_reg) begin
 				OP <= cur_reg_val;
-			end else if (arg_R) begin
+			end else if (arg_aR) begin
 				cpu_addr <= OA;
 				cpu_size <= a_argsz;
 				notrash <= 1;
 				state <= `S_READMEM;
-				rmemstate <= `RMEM_ARGEND;
-			end
+				rmemstate <= `RMEM_xARGEND;
+			end else
+				OP <= OA;
 		end
 
 		/* Read a longword and put into current arg reg */
@@ -836,6 +860,40 @@ if (debug) $fdisplay(32'h80000002, "INDOA: OA %x OP %x arg_R %d\r\n", OA, OP, ar
 		/*
 		 * Store the argument results in their next slot.
 		 */
+		`ARGEND: begin
+if (debug) $fdisplay(32'h80000002, "ARGEND: OP %x OA %x acounter %d \r\n", OP, OA, acounter);
+			state <= a_last ? `EXECUTE : `ASETUP;
+			if (arg_aR|arg_aA) begin
+				case (a_rargno)
+				3'b000: arg1 <= OP;
+				3'b001: arg2 <= OP;
+		//		2'b10: arg2 <= OP; // XX
+		//		2'b11: arg2 <= OP; // XX
+				default: ;
+				endcase
+			end
+
+			if (arg_aW) begin
+				if (a_wargno == 0) begin
+					arg1p <= OA;
+					arg1p_isreg  <= OA_isreg;
+					arg1p_regnum <= OA_regnum;
+					arg1p_size <= arg_size;
+					num_argp <= 1;
+				end
+				if (a_wargno == 1) begin
+					arg2p <= OA;
+					arg2p_isreg  <= OA_isreg;
+					arg2p_regnum <= OA_regnum;
+					arg2p_size <= arg_size;
+				end
+			end
+			OA_isreg <= 0;
+		end
+
+		/*
+		 * Store the argument results in their next slot.
+		 */
 		`S_ARGEND: begin
 if (debug) $fdisplay(32'h80000002, "ARGEND: numarg %d OP %x cur_arg_number %d num_args %d\r\n", num_arg, OP, cur_arg_number, num_args);
 			if (arg_R) begin
@@ -870,6 +928,15 @@ if (debug) $fdisplay(32'h80000002, "ARGEND: numarg %d OP %x cur_arg_number %d nu
 				state <= `S_EXECUTE;
 			else
 				state <= `S_ARG;
+		end
+
+		`EXECUTE: begin
+			state <= `ENDINST;
+if (debug) $fdisplay(32'h80000002, "EXECUTE: arg1 %x arg2 %x useadd %d wback %d\r", arg1, arg2, i_useadd, i_wback);
+			if (i_useadd)
+				{ Ctmp, argd1 } <=
+				    { 1'b0, arg1 } + { 1'b0, arg2 };
+			writeback <= i_wback;
 		end
 
 		/*
@@ -1029,6 +1096,40 @@ if (debug) $fdisplay(32'h80000002, "S_EXECUTE: arg1p %x\r\n", arg1p);
 			arg_defer <= 0;
 			state <= `S_RDCDATA;
 		end
+
+		/*
+		 * If any fault occurred take action, else write back (to reg)
+		 * and set flags. Resulting value is always in arg[2].
+		 */
+		`ENDINST: begin
+if (debug) $fdisplay(32'h80000002, "ENDINST: pc %x argd1 %x arg1p %x isreg %d regno %d wb %d\r", curpc, argd1, arg1p, arg1p_isreg, arg1p_regnum, writeback);
+			state <= `S_FETCH;
+			writeback <= 0;
+
+			if (anyfault) begin
+				haltpos <= 5;
+				state <= `S_HALT;
+		//		resopflt <= 0;
+			end else if (writeback & (arg1p_isreg == 0)) begin
+if (debug) $fdisplay(32'h80000002, "WB MEM: addr %x val %x\r\n", arg1p, argd1);
+				cpu_addr <= arg1p;
+				cpu_wdata <= argd1;
+				cpu_size <= arg1p_size;
+				state <= `S_WRITEMEM;
+				wmemstate <= `WMEM_ENDINST;
+			end else if (writeback) begin
+if (debug) $fdisplay(32'h80000002, "WB REG: reg %x val %x\r\n", arg1p_regnum, greg_wback);
+				greg_wbdata <= greg_wback;
+				greg_wregnum <= arg1p_regnum;
+				wregstate <= `WREG_FETCH;
+				state <= `S_WREG;
+			end
+			if (step)
+				delay_halt <= 1;
+		end
+
+
+
 
 		/*
 		 * If any fault occurred take action, else write back (to reg)
@@ -1380,6 +1481,7 @@ if (debug) $fdisplay(32'h80000002, "S_ENDINST: pc %x halted %d cont %d\r", curpc
 				`RMEM_RSB2: state <= `S_RSB2;
 				`RMEM_TXCS_R: state <= `S_TXCS_R;
 				`RMEM_ARG_READ: state <= `ARG_READ;
+				`RMEM_xARGEND: state <= `ARGEND;
 				default: state <= `S_HALT;
 				endcase
 		end

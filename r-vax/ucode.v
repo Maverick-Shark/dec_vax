@@ -6,12 +6,13 @@
 `define	IHASARGS	8
 `define	IEMUL		9
 `define	NEWFLOW		10
+`define	USEADD		11
+`define	WBACK		12
 
 `define	FLAGC		36
 `define	FLAGV		37
 `define	FLAGZ		38
 `define	FLAGN		39
-`define	USEADD		40
 `define	SETNZ		41
 `define	SETADDC		42
 `define	SETADDV		43
@@ -20,7 +21,6 @@
 `define	CLRBITS		46
 `define	FLAGSET		47
 `define	FLAGCLR		48
-`define	WBACK		49
 `define	CLV		50
 `define	USEMTPR		51
 `define	USEMFPR		52
@@ -47,13 +47,17 @@ module ucode(
 
 	output			i_dohalt,
 
+	output			i_useadd,
+	output			i_wback,
+
 	/* Argument ROM */
 	input			a_enable,
 	input [7:0]		a_argoff,
 
 	output [2:0]		a_argcode,
 	output [1:0]		a_argsz,
-	output [3:0]		a_argno,
+	output [2:0]		a_rargno,
+	output 			a_wargno,
 
 	output			a_emul,
 	output			a_last,
@@ -86,13 +90,16 @@ parameter	A_ROM_ADDRS = 256;
 	assign i_emul = ucinsn_data[`IEMUL];
 	assign i_newflow = ucinsn_data[`NEWFLOW];
 	assign i_dohalt = ucinsn_data[`DOHALT];
+	assign i_useadd = ucinsn_data[`USEADD];
+	assign i_wback = ucinsn_data[`WBACK];
 
 	assign a_argcode = ucargs_data[2:0];
 	assign a_argsz = ucargs_data[4:3];
 	assign a_emul = ucargs_data[5];
 	assign a_last = ucargs_data[6];
 	assign a_arg = ucargs_data[15:8];
-	assign a_argno = ucargs_data[19:16];
+	assign a_rargno = ucargs_data[18:16];
+	assign a_wargno = ucargs_data[19];
 
 `ifdef notdef
 	always @(argno, ucode_data[32:30], ucode_data[35:33])
@@ -102,7 +109,6 @@ parameter	A_ROM_ADDRS = 256;
 		default: hidden_arg = 0;
 		endcase
 
-	assign useadd = ucode_data[`USEADD];
 	assign usebr = ucode_data[`USEBR];
 	assign usemtpr = ucode_data[`USEMTPR];
 	assign usemfpr = ucode_data[`USEMFPR];
@@ -119,7 +125,6 @@ parameter	A_ROM_ADDRS = 256;
 	assign setaddv = ucode_data[`SETADDV];
 	assign setbits = ucode_data[`SETBITS];
 	assign clrbits = ucode_data[`CLRBITS];
-	assign wback = ucode_data[`WBACK];
 
 	assign ccmask = ucode_data[39:36];
 	assign ccset = ucode_data[`FLAGSET];
