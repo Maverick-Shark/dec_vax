@@ -23,17 +23,14 @@
 # wback		- write result to destination
 #
 #RSB	rl#(sp)+,rl#0,wl#pc	usebic wback			# 05
-RSB	-
+RSB	rl#(sp)+,rl#0,wl#pc	useadd wback newflow		# 05
 #
 BSBB	ab#b^d(pc),rl#0,rl#pc,wl#pc,wl#-(sp)	useadd move2 wback wback2 newflow 
 BRB	aw#b^d(pc),rl#0,wl#pc	useadd wback newflow		# 11
 #
 BEQL	ab#b^d(pc),rl#0,wl#pc	useadd wback newflow ccz isspsw # 13
 #
-#	ab-> t1, pc-> -(sp), t1 -> pc
-# JSB	3ab,rl#pc,rl#0,wl#-(sp),wl	usebis wback wback2
 JSB	ab,rl#0,rl#pc,wl#pc,wl#-(sp)	useadd move2 wback wback2 newflow # 16
-# JSB	ab		usejmp usebis wback 		# 16
 JMP	ab,rl#0,wl#pc	usebic wback			# 17
 #
 BSBW	aw#w^d(pc),rl#0,rl#pc,wl#pc,wl#-(sp)	useadd move2 wback wback2 newflow 
@@ -41,8 +38,8 @@ BRW	aw#w^d(pc),rl#0,wl#pc	useadd wback newflow		# 31
 #
 CMPB	rb,rb		setnz clv			# 91
 #
-CLRB	rl#0,rl#0,wb	usebis setnz clv wback		# 94
-TSTB	rb,rl#0		usebis setnz clv clc		# 95
+CLRB	rl#0,rl#0,wb	useadd setnz clv wback newflow	# 94
+TSTB	rb,rl#0		useadd setnz clv clc newflow		# 95
 #
 CMPW	rw,rw		setnz clv			# b1
 #
@@ -59,8 +56,8 @@ XORL3	rl,rl,wl	usexor setnz clv wback newflow		# cd
 MOVL	rl,rl#0,wl	usebis setnz clv wback		# d0
 CMPL	rl,rl		setnz clv			# d1
 #
-CLRL	rl#0,rl#0,wl	usebis setnz clv wback		# d4
-TSTL	rl,rl#0		usebis setnz clv clc		# d5
+CLRL	rl#0,rl#0,wl	useadd setnz clv wback newflow		# d4
+TSTL	rl,rl#0		useadd setnz clv clc newflow		# d5
 INCL	rl#1,ml		useadd setnz setaddv setaddc wback newflow	# d6
 #
 MTPR	rl,rl		usemtpr 			# da

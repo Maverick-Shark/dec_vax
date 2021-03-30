@@ -25,6 +25,7 @@
 `define	USEXOR		25
 `define	SETNZ		26
 `define	CLV		27
+`define	CLC		28
 
 `define	SETADDC		42
 `define	SETADDV		43
@@ -33,7 +34,6 @@
 `define	USEBIC		53
 `define	USEBIS		55
 `define	USEJMP		56
-`define	CLC		58
 
 `define	DOHALT		63
 
@@ -60,6 +60,7 @@ module ucode(
 	output			i_iscpsw,
 	output			i_setnz,
 	output			i_clv,
+	output			i_clc,
 
 	output			i_move2,
 	output			i_wback2,
@@ -114,6 +115,7 @@ parameter	A_ROM_ADDRS = 256;
 	assign i_iscpsw = ucinsn_data[`ISCPSW];
 	assign i_setnz = ucinsn_data[`SETNZ];
 	assign i_clv = ucinsn_data[`CLV];
+	assign i_clc = ucinsn_data[`CLC];
 
 	assign i_move2 = ucinsn_data[`MOVE2];
 	assign i_wback2 = ucinsn_data[`WBACK2];

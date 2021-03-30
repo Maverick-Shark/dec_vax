@@ -32,7 +32,7 @@
 `define S_TXCS_R	18
 `define S_TXDB_W	19
 `define S_MFPR		20
-`define S_JSB		21
+//`define S_JSB		21
 `define S_POSTINC	22
 `define S_POSTINC0	23
 `define S_GETVEC	24
@@ -49,9 +49,9 @@
 `define S_MCHECK3	35
 `define S_PUSH		36
 `define S_PUSH2		37
-`define S_JSB2		38
-`define S_RSB		39
-`define S_RSB2		40
+//`define S_JSB2		38
+//`define S_RSB		39
+//`define S_RSB2		40
 `define ASETUP		41
 `define ARG_GETBWL	42
 `define ARG_ADDTO	43
@@ -68,7 +68,7 @@
 `define	WREG_POSTINC	3
 `define	WREG_INDOA	4
 `define	WREG_FETCH	5
-`define	WREG_JSB2	6
+//`define	WREG_JSB2	6
 `define	WREG_ENDINST	7
 `define	WREG_MCHECK2	8
 `define	WREG_ARG_INDIR	9
@@ -77,7 +77,7 @@
 /* READMEM return states */
 `define	RMEM_INDOA	0
 `define	RMEM_ARGEND	1
-`define	RMEM_RSB2	2
+//`define	RMEM_RSB2	2
 `define	RMEM_TXCS_R	3
 `define	RMEM_ARG_READ	4
 `define	RMEM_xARGEND	5
@@ -374,7 +374,7 @@ initial psl_ipl = 5'h1f;
 	wire		i_enable, i_hasargs, i_emul, i_dohalt, i_newflow;
 	wire		a_enable, a_emul, a_last, i_move2, i_wback2;
 	wire		i_useadd, i_wback, i_usexor;
-	wire		i_isspsw, i_iscpsw, i_setnz, i_clv;
+	wire		i_isspsw, i_iscpsw, i_setnz, i_clv, i_clc;
 	wire		i_bispsw, i_bicpsw, i_movpsl;
 	wire		arg_aR, arg_aW, arg_aA;
 	wire [2:0]	a_argcode;
@@ -414,6 +414,7 @@ initial psl_ipl = 5'h1f;
 		.i_bicpsw(i_bicpsw),
 		.i_setnz(i_setnz),
 		.i_clv(i_clv),
+		.i_clc(i_clc),
 
 		.i_movpsl(i_movpsl),
 
@@ -1016,11 +1017,6 @@ if (debug) $fdisplay(32'h80000002, "EXECUTE2: i_isspsw %d i_iscpsw %d i_pswbits 
 if (debug) $fdisplay(32'h80000002, "S_EXECUTE: arg1p %x\r\n", arg1p);
 			state <= `S_ENDINST;
 			case (cur_inst)
-			`I_RSB: begin
-				cur_reg_num_save <= `REG_SP;
-				set_branch_pc <= 1;
-				state <= `S_RSB;
-			end
 			`I_DECL: begin
 				{ Ctmp, argd1 } <= { 1'b0, arg1 } - 33'h1;
 				writeback <= 1;
@@ -1074,18 +1070,6 @@ if (debug) $fdisplay(32'h80000002, "S_EXECUTE: arg1p %x\r\n", arg1p);
 				set_vnz_dest <= 1;
 				if (anyfault == 0)
 					state <= `S_MFPR;
-			end
-			`I_CLRB, `I_CLRW, `I_CLRL: begin
-//$fdisplay(32'h80000002, "CLRL: arg1p %x \r\n", arg1p);
-				argd1 <= 0;
-				writeback <= 1;
-				set_vnz_dest <= 1;
-			end
-			`I_TSTB, `I_TSTW, `I_TSTL: begin
-//$fdisplay(32'h80000002, "TSTL: arg1p %x arg1 %x\r\n", arg1p, arg1);
-				argd1 <= arg1;
-				set_vnz_dest <= 1;
-				clear_c_dest <= 1;
 			end
 			default: begin state <= `S_HALT; haltpos <= 13; end
 			endcase
@@ -1143,6 +1127,8 @@ if (debug) $fdisplay(32'h80000002, "WB MEM: addr %x val %x\r\n", arg1p, argd1);
 			end
 			if (i_clv)
 				psw[`PSL_V] <= 0;
+			if (i_clc)
+				psw[`PSL_C] <= 0;
 
 			if (step)
 				delay_halt <= 1;
@@ -1205,37 +1191,6 @@ if (debug) $fdisplay(32'h80000002, "S_ENDINST: pc %x halted %d cont %d\r", curpc
 				psw[`PSL_C] <= (arg1 < arg2);
 			if (step)
 				delay_halt <= 1;
-		end
-
-		`S_JSB: begin
-			greg_wbdata <= cur_reg_val - 4;
-			cpu_addr <= cur_reg_val - 4;
-			greg_wregnum <= `REG_SP;
-			state <= `S_WREG;
-			wregstate <= `WREG_JSB2;
-//$fdisplay(32'h80000002, "S_JSB: spval %x\r\n", cur_reg_val);
-		end
-
-		`S_JSB2: begin
-			cpu_size <= `O_LONG;
-			cpu_wdata <= curpc;
-			state <= `S_WRITEMEM;
-			wmemstate <= `WMEM_ENDINST;
-//$fdisplay(32'h80000002, "S_JSB2: spval %x\r\n", cur_reg_val);
-		end
-
-		`S_RSB: begin
-			cpu_addr <= cur_reg_val;
-			greg_wbdata <= cur_reg_val + 4;
-			greg_wregnum <= `REG_SP;
-			state <= `S_READMEM;
-			rmemstate <= `RMEM_RSB2;
-		end
-
-		`S_RSB2: begin
-			arg1p <= OP;
-			state <= `S_WREG;
-			wregstate <= `WREG_ENDINST;
 		end
 
 		`S_MTPR: begin
@@ -1454,7 +1409,6 @@ if (debug) $fdisplay(32'h80000002, "S_ENDINST: pc %x halted %d cont %d\r", curpc
 			`WREG_POSTINC: state <= `S_POSTINC;
 			`WREG_INDOA: state <= `S_INDOA;
 			`WREG_FETCH: state <= `S_FETCH;
-			`WREG_JSB2: state <= `S_JSB2;
 			`WREG_ENDINST: state <= `S_ENDINST;
 			`WREG_MCHECK2: state <= `S_MCHECK2;
 			`WREG_ARG_INDIR: state <= `ARG_INDIR;
@@ -1502,7 +1456,7 @@ if (debug) $fdisplay(32'h80000002, "S_ENDINST: pc %x halted %d cont %d\r", curpc
 				case (rmemstate)
 				`RMEM_INDOA: state <= `S_INDOA;
 				`RMEM_ARGEND: state <= `S_ARGEND;
-				`RMEM_RSB2: state <= `S_RSB2;
+//				`RMEM_RSB2: state <= `S_RSB2;
 				`RMEM_TXCS_R: state <= `S_TXCS_R;
 				`RMEM_ARG_READ: state <= `ARG_READ;
 				`RMEM_xARGEND: state <= `ARGEND;
