@@ -60,7 +60,7 @@ CMPL	rl,rl		setnz clv			# d1
 #
 CLRL	rl#0,rl#0,wl	usebis setnz clv wback		# d4
 TSTL	rl,rl#0		usebis setnz clv clc		# d5
-INCL	rl#1,rl,ml	useadd setnz setaddv setaddc wback	# d6
+INCL	rl#1,ml		useadd setnz setaddv setaddc wback newflow	# d6
 #
 MTPR	rl,rl		usemtpr 			# da
 MFPR	rl,wl		usemfpr wback			# db

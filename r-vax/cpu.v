@@ -459,6 +459,23 @@ initial psl_ipl = 5'h1f;
 		2'b11: neg_arg_size = 4'h8;
 		endcase
 
+	/* double mux for arguments */
+	reg [31:0]	cra, arg_rv;
+	always @*
+		case (arg_reg)
+		1'b0: arg_rv = OP;
+		1'b1: arg_rv = cra;
+		endcase
+
+	always @*
+		case (a_argsz)
+		`O_BYTE: cra = { {24{cur_reg_val[7]}}, cur_reg_val[7:0] };
+		`O_WORD: cra = { {16{cur_reg_val[15]}}, cur_reg_val[15:0] };
+		`O_LONG: cra = cur_reg_val;
+		`O_QUAD: cra = 0;
+		endcase
+
+
 	/*
 	 * evaluation definitions.
 	 */
@@ -879,12 +896,13 @@ if (debug) $fdisplay(32'h80000002, "INDOA: OA %x OP %x arg_R %d\r\n", OA, OP, ar
 		 * Store the argument results in their next slot.
 		 */
 		`ARGEND: begin
-if (debug) $fdisplay(32'h80000002, "ARGEND: OP %x OA %x acounter %d isreg %d regnum %d argsz %d\r\n", OP, OA, acounter, OA_isreg, OA_regnum, arg_size);
+if (debug) $fdisplay(32'h80000002, "ARGEND: OP %x OA %x arg_rv %x acounter %d isreg %d regnum %d argsz %d\r", OP, OA, arg_rv, acounter, OA_isreg, OA_regnum, arg_size);
+if (debug) $fdisplay(32'h80000002, "ARGEND: a_rargno %d a_wargno %d arg_aR %d arg_aA %d arg_aW %d\r\n", a_rargno, a_wargno, arg_aR, arg_aA, arg_aW);
 			state <= a_last ? `EXECUTE : `ASETUP;
 			if (arg_aR|arg_aA) begin
 				case (a_rargno)
-				3'b000: arg1 <= OP;
-				3'b001: arg2 <= OP;
+				3'b000: arg1 <= arg_rv;
+				3'b001: arg2 <= arg_rv;
 		//		2'b10: arg2 <= OP; // XX
 		//		2'b11: arg2 <= OP; // XX
 				default: ;
@@ -977,8 +995,8 @@ if (debug) $fdisplay(32'h80000002, "S_EXECUTE: arg1p %x\r\n", arg1p);
 			end
 //			`I_BNEQ: if (psw[`PSL_Z] == 0) set_branch_pc <= 1;
 //			`I_BEQL: if (psw[`PSL_Z] == 1) set_branch_pc <= 1;
-			`I_BGTR: if (psw[3:2] == 2'b00) set_branch_pc <= 1;
-			`I_BLEQ: if (psw[3:2] == 2'b11) set_branch_pc <= 1;
+//			`I_BGTR: if (psw[3:2] == 2'b00) set_branch_pc <= 1;
+//			`I_BLEQ: if (psw[3:2] == 2'b11) set_branch_pc <= 1;
 			`I_BSBB, `I_BSBW, `I_JSB: begin
 				cur_reg_num_save <= `REG_SP;
 				set_branch_pc <= 1;
@@ -986,22 +1004,22 @@ if (debug) $fdisplay(32'h80000002, "S_EXECUTE: arg1p %x\r\n", arg1p);
 // $fdisplay(32'h80000002, "I_JSB: arg1p %x\r\n", arg1p);
 			end
 			`I_JMP: set_branch_pc <= 1;
-			`I_BGEQ: if (psw[`PSL_N] == 0) set_branch_pc <= 1;
-			`I_BLSS: if (psw[`PSL_N] == 1) set_branch_pc <= 1;
-			`I_BGTRU: if ((psw[`PSL_Z]|psw[`PSL_C]) == 0)
-				set_branch_pc <= 1;
-			`I_BLEQU: if ((psw[`PSL_Z]|psw[`PSL_C]) == 1)
-				set_branch_pc <= 1;
-			`I_BVC: if (psw[`PSL_V] == 0) set_branch_pc <= 1;
-			`I_BVS: if (psw[`PSL_V] == 1) set_branch_pc <= 1;
-			`I_BCC: if (psw[`PSL_C] == 0) set_branch_pc <= 1;
-			`I_BCS: if (psw[`PSL_C] == 1) set_branch_pc <= 1;
+//			`I_BGEQ: if (psw[`PSL_N] == 0) set_branch_pc <= 1;
+//			`I_BLSS: if (psw[`PSL_N] == 1) set_branch_pc <= 1;
+//			`I_BGTRU: if ((psw[`PSL_Z]|psw[`PSL_C]) == 0)
+//				set_branch_pc <= 1;
+//			`I_BLEQU: if ((psw[`PSL_Z]|psw[`PSL_C]) == 1)
+//				set_branch_pc <= 1;
+//			`I_BVC: if (psw[`PSL_V] == 0) set_branch_pc <= 1;
+//			`I_BVS: if (psw[`PSL_V] == 1) set_branch_pc <= 1;
+//			`I_BCC: if (psw[`PSL_C] == 0) set_branch_pc <= 1;
+//			`I_BCS: if (psw[`PSL_C] == 1) set_branch_pc <= 1;
 
-			`I_INCL: begin
-				{ Ctmp, argd1 } <= { 1'b0, arg1 } + 33'h1;
-				writeback <= 1;
-				calc_vnzc <= 1;
-			end
+//			`I_INCL: begin
+//				{ Ctmp, argd1 } <= { 1'b0, arg1 } + 33'h1;
+//				writeback <= 1;
+//				calc_vnzc <= 1;
+//			end
 			`I_DECL: begin
 				{ Ctmp, argd1 } <= { 1'b0, arg1 } - 33'h1;
 				writeback <= 1;
