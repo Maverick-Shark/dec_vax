@@ -27,10 +27,10 @@
 `define	CLV		27
 `define	CLC		28
 `define	USEMTPR		29
+`define	USEMFPR		30
 
 `define	SETADDC		42
 `define	SETADDV		43
-`define	USEMFPR		52
 `define	USEBIC		53
 `define	USEBIS		55
 `define	USEJMP		56
@@ -54,6 +54,7 @@ module ucode(
 	output			i_useadd,
 	output			i_usexor,
 	output			i_usemtpr,
+	output			i_usemfpr,
 	output			i_wback,
 
 	output [3:0]		i_pswbits,
@@ -125,6 +126,7 @@ parameter	A_ROM_ADDRS = 256;
 	assign i_movpsl = ucinsn_data[`MOVPSL];
 	assign i_usexor = ucinsn_data[`USEXOR];
 	assign i_usemtpr = ucinsn_data[`USEMTPR];
+	assign i_usemfpr = ucinsn_data[`USEMFPR];
 
 	assign a_argcode = ucargs_data[2:0];
 	assign a_argsz = ucargs_data[4:3];

@@ -88,9 +88,6 @@ defparam console.tto.CLKPERBIT = 2604;
 	wire cpu_pmem;
 	wire [1:0] cpu_size;
 
-	/* cpu - console wires */
-	wire cont, step;
-
 	cpu cpu(
 		.clk(clk),
 		.rst(rst),
