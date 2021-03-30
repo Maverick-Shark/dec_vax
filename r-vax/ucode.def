@@ -46,8 +46,8 @@ TSTB	rb,rl#0		usebis setnz clv clc		# 95
 #
 CMPW	rw,rw		setnz clv			# b1
 #
-BISPSW	rw		setbits				# b8
-BICPSW	rw		clrbits				# b9
+BISPSW	rw		bispsw newflow			# b8
+BICPSW	rw		bicpsw newflow			# b9
 # 
 ADDL2	rl,ml		useadd setnz setaddv setaddc wback # c0 addl3 rl,rl,wl
 ADDL3	rl,rl,wl	useadd setnz setaddv setaddc wback # c1 addl3 rl,rl,wl
@@ -65,7 +65,7 @@ INCL	rl#1,ml		useadd setnz setaddv setaddc wback newflow	# d6
 #
 MTPR	rl,rl		usemtpr 			# da
 MFPR	rl,wl		usemfpr wback			# db
-MOVPSL	wl		usemovpsl wback			# dc
+MOVPSL	wl		movpsl wback newflow		# dc
 #
 MOVAL	al,rl#0,wl	useadd setnz clv wback newflow		# de
 #

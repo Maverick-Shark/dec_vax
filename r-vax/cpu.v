@@ -230,7 +230,7 @@ module cpu(
 	reg [7:0]	psw;
 initial psl_is = 1'b1;
 initial psl_ipl = 5'h1f;
-	wire		psl;
+	wire [31:0]	psl;
 	assign psl = 
 	    { 5'd0, psl_is, cur_mod, prv_mod, 1'b0, psl_ipl, 8'b0, psw };
 
@@ -374,6 +374,7 @@ initial psl_ipl = 5'h1f;
 	wire		i_enable, i_hasargs, i_emul, i_dohalt, i_newflow;
 	wire		a_enable, a_emul, a_last, i_move2, i_wback2;
 	wire		i_useadd, i_wback, i_isspsw, i_iscpsw;
+	wire		i_bispsw, i_bicpsw, i_movpsl;
 	wire		arg_aR, arg_aW, arg_aA;
 	wire [2:0]	a_argcode;
 	wire [1:0]	a_argsz;
@@ -407,6 +408,9 @@ initial psl_ipl = 5'h1f;
 		.i_pswbits(i_pswbits),
 		.i_isspsw(i_isspsw),
 		.i_iscpsw(i_iscpsw),
+		.i_bispsw(i_bispsw),
+		.i_bicpsw(i_bicpsw),
+		.i_movpsl(i_movpsl),
 
 		.i_move2(i_move2),
 		.i_wback2(i_wback2),
@@ -537,6 +541,7 @@ assign debug = 0;
 				endcase
 				con_ack_o_reg <= 1;
 			end else if (ref_greg_read) begin
+$fdisplay(32'h80000002, "HALT: addr %x psl %x\r", CON_ADR_I, psl);
 				casez (CON_ADR_I[4:0])
 				5'h1f: con_dat_o_reg <= psl;
 				5'h1e: con_dat_o_reg <= oldpc;
@@ -987,6 +992,12 @@ if (debug) $fdisplay(32'h80000002, "EXECUTE2: i_isspsw %d i_iscpsw %d i_pswbits 
 				writeback <= 0;
 			if (i_iscpsw && (|(psw[3:0] & i_pswbits)))
 				writeback <= 0;
+			if (i_bicpsw)
+				psw <= psw & ~arg1[7:0];
+			if (i_bispsw)
+				psw <= psw | arg1[7:0];
+			if (i_movpsl)
+				argd1 <= psl;
 			if (i_move2)
 				argd2 <= arg3;
 		end
@@ -1084,11 +1095,6 @@ if (debug) $fdisplay(32'h80000002, "S_EXECUTE: arg1p %x\r\n", arg1p);
 				if (anyfault == 0)
 					state <= `S_MFPR;
 			end
-			`I_MOVPSL: begin
-				argd1 <=
-		{ 5'd0, psl_is, cur_mod, prv_mod, 1'b0, psl_ipl, 8'b0, psw };
-				writeback <= 1;
-			end
 			`I_CLRB, `I_CLRW, `I_CLRL: begin
 //$fdisplay(32'h80000002, "CLRL: arg1p %x \r\n", arg1p);
 				argd1 <= 0;
@@ -1100,20 +1106,6 @@ if (debug) $fdisplay(32'h80000002, "S_EXECUTE: arg1p %x\r\n", arg1p);
 				argd1 <= arg1;
 				set_vnz_dest <= 1;
 				clear_c_dest <= 1;
-			end
-			`I_BISPSW, `I_BICPSW: begin
-				//  XXX handle exceptions in instr read
-				if (|arg1[15:8]) begin
-					// resopflt <= 1;
-					// state <= S_ENDINSN;
-					haltpos <= 4;
-					state <= `S_HALT;
-				end else begin
-					if (cur_inst[0]) // bicpsw
-						psw[3:0] <= psw[3:0] & ~arg1[3:0];
-					else  // bispsw
-						psw <= psw | { 4'b0, arg1[3:0]};
-				end
 			end
 			default: begin state <= `S_HALT; haltpos <= 13; end
 			endcase

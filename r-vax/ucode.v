@@ -19,14 +19,13 @@
 
 `define	MOVE2		20
 `define	WBACK2		21
-
+`define	BISPSW		22
+`define	BICPSW		23
+`define	MOVPSL		24
 
 `define	SETNZ		41
 `define	SETADDC		42
 `define	SETADDV		43
-`define	USEBR		44
-`define	SETBITS		45
-`define	CLRBITS		46
 `define	CLV		50
 `define	USEMTPR		51
 `define	USEMFPR		52
@@ -34,7 +33,6 @@
 `define	USEXOR		54
 `define	USEBIS		55
 `define	USEJMP		56
-`define	USEMOVPSL	57
 `define	CLC		58
 
 `define	DOHALT		63
@@ -62,6 +60,9 @@ module ucode(
 
 	output			i_move2,
 	output			i_wback2,
+	output			i_bispsw,
+	output			i_bicpsw,
+	output			i_movpsl,
 
 	/* Argument ROM */
 	input			a_enable,
@@ -110,6 +111,9 @@ parameter	A_ROM_ADDRS = 256;
 	assign i_iscpsw = ucinsn_data[`ISCPSW];
 	assign i_move2 = ucinsn_data[`MOVE2];
 	assign i_wback2 = ucinsn_data[`WBACK2];
+	assign i_bispsw = ucinsn_data[`BISPSW];
+	assign i_bicpsw = ucinsn_data[`BICPSW];
+	assign i_movpsl = ucinsn_data[`MOVPSL];
 
 	assign a_argcode = ucargs_data[2:0];
 	assign a_argsz = ucargs_data[4:3];
