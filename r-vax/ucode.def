@@ -54,7 +54,7 @@ ADDL3	rl,rl,wl	useadd setnz setaddv setaddc wback # c1 addl3 rl,rl,wl
 #
 BICL2	rl,ml		usebic setnz clv wback		# ca
 #
-XORL3	rl,rl,wl	usexor setnz clv wback		# cd
+XORL3	rl,rl,wl	usexor setnz clv wback newflow		# cd
 #
 MOVL	rl,rl#0,wl	usebis setnz clv wback		# d0
 CMPL	rl,rl		setnz clv			# d1

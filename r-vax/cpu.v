@@ -373,7 +373,8 @@ initial psl_ipl = 5'h1f;
 	wire [7:0]	i_argoff, a_argoff, a_arg, cur_mux;
 	wire		i_enable, i_hasargs, i_emul, i_dohalt, i_newflow;
 	wire		a_enable, a_emul, a_last, i_move2, i_wback2;
-	wire		i_useadd, i_wback, i_isspsw, i_iscpsw;
+	wire		i_useadd, i_wback, i_usexor;
+	wire		i_isspsw, i_iscpsw, i_setnz, i_clv;
 	wire		i_bispsw, i_bicpsw, i_movpsl;
 	wire		arg_aR, arg_aW, arg_aA;
 	wire [2:0]	a_argcode;
@@ -403,6 +404,7 @@ initial psl_ipl = 5'h1f;
 		.i_newflow(i_newflow),
 
 		.i_useadd(i_useadd),
+		.i_usexor(i_usexor),
 		.i_wback(i_wback),
 
 		.i_pswbits(i_pswbits),
@@ -410,6 +412,9 @@ initial psl_ipl = 5'h1f;
 		.i_iscpsw(i_iscpsw),
 		.i_bispsw(i_bispsw),
 		.i_bicpsw(i_bicpsw),
+		.i_setnz(i_setnz),
+		.i_clv(i_clv),
+
 		.i_movpsl(i_movpsl),
 
 		.i_move2(i_move2),
@@ -541,7 +546,6 @@ assign debug = 0;
 				endcase
 				con_ack_o_reg <= 1;
 			end else if (ref_greg_read) begin
-$fdisplay(32'h80000002, "HALT: addr %x psl %x\r", CON_ADR_I, psl);
 				casez (CON_ADR_I[4:0])
 				5'h1f: con_dat_o_reg <= psl;
 				5'h1e: con_dat_o_reg <= oldpc;
@@ -988,6 +992,8 @@ if (debug) $fdisplay(32'h80000002, "EXECUTE2: i_isspsw %d i_iscpsw %d i_pswbits 
 			if (i_useadd)
 				{ Ctmp, argd1 } <=
 				    { 1'b0, arg1 } + { 1'b0, arg2 };
+			if (i_usexor)
+				argd1 <= arg1 ^ arg2;
 			if (i_isspsw && (|(psw[3:0] & i_pswbits)) == 0)
 				writeback <= 0;
 			if (i_iscpsw && (|(psw[3:0] & i_pswbits)))
@@ -1015,32 +1021,12 @@ if (debug) $fdisplay(32'h80000002, "S_EXECUTE: arg1p %x\r\n", arg1p);
 				set_branch_pc <= 1;
 				state <= `S_RSB;
 			end
-//			`I_BNEQ: if (psw[`PSL_Z] == 0) set_branch_pc <= 1;
-//			`I_BEQL: if (psw[`PSL_Z] == 1) set_branch_pc <= 1;
-//			`I_BGTR: if (psw[3:2] == 2'b00) set_branch_pc <= 1;
-//			`I_BLEQ: if (psw[3:2] == 2'b11) set_branch_pc <= 1;
-			`I_JMP: set_branch_pc <= 1;
-//			`I_BGEQ: if (psw[`PSL_N] == 0) set_branch_pc <= 1;
-//			`I_BLSS: if (psw[`PSL_N] == 1) set_branch_pc <= 1;
-//			`I_BGTRU: if ((psw[`PSL_Z]|psw[`PSL_C]) == 0)
-//				set_branch_pc <= 1;
-//			`I_BLEQU: if ((psw[`PSL_Z]|psw[`PSL_C]) == 1)
-//				set_branch_pc <= 1;
-//			`I_BVC: if (psw[`PSL_V] == 0) set_branch_pc <= 1;
-//			`I_BVS: if (psw[`PSL_V] == 1) set_branch_pc <= 1;
-//			`I_BCC: if (psw[`PSL_C] == 0) set_branch_pc <= 1;
-//			`I_BCS: if (psw[`PSL_C] == 1) set_branch_pc <= 1;
-
-//			`I_INCL: begin
-//				{ Ctmp, argd1 } <= { 1'b0, arg1 } + 33'h1;
-//				writeback <= 1;
-//				calc_vnzc <= 1;
-//			end
 			`I_DECL: begin
 				{ Ctmp, argd1 } <= { 1'b0, arg1 } - 33'h1;
 				writeback <= 1;
 				calc_vnzc <= 1;
 			end
+			`I_JMP: set_branch_pc <= 1;
 			`I_ADDL2, `I_ADDL3, `I_ADWC: begin
 				{ Ctmp, argd1 } <=
 				    { 1'b0, arg1 } + { 1'b0, arg2 } +
@@ -1057,12 +1043,6 @@ if (debug) $fdisplay(32'h80000002, "S_EXECUTE: arg1p %x\r\n", arg1p);
 			end
 			`I_BITL: begin
 				argd1 <= arg1 & arg2;
-				set_vnz_dest <= 1;
-			end
-			`I_XORL2, `I_XORL3: begin
-				argd1 <= arg2 ^ arg1;
-//$fdisplay(32'h80000002, "BICL: arg1 %x arg2 %x\r\n", arg1, arg2);
-				writeback <= 1;
 				set_vnz_dest <= 1;
 			end
 			`I_BISL2, `I_BISL3: begin
@@ -1157,6 +1137,12 @@ if (debug) $fdisplay(32'h80000002, "WB MEM: addr %x val %x\r\n", arg1p, argd1);
 				end
 				writeback2 <= 0;
 			end
+			if (i_setnz) begin
+				psw[`PSL_N] <= argd1[31];
+				psw[`PSL_Z] <= ~|argd1;
+			end
+			if (i_clv)
+				psw[`PSL_V] <= 0;
 
 			if (step)
 				delay_halt <= 1;

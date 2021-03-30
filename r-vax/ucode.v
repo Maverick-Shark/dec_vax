@@ -22,15 +22,15 @@
 `define	BISPSW		22
 `define	BICPSW		23
 `define	MOVPSL		24
+`define	USEXOR		25
+`define	SETNZ		26
+`define	CLV		27
 
-`define	SETNZ		41
 `define	SETADDC		42
 `define	SETADDV		43
-`define	CLV		50
 `define	USEMTPR		51
 `define	USEMFPR		52
 `define	USEBIC		53
-`define	USEXOR		54
 `define	USEBIS		55
 `define	USEJMP		56
 `define	CLC		58
@@ -52,11 +52,14 @@ module ucode(
 	output			i_dohalt,
 
 	output			i_useadd,
+	output			i_usexor,
 	output			i_wback,
 
 	output [3:0]		i_pswbits,
 	output			i_isspsw,
 	output			i_iscpsw,
+	output			i_setnz,
+	output			i_clv,
 
 	output			i_move2,
 	output			i_wback2,
@@ -109,11 +112,15 @@ parameter	A_ROM_ADDRS = 256;
 	assign i_pswbits = ucinsn_data[19:16];
 	assign i_isspsw = ucinsn_data[`ISSPSW];
 	assign i_iscpsw = ucinsn_data[`ISCPSW];
+	assign i_setnz = ucinsn_data[`SETNZ];
+	assign i_clv = ucinsn_data[`CLV];
+
 	assign i_move2 = ucinsn_data[`MOVE2];
 	assign i_wback2 = ucinsn_data[`WBACK2];
 	assign i_bispsw = ucinsn_data[`BISPSW];
 	assign i_bicpsw = ucinsn_data[`BICPSW];
 	assign i_movpsl = ucinsn_data[`MOVPSL];
+	assign i_usexor = ucinsn_data[`USEXOR];
 
 	assign a_argcode = ucargs_data[2:0];
 	assign a_argsz = ucargs_data[4:3];
