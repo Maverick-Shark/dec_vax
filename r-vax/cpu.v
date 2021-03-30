@@ -72,6 +72,7 @@
 `define	WREG_ENDINST	7
 `define	WREG_MCHECK2	8
 `define	WREG_ARG_INDIR	9
+`define	WREG_xENDINST	10
 
 /* READMEM return states */
 `define	RMEM_INDOA	0
@@ -199,13 +200,13 @@ module cpu(
 	assign ipr_val = ipr_reg[ipr_regraddr];
 
 	/*
-	 * arg1/2 are arg value read. (if R|M)
-	 * arg1p is pointer to the destination (if memory and W|A|M) 
+	 * arg1/2 are arg value read. (if R|A)
+	 * arg1p is pointer to the destination (if memory and W) 
 	 * argd1 is destination for value.
 	 */
 /* verilator lint_off UNDRIVEN */
 /* verilator lint_off UNUSED */
-	reg [31:0]	arg1, arg2, arg3, arg4, argd1, arg1p, arg2p;
+	reg [31:0]	arg1, arg2, arg3, arg4, argd1, argd2, arg1p, arg2p;
 	reg		num_arg, num_argd, num_argp;
 	reg		arg1p_isreg, arg2p_isreg;
 	reg [3:0]	arg1p_regnum, arg2p_regnum;
@@ -229,6 +230,9 @@ module cpu(
 	reg [7:0]	psw;
 initial psl_is = 1'b1;
 initial psl_ipl = 5'h1f;
+	wire		psl;
+	assign psl = 
+	    { 5'd0, psl_is, cur_mod, prv_mod, 1'b0, psl_ipl, 8'b0, psw };
 
 /* verilator lint_on UNDRIVEN */
 
@@ -243,14 +247,14 @@ initial psl_ipl = 5'h1f;
 
 	reg [3:0]	regnum;
 
-	reg		isindex, writeback;
+	reg		isindex, writeback, writeback2;
 	reg [31:0]	OA, IA, OP, OAt;
 	reg		OA_isreg;
 	reg [3:0]	OA_regnum;
 
 
 
-	reg [31:0] curpc, oldpc;
+	reg [31:0] curpc, oldpc, oldpsl;
 	wire [31:0] cur_reg_val_subsz;
 	wire [31:0] cur_reg_val;
 //	wire [1:0] curbyte;
@@ -368,7 +372,7 @@ initial psl_ipl = 5'h1f;
 	/* "microcode" */
 	wire [7:0]	i_argoff, a_argoff, a_arg, cur_mux;
 	wire		i_enable, i_hasargs, i_emul, i_dohalt, i_newflow;
-	wire		a_enable, a_emul, a_last;
+	wire		a_enable, a_emul, a_last, i_move2, i_wback2;
 	wire		i_useadd, i_wback, i_isspsw, i_iscpsw;
 	wire		arg_aR, arg_aW, arg_aA;
 	wire [2:0]	a_argcode;
@@ -403,6 +407,9 @@ initial psl_ipl = 5'h1f;
 		.i_pswbits(i_pswbits),
 		.i_isspsw(i_isspsw),
 		.i_iscpsw(i_iscpsw),
+
+		.i_move2(i_move2),
+		.i_wback2(i_wback2),
 
 		.i_dohalt(i_dohalt),
 
@@ -531,8 +538,7 @@ assign debug = 0;
 				con_ack_o_reg <= 1;
 			end else if (ref_greg_read) begin
 				casez (CON_ADR_I[4:0])
-				5'h1f: con_dat_o_reg <=
-	{ 5'd0, psl_is, cur_mod, prv_mod, 1'b0, psl_ipl, 8'b0, psw };
+				5'h1f: con_dat_o_reg <= psl;
 				5'h1e: con_dat_o_reg <= oldpc;
 				5'h1d: con_dat_o_reg <=
 				    { 23'b0, resopflt, haltpos };
@@ -577,6 +583,7 @@ if (debug) $fdisplay(32'h80000002, "FETCH: pc %x curbyte %x\r", curpc, cur_byte)
 				cur_arg_number <= 0;
 				isindex <= 0;
 				oldpc <= curpc;
+				oldpsl <= psl;
 				curpc <= pc_plus_1;
 				state <= `S_DECODE;
 			end else begin
@@ -903,7 +910,7 @@ if (debug) $fdisplay(32'h80000002, "ARGEND: a_rargno %d a_wargno %d arg_aR %d ar
 				case (a_rargno)
 				3'b000: arg1 <= arg_rv;
 				3'b001: arg2 <= arg_rv;
-		//		2'b10: arg2 <= OP; // XX
+				3'b010: arg3 <= arg_rv;
 		//		2'b11: arg2 <= OP; // XX
 				default: ;
 				endcase
@@ -971,6 +978,7 @@ if (debug) $fdisplay(32'h80000002, "ARGEND: numarg %d OP %x cur_arg_number %d nu
 if (debug) $fdisplay(32'h80000002, "EXECUTE: pc %x arg1 %x arg2 %x useadd %d wback %d\r", curpc, arg1, arg2, i_useadd, i_wback);
 if (debug) $fdisplay(32'h80000002, "EXECUTE2: i_isspsw %d i_iscpsw %d i_pswbits %x\r", i_isspsw, i_iscpsw, i_pswbits);
 			writeback <= i_wback;
+			writeback2 <= i_wback2;
 			if (i_useadd)
 				{ Ctmp, argd1 } <=
 				    { 1'b0, arg1 } + { 1'b0, arg2 };
@@ -978,6 +986,8 @@ if (debug) $fdisplay(32'h80000002, "EXECUTE2: i_isspsw %d i_iscpsw %d i_pswbits 
 				writeback <= 0;
 			if (i_iscpsw && (|(psw[3:0] & i_pswbits)))
 				writeback <= 0;
+			if (i_move2)
+				argd2 <= arg3;
 		end
 
 		/*
@@ -1119,14 +1129,15 @@ if (debug) $fdisplay(32'h80000002, "S_EXECUTE: arg1p %x\r\n", arg1p);
 		 * It is just setup here to use the arg 10 or 12 eval.
 		 */
 		`S_BRARGS: begin
-			if (arg_size == `O_WORD)
-				regnum <= 4'b0011;
-			else
-				regnum <= 4'b0001;
-			cur_reg_num_save <= `REG_PC;
-			OA <= 0;
-			arg_defer <= 0;
-			state <= `S_RDCDATA;
+//			if (arg_size == `O_WORD)
+//				regnum <= 4'b0011;
+//			else
+//				regnum <= 4'b0001;
+//			cur_reg_num_save <= `REG_PC;
+//			OA <= 0;
+//			arg_defer <= 0;
+			state <= `S_HALT;
+			haltpos <= 14;
 		end
 
 		/*
@@ -1137,26 +1148,45 @@ if (debug) $fdisplay(32'h80000002, "S_EXECUTE: arg1p %x\r\n", arg1p);
 if (debug) $fdisplay(32'h80000002, "ENDINST: pc %x argd1 %x arg1p %x isreg %d regno %d wb %d\r", curpc, argd1, arg1p, arg1p_isreg, arg1p_regnum, writeback);
 if (debug) $fdisplay(32'h80000002, "ENDINST2: greg_wback %x\r", greg_wback);
 			state <= `S_FETCH;
-			writeback <= 0;
 
 			if (anyfault) begin
 				haltpos <= 5;
 				state <= `S_HALT;
 		//		resopflt <= 0;
-			end else if (writeback & (arg1p_isreg == 0)) begin
-if (debug) $fdisplay(32'h80000002, "WB MEM: addr %x val %x\r\n", arg1p, argd1);
-				cpu_addr <= arg1p;
-				cpu_wdata <= argd1;
-				cpu_size <= arg1p_size;
-				state <= `S_WRITEMEM;
-				wmemstate <= `WMEM_xENDINST;
 			end else if (writeback) begin
+				if (arg1p_isreg) begin
 if (debug) $fdisplay(32'h80000002, "WB REG: reg %x val %x size %d\r\n", arg1p_regnum, greg_wback, arg1p_size);
-				greg_wbdata <= greg_wback;
-				greg_wregnum <= arg1p_regnum;
-				wregstate <= `WREG_FETCH;
-				state <= `S_WREG;
+					greg_wbdata <= greg_wback;
+					greg_wregnum <= arg1p_regnum;
+					cur_reg_num_save <= arg1p_regnum;
+					wregstate <= `WREG_xENDINST;
+					state <= `S_WREG;
+				end else begin
+if (debug) $fdisplay(32'h80000002, "WB MEM: addr %x val %x\r\n", arg1p, argd1);
+					cpu_addr <= arg1p;
+					cpu_wdata <= argd1;
+					cpu_size <= arg1p_size;
+					state <= `S_WRITEMEM;
+					wmemstate <= `WMEM_xENDINST;
+				end
+				writeback <= 0;
+			end else if (writeback2) begin
+				if (arg2p_isreg) begin
+					greg_wbdata <= greg_wback;
+					greg_wregnum <= arg2p_regnum;
+					cur_reg_num_save <= arg2p_regnum;
+					wregstate <= `WREG_FETCH;
+					state <= `S_WREG;
+				end else begin
+					cpu_addr <= arg2p;
+					cpu_wdata <= argd2;
+					cpu_size <= arg2p_size;
+					state <= `S_WRITEMEM;
+					wmemstate <= `WMEM_xENDINST;
+				end
+				writeback2 <= 0;
 			end
+
 			if (step)
 				delay_halt <= 1;
 		end
@@ -1471,6 +1501,7 @@ if (debug) $fdisplay(32'h80000002, "S_ENDINST: pc %x halted %d cont %d\r", curpc
 			`WREG_ENDINST: state <= `S_ENDINST;
 			`WREG_MCHECK2: state <= `S_MCHECK2;
 			`WREG_ARG_INDIR: state <= `ARG_INDIR;
+			`WREG_xENDINST: state <= `ENDINST;
 			default: state <= `S_HALT;
 			endcase
 		end

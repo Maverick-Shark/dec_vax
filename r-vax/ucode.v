@@ -17,6 +17,10 @@
 `define	CCZ		18
 `define	CCN		19
 
+`define	MOVE2		20
+`define	WBACK2		21
+
+
 `define	SETNZ		41
 `define	SETADDC		42
 `define	SETADDV		43
@@ -55,6 +59,9 @@ module ucode(
 	output [3:0]		i_pswbits,
 	output			i_isspsw,
 	output			i_iscpsw,
+
+	output			i_move2,
+	output			i_wback2,
 
 	/* Argument ROM */
 	input			a_enable,
@@ -101,6 +108,8 @@ parameter	A_ROM_ADDRS = 256;
 	assign i_pswbits = ucinsn_data[19:16];
 	assign i_isspsw = ucinsn_data[`ISSPSW];
 	assign i_iscpsw = ucinsn_data[`ISCPSW];
+	assign i_move2 = ucinsn_data[`MOVE2];
+	assign i_wback2 = ucinsn_data[`WBACK2];
 
 	assign a_argcode = ucargs_data[2:0];
 	assign a_argsz = ucargs_data[4:3];

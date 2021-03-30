@@ -126,6 +126,7 @@ BEGIN {
 	fakearg["1"] = "00000001";
 	fakearg["pc"] = "01011111";
 	fakearg["(sp)+"] = "10001110";
+	fakearg["-(sp)"] = "01111110";
 	fakearg["(pc)+"] = "10001111";
 	fakearg["b^d(pc)"] = "10101111";
 	fakearg["w^d(pc)"] = "11001111";
@@ -144,6 +145,9 @@ BEGIN {
 			err($1 " not found");
 		insnr = opmap[$1];	# insnr is instruction number
 		n = split($2,a,",");
+
+		if (insnr in inslist)
+			err("duplicate " $1);
 
 		inslist[insnr] = "0000000000000000000000000000000000000000" \
 		    "000000000000000" \
@@ -218,28 +222,30 @@ BEGIN {
 	}
 	close(FN);
 
-print "instructions";
 	# print out instructions
 	FN="uc-insn.hex";
 	system("rm -f " FN);
 	for (i = 0; i < 256; i++) {
-		if (i in inslist)
+		if (i in inslist) {
 			print line2hex(i, inslist[i]) >> FN;
-		else
+			numinst++;
+		} else
 			print "8000000000000000" >> FN;
 	}
 	close(FN);
+	print "instructions " numinst;
 
-print "arguments";
 	# print out arguments
 	FN="uc-args.hex";
 	system("rm -f " FN);
 	for (i = 0; i < 256; i++) {
-		if (i in arglist)
+		if (i in arglist) {
 			print line2hex(i, arglist[i]) >> FN;
-		else
+			numargs++;
+		} else
 			print "0000000000000000" >> FN;
 	}
 	close(FN);
+	print "arguments " numargs;
 
 }
