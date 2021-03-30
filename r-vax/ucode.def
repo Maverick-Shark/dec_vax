@@ -32,7 +32,8 @@ BEQL	ab#b^d(pc),rl#0,wl#pc	useadd wback newflow ccz isspsw # 13
 #
 #	ab-> t1, pc-> -(sp), t1 -> pc
 # JSB	3ab,rl#pc,rl#0,wl#-(sp),wl	usebis wback wback2
-JSB	ab		usejmp usebis wback 		# 16
+JSB	ab,rl#0,rl#pc,wl#pc,wl#-(sp)	useadd move2 wback wback2 newflow # 16
+# JSB	ab		usejmp usebis wback 		# 16
 JMP	ab,rl#0,wl#pc	usebic wback			# 17
 #
 BSBW	aw#w^d(pc),rl#0,rl#pc,wl#pc,wl#-(sp)	useadd move2 wback wback2 newflow 

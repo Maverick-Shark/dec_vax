@@ -23,7 +23,7 @@
 `define S_WRITEMEM	9
 `define S_WRITEMEM2	10
 `define S_EXECUTE	11
-`define S_BRARGS	12
+//`define S_BRARGS	12
 `define S_ARG		13
 `define S_ARGEND	14
 `define S_INDOA		15
@@ -640,7 +640,8 @@ if (debug) $fdisplay(32'h80000002, "ASETUP: a_argcode %x a_emul %d cur_byte %x a
 					fupstate <= `FUP_ASETUP;
 				end
 			end else if (a_argcode == 3'b011) begin
-				state <= `S_BRARGS; // never emulated
+				state <= `S_HALT; // never emulated
+				haltpos <= 14;
 			end else if (a_emul) begin
 				curarg <= a_arg;
 			end else if (isvalid) begin
@@ -1007,12 +1008,6 @@ if (debug) $fdisplay(32'h80000002, "S_EXECUTE: arg1p %x\r\n", arg1p);
 //			`I_BEQL: if (psw[`PSL_Z] == 1) set_branch_pc <= 1;
 //			`I_BGTR: if (psw[3:2] == 2'b00) set_branch_pc <= 1;
 //			`I_BLEQ: if (psw[3:2] == 2'b11) set_branch_pc <= 1;
-			`I_BSBB, `I_BSBW, `I_JSB: begin
-				cur_reg_num_save <= `REG_SP;
-				set_branch_pc <= 1;
-				state <= `S_JSB;
-// $fdisplay(32'h80000002, "I_JSB: arg1p %x\r\n", arg1p);
-			end
 			`I_JMP: set_branch_pc <= 1;
 //			`I_BGEQ: if (psw[`PSL_N] == 0) set_branch_pc <= 1;
 //			`I_BLSS: if (psw[`PSL_N] == 1) set_branch_pc <= 1;
@@ -1122,22 +1117,6 @@ if (debug) $fdisplay(32'h80000002, "S_EXECUTE: arg1p %x\r\n", arg1p);
 			end
 			default: begin state <= `S_HALT; haltpos <= 13; end
 			endcase
-		end
-
-		/*
-		 * Branch instruction argument.
-		 * It is just setup here to use the arg 10 or 12 eval.
-		 */
-		`S_BRARGS: begin
-//			if (arg_size == `O_WORD)
-//				regnum <= 4'b0011;
-//			else
-//				regnum <= 4'b0001;
-//			cur_reg_num_save <= `REG_PC;
-//			OA <= 0;
-//			arg_defer <= 0;
-			state <= `S_HALT;
-			haltpos <= 14;
 		end
 
 		/*

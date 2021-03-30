@@ -141,6 +141,8 @@ BEGIN {
 	while ((getline < FN) > 0) {
 		if (substr($1,1,1) == "#")
 			continue;
+		if (NF == 0)
+			continue;
 		if (!($1 in opmap))
 			err($1 " not found");
 		insnr = opmap[$1];	# insnr is instruction number
