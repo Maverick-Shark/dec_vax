@@ -26,10 +26,10 @@
 `define	SETNZ		26
 `define	CLV		27
 `define	CLC		28
+`define	USEMTPR		29
 
 `define	SETADDC		42
 `define	SETADDV		43
-`define	USEMTPR		51
 `define	USEMFPR		52
 `define	USEBIC		53
 `define	USEBIS		55
@@ -53,6 +53,7 @@ module ucode(
 
 	output			i_useadd,
 	output			i_usexor,
+	output			i_usemtpr,
 	output			i_wback,
 
 	output [3:0]		i_pswbits,
@@ -123,6 +124,7 @@ parameter	A_ROM_ADDRS = 256;
 	assign i_bicpsw = ucinsn_data[`BICPSW];
 	assign i_movpsl = ucinsn_data[`MOVPSL];
 	assign i_usexor = ucinsn_data[`USEXOR];
+	assign i_usemtpr = ucinsn_data[`USEMTPR];
 
 	assign a_argcode = ucargs_data[2:0];
 	assign a_argsz = ucargs_data[4:3];
@@ -141,24 +143,15 @@ parameter	A_ROM_ADDRS = 256;
 		endcase
 
 	assign usebr = ucode_data[`USEBR];
-	assign usemtpr = ucode_data[`USEMTPR];
 	assign usemfpr = ucode_data[`USEMFPR];
 	assign usebic = ucode_data[`USEBIC];
-	assign usexor = ucode_data[`USEXOR];
 	assign usebis = ucode_data[`USEBIS];
 	assign usejmp = ucode_data[`USEJMP];
-	assign usemovpsl = ucode_data[`USEMOVPSL];
 
 	assign dohalt = ucode_data[`DOHALT];
 
 	assign setnz = ucode_data[`SETNZ];
 	assign setaddc = ucode_data[`SETADDC];
 	assign setaddv = ucode_data[`SETADDV];
-	assign setbits = ucode_data[`SETBITS];
-	assign clrbits = ucode_data[`CLRBITS];
-
-	assign ccset = ucode_data[`FLAGSET];
-	assign ccclr = ucode_data[`FLAGCLR];
-	assign ccclv = ucode_data[`CLV];
 `endif
 endmodule

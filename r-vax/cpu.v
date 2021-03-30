@@ -23,14 +23,14 @@
 `define S_WRITEMEM	9
 `define S_WRITEMEM2	10
 `define S_EXECUTE	11
-//`define S_BRARGS	12
+`define MTPR		12
 `define S_ARG		13
 `define S_ARGEND	14
 `define S_INDOA		15
 `define S_DECODE	16
-`define S_MTPR		17
+//`define S_MTPR		17
 `define S_TXCS_R	18
-`define S_TXDB_W	19
+//`define S_TXDB_W	19
 `define S_MFPR		20
 //`define S_JSB		21
 `define S_POSTINC	22
@@ -84,7 +84,7 @@
 
 /* WRITEMEM return states */
 `define	WMEM_ENDINST	0
-`define	WMEM_TXDB_W	1
+//`define	WMEM_TXDB_W	1
 `define	WMEM_PUSH2	2
 `define	WMEM_xENDINST	3
 
@@ -373,7 +373,7 @@ initial psl_ipl = 5'h1f;
 	wire [7:0]	i_argoff, a_argoff, a_arg, cur_mux;
 	wire		i_enable, i_hasargs, i_emul, i_dohalt, i_newflow;
 	wire		a_enable, a_emul, a_last, i_move2, i_wback2;
-	wire		i_useadd, i_wback, i_usexor;
+	wire		i_useadd, i_wback, i_usexor, i_usemtpr;
 	wire		i_isspsw, i_iscpsw, i_setnz, i_clv, i_clc;
 	wire		i_bispsw, i_bicpsw, i_movpsl;
 	wire		arg_aR, arg_aW, arg_aA;
@@ -405,6 +405,7 @@ initial psl_ipl = 5'h1f;
 
 		.i_useadd(i_useadd),
 		.i_usexor(i_usexor),
+		.i_usemtpr(i_usemtpr),
 		.i_wback(i_wback),
 
 		.i_pswbits(i_pswbits),
@@ -916,7 +917,6 @@ if (debug) $fdisplay(32'h80000002, "INDOA: OA %x OP %x arg_R %d\r\n", OA, OP, ar
 		`ARGEND: begin
 if (debug) $fdisplay(32'h80000002, "ARGEND: OP %x OA %x arg_rv %x acounter %d isreg %d regnum %d argsz %d\r", OP, OA, arg_rv, acounter, OA_isreg, OA_regnum, arg_size);
 if (debug) $fdisplay(32'h80000002, "ARGEND: a_rargno %d a_wargno %d arg_aR %d arg_aA %d arg_aW %d\r\n", a_rargno, a_wargno, arg_aR, arg_aA, arg_aW);
-			state <= a_last ? `EXECUTE : `ASETUP;
 			if (arg_aR|arg_aA) begin
 				case (a_rargno)
 				3'b000: arg1 <= arg_rv;
@@ -942,6 +942,12 @@ if (debug) $fdisplay(32'h80000002, "ARGEND: a_rargno %d a_wargno %d arg_aR %d ar
 					arg2p_size <= a_argsz;
 				end
 			end
+			if (a_last == 0)
+				state <= `ASETUP;
+			else if (i_usemtpr)
+				state <= `MTPR;
+			else
+				state <= `EXECUTE;
 			OA_isreg <= 0;
 		end
 
@@ -1058,11 +1064,6 @@ if (debug) $fdisplay(32'h80000002, "S_EXECUTE: arg1p %x\r\n", arg1p);
 				writeback <= 1;
 				set_vnz_dest <= 1;
 			end
-			`I_MTPR: begin
-				argd1 <= arg1;
-				if (anyfault == 0)
-					state <= `S_MTPR;
-			end
 			`I_MFPR: begin
 //$fdisplay(32'h80000002, "I_MFPR: arg1 %x anyfault %d\r\n", arg1, anyfault);
 				cur_reg_num_save <= `REG_SP;
@@ -1132,6 +1133,7 @@ if (debug) $fdisplay(32'h80000002, "WB MEM: addr %x val %x\r\n", arg1p, argd1);
 
 			if (step)
 				delay_halt <= 1;
+			cpu_pmem <= 0;
 		end
 
 
@@ -1193,8 +1195,9 @@ if (debug) $fdisplay(32'h80000002, "S_ENDINST: pc %x halted %d cont %d\r", curpc
 				delay_halt <= 1;
 		end
 
-		`S_MTPR: begin
-			state <= `S_ENDINST;
+		`MTPR: begin
+if (debug) $fdisplay(32'h80000002, "MTPR: arg1 %x arg2 %x\r", arg1, arg2);
+			state <= `ENDINST;
 			ipr_write <= 0;
 			if (|arg2[31:6])
 				resopflt <= 1;
@@ -1229,7 +1232,7 @@ if (debug) $fdisplay(32'h80000002, "S_ENDINST: pc %x halted %d cont %d\r", curpc
 				cpu_size <= `O_LONG;
 				cpu_pmem <= 1;
 				state <= `S_WRITEMEM;
-				wmemstate <= `WMEM_TXDB_W;
+				wmemstate <= `WMEM_xENDINST;
 			end
 			default: resopflt <= 1;
 			endcase
@@ -1280,11 +1283,6 @@ if (debug) $fdisplay(32'h80000002, "S_ENDINST: pc %x halted %d cont %d\r", curpc
 			state <= `S_ENDINST;
 			argd1 <= OP;
 //$fdisplay(32'h80000002, "S_TXCS_R: OP %x \r\n", OP);
-			cpu_pmem <= 0;
-		end
-
-		`S_TXDB_W: begin
-			state <= `S_ENDINST;
 			cpu_pmem <= 0;
 		end
 
@@ -1431,7 +1429,7 @@ if (debug) $fdisplay(32'h80000002, "S_ENDINST: pc %x halted %d cont %d\r", curpc
 			else
 				case (wmemstate)
 				`WMEM_ENDINST: state <= `S_ENDINST;
-				`WMEM_TXDB_W: state <= `S_TXDB_W;
+//				`WMEM_TXDB_W: state <= `S_TXDB_W;
 				`WMEM_PUSH2: state <= `S_PUSH2;
 				`WMEM_xENDINST: state <= `ENDINST;
 				default: state <= `S_HALT;
