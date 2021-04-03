@@ -28,12 +28,13 @@
 `define	CLC		28
 `define	USEMTPR		29
 `define	USEMFPR		30
+`define	USESUB		31
+`define	USEAND		32
+`define	USEBIS		33
+`define	USEBIC		34
 
 `define	SETADDC		42
 `define	SETADDV		43
-`define	USEBIC		53
-`define	USEBIS		55
-`define	USEJMP		56
 
 `define	DOHALT		63
 
@@ -55,6 +56,10 @@ module ucode(
 	output			i_usexor,
 	output			i_usemtpr,
 	output			i_usemfpr,
+	output			i_usesub,
+	output			i_useand,
+	output			i_usebis,
+	output			i_usebic,
 	output			i_wback,
 
 	output [3:0]		i_pswbits,
@@ -111,7 +116,12 @@ parameter	A_ROM_ADDRS = 256;
 	assign i_newflow = ucinsn_data[`NEWFLOW];
 	assign i_dohalt = ucinsn_data[`DOHALT];
 	assign i_useadd = ucinsn_data[`USEADD];
+	assign i_usesub = ucinsn_data[`USESUB];
+	assign i_useand = ucinsn_data[`USEAND];
+	assign i_usebic = ucinsn_data[`USEBIC];
+	assign i_usebis = ucinsn_data[`USEBIS];
 	assign i_wback = ucinsn_data[`WBACK];
+
 	assign i_pswbits = ucinsn_data[19:16];
 	assign i_isspsw = ucinsn_data[`ISSPSW];
 	assign i_iscpsw = ucinsn_data[`ISCPSW];
@@ -145,14 +155,9 @@ parameter	A_ROM_ADDRS = 256;
 		endcase
 
 	assign usebr = ucode_data[`USEBR];
-	assign usemfpr = ucode_data[`USEMFPR];
-	assign usebic = ucode_data[`USEBIC];
-	assign usebis = ucode_data[`USEBIS];
-	assign usejmp = ucode_data[`USEJMP];
 
 	assign dohalt = ucode_data[`DOHALT];
 
-	assign setnz = ucode_data[`SETNZ];
 	assign setaddc = ucode_data[`SETADDC];
 	assign setaddv = ucode_data[`SETADDV];
 `endif

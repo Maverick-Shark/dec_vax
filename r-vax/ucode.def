@@ -31,13 +31,15 @@ BRB	aw#b^d(pc),rl#0,wl#pc	useadd wback newflow		# 11
 BEQL	ab#b^d(pc),rl#0,wl#pc	useadd wback newflow ccz isspsw # 13
 #
 JSB	ab,rl#0,rl#pc,wl#pc,wl#-(sp)	useadd move2 wback wback2 newflow # 16
-JMP	ab,rl#0,wl#pc	usebic wback			# 17
+JMP	ab,rl#0,wl#pc	useadd wback newflow			# 17
 #
 BSBW	aw#w^d(pc),rl#0,rl#pc,wl#pc,wl#-(sp)	useadd move2 wback wback2 newflow 
 BRW	aw#w^d(pc),rl#0,wl#pc	useadd wback newflow		# 31
 #
-CMPB	rb,rb		setnz clv			# 91
+CMPB	rb,rb		usesub setnz clv newflow		# 91
+#CMPB	rb,rb		setnz clv			# 91
 #
+BITB	rb,rb		useand setnz clv newflow	# 93
 CLRB	rl#0,rl#0,wb	useadd setnz clv wback newflow	# 94
 TSTB	rb,rl#0		useadd setnz clv clc newflow		# 95
 #
@@ -46,19 +48,22 @@ CMPW	rw,rw		setnz clv			# b1
 BISPSW	rw		bispsw newflow			# b8
 BICPSW	rw		bicpsw newflow			# b9
 # 
-ADDL2	rl,ml		useadd setnz setaddv setaddc wback # c0 addl3 rl,rl,wl
-ADDL3	rl,rl,wl	useadd setnz setaddv setaddc wback # c1 addl3 rl,rl,wl
+ADDL2	rl,ml		useadd setnz setaddv setaddc wback newflow	# c0
+ADDL3	rl,rl,wl	useadd setnz setaddv setaddc wback newflow	# c1
 #
-BICL2	rl,ml		usebic setnz clv wback		# ca
+BISL2	rl,ml		usebis setnz clv wback newflow		# c8
+BICL2	rl,ml		usebic setnz clv wback newflow		# ca
 #
 XORL3	rl,rl,wl	usexor setnz clv wback newflow		# cd
 #
-MOVL	rl,rl#0,wl	usebis setnz clv wback		# d0
+MOVL	rl,rl#0,wl	useadd setnz clv wback newflow		# d0
 CMPL	rl,rl		setnz clv			# d1
 #
+BITL	rl,rl		useand setnz clv newflow		# d3
 CLRL	rl#0,rl#0,wl	useadd setnz clv wback newflow		# d4
 TSTL	rl,rl#0		useadd setnz clv clc newflow		# d5
 INCL	rl#1,ml		useadd setnz setaddv setaddc wback newflow	# d6
+DECL	ml,rl#1		usesub setnz wback newflow		# d7
 #
 MTPR	rl,rl		usemtpr newflow			# da
 MFPR	rl,wl		usemfpr wback newflow		# db
@@ -66,11 +71,5 @@ MOVPSL	wl		movpsl wback newflow		# dc
 #
 MOVAL	al,rl#0,wl	useadd setnz clv wback newflow		# de
 #
-# MOVL	rl,0,wl	useadd vnz		# addl3 rl,0,wl
-#
-# INCL	0,ml	useadd vnz		# addl3 rl,1,wl
-#
 # PUSHL rl,0,2				# addl3 rl,0,-(sp)
-#
-# CLRL	0,0,wl				# addl3 0,0,wl
 #

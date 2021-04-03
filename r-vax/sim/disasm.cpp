@@ -131,10 +131,14 @@ more:		curarg = memp[argpc++];
 
 		case 6:
 			F("(%s)", rnames[regno]);
+			if (ixarg)
+				F("[%s]", rnames[ixarg-1]);
 			break;
 
 		case 7:
 			F("-(%s)", rnames[regno]);
+			if (ixarg)
+				F("[%s]", rnames[ixarg-1]);
 			break;
 
 		case 8:
@@ -144,13 +148,21 @@ more:		curarg = memp[argpc++];
 				n |= ((memp[argpc++] & 255) << 16);
 				n |= ((memp[argpc++] & 255) << 24);
 				F("#%X", n);
+				if (ixarg)
+					F("[%s]", rnames[ixarg-1]);
 			} else {
-				F("(%s)+", rnames[regno]);
+				F("(%s)", rnames[regno]);
+				if (ixarg)
+					F("[%s]", rnames[ixarg-1]);
+				F("+");
 			}
 			break;
 
 		case 9:
-			F("*(%s)+", rnames[regno]);
+			F("@(%s)", rnames[regno]);
+			if (ixarg)
+				F("[%s]", rnames[ixarg-1]);
+			F("+");
 			if (regno == 15)
 				argpc += 4;
 			break;
@@ -178,6 +190,8 @@ prt:			if (curarg & 16)
 				F("%X", n);
 			} else
 				F("%X(%s)", n, rnames[regno]);
+			if (ixarg)
+				F("[%s]", rnames[ixarg-1]);
 			break;
 
 		default:

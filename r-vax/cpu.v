@@ -361,7 +361,7 @@ initial psl_ipl = 5'h1f;
 	wire [3:0]  greg_addr;
 	assign greg_addr =
 		state == `S_HALT ? CON_ADR_I[3:0] :
-	    	state == `S_ARG ? cur_reg_num :
+	    	state == `ASETUP ? cur_reg_num :
 	    	state == `S_ENDINST ? arg1p_regnum : cur_reg_num_save;
 
 	always @(posedge clk)
@@ -376,7 +376,8 @@ initial psl_ipl = 5'h1f;
 	wire		a_enable, a_emul, a_last, i_move2, i_wback2;
 	wire		i_useadd, i_wback, i_usexor, i_usemtpr, i_usemfpr;
 	wire		i_isspsw, i_iscpsw, i_setnz, i_clv, i_clc;
-	wire		i_bispsw, i_bicpsw, i_movpsl;
+	wire		i_bispsw, i_bicpsw, i_movpsl, i_usesub, i_useand;
+	wire		i_usebis, i_usebic;
 	wire		arg_aR, arg_aW, arg_aA;
 	wire [2:0]	a_argcode;
 	wire [1:0]	a_argsz;
@@ -408,6 +409,10 @@ initial psl_ipl = 5'h1f;
 		.i_usexor(i_usexor),
 		.i_usemtpr(i_usemtpr),
 		.i_usemfpr(i_usemfpr),
+		.i_usesub(i_usesub),
+		.i_useand(i_useand),
+		.i_usebis(i_usebis),
+		.i_usebic(i_usebic),
 		.i_wback(i_wback),
 
 		.i_pswbits(i_pswbits),
@@ -509,6 +514,11 @@ initial psl_ipl = 5'h1f;
 	wire [31:0] pc_plus_1;
 	assign pc_plus_1 = curpc + 1;
 
+//reg debug;
+//initial debug = 0;
+//	always @(posedge clk)
+//		if (curpc == 32'hbde0)
+//			debug <= 1;
 wire debug;
 assign debug = 0;
 
@@ -626,7 +636,7 @@ if (debug) $fdisplay(32'h80000002, "S_DECODE: i_hasargs %d\r", i_hasargs);
 		 * available.
 		 */
 		`ASETUP: begin
-if (debug) $fdisplay(32'h80000002, "ASETUP: a_argcode %x a_emul %d cur_byte %x a_arg %x\r", a_argcode, a_emul, cur_byte, a_arg);
+if (debug) $fdisplay(32'h80000002, "ASETUP: a_argcode %x a_emul %d cur_byte %x a_arg %x IA %x acounter %d\r", a_argcode, a_emul, cur_byte, a_arg, IA, acounter);
 			state <= `S_ARG;
 			arg_rdbmsk <=
 			    { {2{&cur_mux[6:5]}}, cur_mux[6], |cur_mux[6:5]};
@@ -634,7 +644,8 @@ if (debug) $fdisplay(32'h80000002, "ASETUP: a_argcode %x a_emul %d cur_byte %x a
 			OAt <= 0;
 			bcnt <= 1;
 			if (i_newflow) begin
-				if (a_emul || isvalid)
+				if ((a_emul || isvalid) &&
+				    cur_mux[7:4] != 4'b0100)
 					acounter <= acounter + 1;
 				state <= `ARG_GETBWL;
 				if (a_emul | isvalid) begin
@@ -643,7 +654,11 @@ if (debug) $fdisplay(32'h80000002, "ASETUP: a_argcode %x a_emul %d cur_byte %x a
 					curarg <= cur_mux;
 					if (cur_mux[7:6] == 0) // literal
 						state <= `ARG_READ;
-					else if (cur_mux[7:4] == 4'b0101) begin
+					else if (cur_mux[7:4] == 4'b0100) begin
+						IA <= cur_reg_val << a_argsz;
+if (debug) $fdisplay(32'h80000002, "ASETUP2: cur_reg_val %x a_argsz %x\r", cur_reg_val, a_argsz);
+						state <= `ASETUP;
+					end else if (cur_mux[7:4] == 4'b0101) begin
 						OA_isreg <= 1;
 						OA_regnum <= cur_mux[3:0];
 						state <= `ARGEND;
@@ -727,20 +742,20 @@ if (debug)$fdisplay(32'h80000002, "ARG_INDIR\r");
 		end
 
 		`ARG_READ: begin
-if (debug)$fdisplay(32'h80000002, "ARG_READ: OA %x cur_byte %x curarg %x\r", OA, cur_byte, curarg);
+if (debug)$fdisplay(32'h80000002, "ARG_READ: OA %x IA %x cur_byte %x curarg %x\r", OA, IA, cur_byte, curarg);
 			state <= `ARGEND;
 			if (arg_lit) begin
 				OP <= { 24'b0, curarg};
 			end else if (arg_reg) begin
 				OP <= cur_reg_val;
 			end else if (arg_aR) begin
-				cpu_addr <= OA;
+				cpu_addr <= OA + IA;
 				cpu_size <= a_argsz;
 				notrash <= 1;
 				state <= `S_READMEM;
 				rmemstate <= `RMEM_xARGEND;
 			end else
-				OP <= OA;
+				OP <= OA + IA;
 		end
 
 		/* Read a longword and put into current arg reg */
@@ -953,6 +968,7 @@ if (debug) $fdisplay(32'h80000002, "ARGEND: a_rargno %d a_wargno %d arg_aR %d ar
 			else
 				state <= `EXECUTE;
 			OA_isreg <= 0;
+			IA <= 0;
 		end
 
 		/*
@@ -997,14 +1013,23 @@ if (debug) $fdisplay(32'h80000002, "ARGEND: numarg %d OP %x cur_arg_number %d nu
 		`EXECUTE: begin
 			state <= `ENDINST;
 if (debug) $fdisplay(32'h80000002, "EXECUTE: pc %x arg1 %x arg2 %x useadd %d wback %d\r", curpc, arg1, arg2, i_useadd, i_wback);
-if (debug) $fdisplay(32'h80000002, "EXECUTE2: i_isspsw %d i_iscpsw %d i_pswbits %x\r", i_isspsw, i_iscpsw, i_pswbits);
+if (debug) $fdisplay(32'h80000002, "EXECUTE2: isspsw %d iscpsw %d pswbits %x bis %d bic %d\r", i_isspsw, i_iscpsw, i_pswbits, i_usebis, i_usebic);
 			writeback <= i_wback;
 			writeback2 <= i_wback2;
 			if (i_useadd)
 				{ Ctmp, argd1 } <=
 				    { 1'b0, arg1 } + { 1'b0, arg2 };
+			if (i_usesub)
+				{ Ctmp, argd1 } <=
+				    { 1'b0, arg1 } - { 1'b0, arg2 };
+			if (i_useand)
+				argd1 <= arg1 & arg2;
 			if (i_usexor)
 				argd1 <= arg1 ^ arg2;
+			if (i_usebis)
+				argd1 <= arg1 | arg2;
+			if (i_usebic)
+				argd1 <= ~arg1 & arg2;
 			if (i_isspsw && (|(psw[3:0] & i_pswbits)) == 0)
 				writeback <= 0;
 			if (i_iscpsw && (|(psw[3:0] & i_pswbits)))
@@ -1027,42 +1052,28 @@ if (debug) $fdisplay(32'h80000002, "EXECUTE2: i_isspsw %d i_iscpsw %d i_pswbits 
 if (debug) $fdisplay(32'h80000002, "S_EXECUTE: arg1p %x\r\n", arg1p);
 			state <= `S_ENDINST;
 			case (cur_inst)
-			`I_DECL: begin
-				{ Ctmp, argd1 } <= { 1'b0, arg1 } - 33'h1;
-				writeback <= 1;
-				calc_vnzc <= 1;
-			end
-			`I_JMP: set_branch_pc <= 1;
-			`I_ADDL2, `I_ADDL3, `I_ADWC: begin
-				{ Ctmp, argd1 } <=
-				    { 1'b0, arg1 } + { 1'b0, arg2 } +
-				    (cur_inst == `I_ADWC ?
-				    { 32'b0, psw[`PSL_C] } : 33'd0);
-				writeback <= 1;
-				calc_vnzc <= 1;
-			end
-			`I_CMPB, `I_CMPW, `I_CMPL: begin
-				{ Ctmp, argd1 } <=
-				    { 1'b0, arg1 } - { 1'b0, arg2 };
-				set_vnz_dest <= 1;
-				set_c_cmp <= 1;
-			end
-			`I_BITL: begin
-				argd1 <= arg1 & arg2;
-				set_vnz_dest <= 1;
-			end
-			`I_BISL2, `I_BISL3: begin
-				argd1 <= arg2 | arg1;
+//			`I_CMPB, `I_CMPW, `I_CMPL: begin
+//				{ Ctmp, argd1 } <=
+//				    { 1'b0, arg1 } - { 1'b0, arg2 };
+//				set_vnz_dest <= 1;
+//				set_c_cmp <= 1;
+//			end
+//			`I_BITL: begin
+//				argd1 <= arg1 & arg2;
+//				set_vnz_dest <= 1;
+//			end
+//			`I_BISL2, `I_BISL3: begin
+//				argd1 <= arg2 | arg1;
 //$fdisplay(32'h80000002, "BICL: arg1 %x arg2 %x\r\n", arg1, arg2);
-				writeback <= 1;
-				set_vnz_dest <= 1;
-			end
-			`I_BICL2, `I_BICL3: begin
-				argd1 <= arg2 & ~arg1;
+//				writeback <= 1;
+//				set_vnz_dest <= 1;
+//			end
+//			`I_BICL2, `I_BICL3: begin
+//				argd1 <= arg2 & ~arg1;
 //$fdisplay(32'h80000002, "BICL: arg1 %x arg2 %x\r\n", arg1, arg2);
-				writeback <= 1;
-				set_vnz_dest <= 1;
-			end
+//				writeback <= 1;
+//				set_vnz_dest <= 1;
+//			end
 			`I_MOVL: begin
 				argd1 <= arg1;
 				writeback <= 1;
@@ -1091,7 +1102,10 @@ if (debug) $fdisplay(32'h80000002, "WB REG: reg %x val %x size %d\r\n", arg1p_re
 					greg_wbdata <= greg_wback;
 					greg_wregnum <= arg1p_regnum;
 					cur_reg_num_save <= arg1p_regnum;
-					wregstate <= `WREG_xENDINST;
+					if (writeback2)
+						wregstate <= `WREG_xENDINST;
+					else
+						wregstate <= `WREG_FETCH;
 					state <= `S_WREG;
 				end else begin
 if (debug) $fdisplay(32'h80000002, "WB MEM: addr %x val %x\r\n", arg1p, argd1);
