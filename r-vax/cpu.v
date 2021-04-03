@@ -17,24 +17,14 @@
 `define S_FILLUP	3
 `define S_ENDINST	4
 `define S_READMEM	5
-`define S_RDCDATA	6
-`define S_OAREAD	7
 `define S_READMEM2	8
 `define S_WRITEMEM	9
 `define S_WRITEMEM2	10
 `define S_EXECUTE	11
 `define MTPR		12
-`define S_ARG		13
-`define S_ARGEND	14
-`define S_INDOA		15
 `define S_DECODE	16
 `define MFPR		17
 `define S_TXCS_R	18
-//`define S_TXDB_W	19
-// `define S_MFPR		20
-//`define S_JSB		21
-`define S_POSTINC	22
-`define S_POSTINC0	23
 `define S_GETVEC	24
 `define S_GETVEC1	25
 `define S_GETVEC2	26
@@ -49,9 +39,6 @@
 `define S_MCHECK3	35
 `define S_PUSH		36
 `define S_PUSH2		37
-//`define S_JSB2		38
-//`define S_RSB		39
-//`define S_RSB2		40
 `define ASETUP		41
 `define ARG_GETBWL	42
 `define ARG_ADDTO	43
@@ -637,48 +624,33 @@ if (debug) $fdisplay(32'h80000002, "S_DECODE: i_hasargs %d\r", i_hasargs);
 		 */
 		`ASETUP: begin
 if (debug) $fdisplay(32'h80000002, "ASETUP: a_argcode %x a_emul %d cur_byte %x a_arg %x IA %x acounter %d\r", a_argcode, a_emul, cur_byte, a_arg, IA, acounter);
-			state <= `S_ARG;
 			arg_rdbmsk <=
 			    { {2{&cur_mux[6:5]}}, cur_mux[6], |cur_mux[6:5]};
 			cur_reg_num_save <= cur_mux[3:0];
 			OAt <= 0;
 			bcnt <= 1;
-			if (i_newflow) begin
-				if ((a_emul || isvalid) &&
-				    cur_mux[7:4] != 4'b0100)
-					acounter <= acounter + 1;
-				state <= `ARG_GETBWL;
-				if (a_emul | isvalid) begin
-					if (a_emul == 0)
-						curpc <= pc_plus_1;
-					curarg <= cur_mux;
-					if (cur_mux[7:6] == 0) // literal
-						state <= `ARG_READ;
-					else if (cur_mux[7:4] == 4'b0100) begin
-						IA <= cur_reg_val << a_argsz;
+			if ((a_emul || isvalid) && cur_mux[7:4] != 4'b0100)
+				acounter <= acounter + 1;
+			state <= `ARG_GETBWL;
+			if (a_emul | isvalid) begin
+				if (a_emul == 0)
+					curpc <= pc_plus_1;
+				curarg <= cur_mux;
+				if (cur_mux[7:6] == 0) // literal
+					state <= `ARG_READ;
+				else if (cur_mux[7:4] == 4'b0100) begin
+					IA <= cur_reg_val << a_argsz;
 if (debug) $fdisplay(32'h80000002, "ASETUP2: cur_reg_val %x a_argsz %x\r", cur_reg_val, a_argsz);
-						state <= `ASETUP;
-					end else if (cur_mux[7:4] == 4'b0101) begin
-						OA_isreg <= 1;
-						OA_regnum <= cur_mux[3:0];
-						state <= `ARGEND;
-					end
-				end else begin
-					state <= `S_FILLUP;
-					fupstate <= `FUP_ASETUP;
+					state <= `ASETUP;
+				end else if (cur_mux[7:4] == 4'b0101) begin
+					OA_isreg <= 1;
+					OA_regnum <= cur_mux[3:0];
+					state <= `ARGEND;
 				end
-			end else if (a_argcode == 3'b011) begin
-				state <= `S_HALT; // never emulated
-				haltpos <= 14;
-			end else if (a_emul) begin
-				curarg <= a_arg;
-			end else if (isvalid) begin
-				curarg <= cur_byte;
 			end else begin
 				state <= `S_FILLUP;
 				fupstate <= `FUP_ASETUP;
 			end
-			
 		end
 
 		`ARG_GETBWL: begin
@@ -758,176 +730,6 @@ if (debug)$fdisplay(32'h80000002, "ARG_READ: OA %x IA %x cur_byte %x curarg %x\r
 				OP <= OA + IA;
 		end
 
-		/* Read a longword and put into current arg reg */
-		`S_ARG: begin
-			arg_defer <= cur_byte[4];
-if (debug) $fdisplay(32'h80000002, "ARG: curpc %x curbyte %x isvalid %d\r\n", curpc, cur_byte, isvalid);
-			if (isvalid) begin
-				curpc <= pc_plus_1;
-				state <= `S_ARGEND;
-				cur_reg_num_save <= cur_byte[3:0];
-
-				casez (cur_byte[7:4])
-				`OPS_LIT: begin
-					OP <= { 24'b0, cur_byte };
-					if (~arg_R | arg_W | arg_A) begin
-						// resadflt <= 1;
-						// state <= S_ENDINSN;
-						haltpos <= 2;
-						state <= `S_HALT;
-					end
-				end
-				`OPS_INDEX: begin
-					IA <= cur_reg_val << arg_size;
-					isindex <= 1;
-					state <= `S_ARG;
-					if (isindex || &cur_byte[3:0]) begin
-						// resadflt <= 1;
-						haltpos <= 12;
-						state <= `S_HALT;
-					end
-				end
-				`OPS_REG: begin	// 5
-					if (arg_A | isindex) begin
-						// resadflt <= 1;
-						// state <= S_ENDINSN;
-						haltpos <= 3;
-						state <= `S_HALT;
-					end
-					OP <= cur_reg_val;
-					OA_isreg <= 1;
-					OA_regnum <= cur_byte[3:0];
-				end
-
-				`OPS_REGD: begin // 6
-					OA <= cur_reg_val + IA;
-					state <= arg_R ? `S_OAREAD : `S_ARGEND;
-				end
-
-				`OPS_ADEC: begin // 7
-					OA <= cur_reg_val_subsz + IA;
-					greg_wbdata <= cur_reg_val_subsz + IA;
-					greg_wregnum <= cur_byte[3:0];
-					state <= `S_WREG;
-					wregstate <=
-					    arg_R ? `WREG_OAREAD : `WREG_ARGEND;
-				end
-
-				`OPS_AINC, `OPS_AINCD: begin // 8-9
-					greg_wregnum <= cur_reg_num;
-					state <= `S_POSTINC0;
-				end
-
-				`OPS_DISP: begin // 10-15
-					state <= `S_RDCDATA;
-					case (cur_byte[6:5])
-					2'b00: regnum <= 4'b0000;
-					2'b01: regnum <= 4'b0001;
-					2'b10: regnum <= 4'b0011;
-					2'b11: regnum <= 4'b1111;
-					endcase
-				end
-				endcase
-			end else begin
-				state <= `S_FILLUP;
-				fupstate <= `FUP_ARG;
-			end
-		end
-
-		/*
-		 * Read in the argument offset number (byte, word or long) from
-		 * the instruction stream.
-		 */
-		`S_RDCDATA: begin
-if (debug) $fdisplay(32'h80000002, "RDCDATA: curpc %x oa %x cur_reg_val %x isvalid %d\r", curpc, OA, cur_reg_val, isvalid);
-			if (isvalid) begin
-				if (regnum[0]) begin
-					OA <= { {24{cur_byte[7]}}, cur_byte };
-					regnum[0] <= 0;
-					curpc <= pc_plus_1;
-				end else if (regnum[1]) begin
-					OA <= { {16{cur_byte[7]}},
-					    cur_byte, OA[7:0] };
-					regnum[1] <= 0;
-					curpc <= pc_plus_1;
-				end else if (regnum[2]) begin
-					OA[23:16] <= cur_byte;
-					regnum[2] <= 0;
-					curpc <= pc_plus_1;
-				end else if (regnum[3]) begin
-					OA[31:24] <= cur_byte;
-					regnum[3] <= 0;
-					curpc <= pc_plus_1;
-				end else begin
-					OA <= OA + cur_reg_val;
-					cpu_addr <= OA + cur_reg_val;
-					
-// $fdisplay(32'h80000002, "RDC: curpc %x oa %x cur_reg_val %x\r\n", curpc, OA, cur_reg_val);
-					if (arg_defer) begin
-						cpu_size <= `O_LONG;
-						state <= `S_READMEM;
-						rmemstate <= `RMEM_INDOA;
-					end else begin
-						state <= `S_INDOA;
-					end
-				end
-			end else begin
-				state <= `S_FILLUP;
-				fupstate <= `FUP_RDCDATA;
-			end
-		end
-
-		/*
-		 * need estra state to get pc to increment.
-		 */
-		`S_POSTINC0: begin
-			state <= `S_WREG;
-			OA <= cur_reg_val;
-			if (arg_defer) begin
-				wregstate <= `WREG_POSTINC;
-				greg_wbdata <= cur_reg_val + 32'd4;
-			end else begin
-				wregstate <= `WREG_INDOA;
-				greg_wbdata <= cur_reg_val +
-				    { 28'b0, op_size_ary };
-			end
-		end
-
-		`S_POSTINC: begin
-			cpu_addr <= OA;
-			cpu_size <= `O_LONG;
-			state <= `S_READMEM;
-			rmemstate <= `RMEM_INDOA;
-		end
-
-		/*
-		 * Ended up here either via defer read state or directly
-		 * from RDCDATA.
-		 */
-		`S_INDOA: begin
-			OA <= OA + IA;
-if (debug) $fdisplay(32'h80000002, "INDOA: OA %x OP %x arg_R %d\r\n", OA, OP, arg_R);
-			if (arg_R) begin
-				cpu_addr <= OA;
-				cpu_size <= arg_size;
-				state <= `S_READMEM;
-				rmemstate <= `RMEM_ARGEND;
-				notrash <= 1;
-			end else
-				state <= `S_ARGEND;
-		end
-
-		/*
-		 * Got OA.  Fetch val.
-		 */
-		`S_OAREAD: begin
-			notrash <= 1;
-			cpu_addr <= OA;
-			cpu_size <= arg_size;
-			state <= `S_READMEM;
-			rmemstate <= `RMEM_ARGEND;
-		end
-
 		/*
 		 * Store the argument results in their next slot.
 		 */
@@ -969,45 +771,6 @@ if (debug) $fdisplay(32'h80000002, "ARGEND: a_rargno %d a_wargno %d arg_aR %d ar
 				state <= `EXECUTE;
 			OA_isreg <= 0;
 			IA <= 0;
-		end
-
-		/*
-		 * Store the argument results in their next slot.
-		 */
-		`S_ARGEND: begin
-if (debug) $fdisplay(32'h80000002, "ARGEND: numarg %d OP %x cur_arg_number %d num_args %d\r\n", num_arg, OP, cur_arg_number, num_args);
-			if (arg_R) begin
-				case (num_arg)
-				1'b0: arg1 <= OP;
-				1'b1: arg2 <= OP;
-		//		2'b10: arg2 <= OP; // XX
-		//		2'b11: arg2 <= OP; // XX
-				endcase
-				num_arg <= 1;
-			end
-
-			if (arg_W | arg_A) begin
-				if (num_argp == 0) begin
-					arg1p <= OA;
-					arg1p_isreg  <= OA_isreg;
-					arg1p_regnum <= OA_regnum;
-					arg1p_size <= arg_size;
-					num_argp <= 1;
-				end
-				if (num_argp) begin
-					arg2p <= OA;
-					arg2p_isreg  <= OA_isreg;
-					arg2p_regnum <= OA_regnum;
-					arg2p_size <= arg_size;
-				end
-			end
-			OA_isreg <= 0;
-
-			cur_arg_number <= cur_arg_number + 1;
-			if (cur_arg_number + 1 == num_args)
-				state <= `S_EXECUTE;
-			else
-				state <= `S_ARG;
 		end
 
 		`EXECUTE: begin
@@ -1391,8 +1154,8 @@ if (debug) $fdisplay(32'h80000002, "IPR_TXCS: pmem %d \r\n", cpu_pmem);
 				else
 					case (fupstate)
 					`FUP_FETCH: state <= `S_FETCH;
-					`FUP_ARG: state <= `S_ARG;
-					`FUP_RDCDATA: state <= `S_RDCDATA;
+		//			`FUP_ARG: state <= `S_ARG;
+		//			`FUP_RDCDATA: state <= `S_RDCDATA;
 					`FUP_ASETUP: state <= `ASETUP;
 					`FUP_ARG_GETBWL: state <= `ARG_GETBWL;
 					default: state <= `S_HALT;
@@ -1405,10 +1168,7 @@ if (debug) $fdisplay(32'h80000002, "IPR_TXCS: pmem %d \r\n", cpu_pmem);
 			if (greg_wregnum == `REG_PC)
 				curpc <= greg_wbdata;
 			case (wregstate)
-			`WREG_OAREAD: state <= `S_OAREAD;
-			`WREG_ARGEND: state <= `S_ARGEND;
-			`WREG_POSTINC: state <= `S_POSTINC;
-			`WREG_INDOA: state <= `S_INDOA;
+//			`WREG_ARGEND: state <= `S_ARGEND;
 			`WREG_FETCH: state <= `S_FETCH;
 			`WREG_ENDINST: state <= `S_ENDINST;
 			`WREG_MCHECK2: state <= `S_MCHECK2;
@@ -1456,8 +1216,8 @@ if (debug) $fdisplay(32'h80000002, "IPR_TXCS: pmem %d \r\n", cpu_pmem);
 				state <= `S_MCHECK;
 			else
 				case (rmemstate)
-				`RMEM_INDOA: state <= `S_INDOA;
-				`RMEM_ARGEND: state <= `S_ARGEND;
+//				`RMEM_INDOA: state <= `S_INDOA;
+//				`RMEM_ARGEND: state <= `S_ARGEND;
 //				`RMEM_RSB2: state <= `S_RSB2;
 //				`RMEM_TXCS_R: state <= `S_TXCS_R;
 				`RMEM_ARG_READ: state <= `ARG_READ;
