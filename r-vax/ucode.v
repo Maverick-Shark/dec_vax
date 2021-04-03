@@ -5,7 +5,7 @@
 
 `define	IHASARGS	8
 `define	IEMUL		9
-`define	NEWFLOW		10
+//`define	NEWFLOW		10
 `define	USEADD		11
 `define	WBACK		12
 `define	ISSPSW		13
@@ -32,8 +32,8 @@
 `define	USEAND		32
 `define	USEBIS		33
 `define	USEBIC		34
+`define	SETC		35
 
-`define	SETADDC		42
 `define	SETADDV		43
 
 `define	DOHALT		63
@@ -48,7 +48,6 @@ module ucode(
 	output [7:0]		i_argoff,
 	output			i_hasargs,
 	output			i_emul,
-	output			i_newflow,
 
 	output			i_dohalt,
 
@@ -68,6 +67,7 @@ module ucode(
 	output			i_setnz,
 	output			i_clv,
 	output			i_clc,
+	output			i_setc,
 
 	output			i_move2,
 	output			i_wback2,
@@ -113,7 +113,6 @@ parameter	A_ROM_ADDRS = 256;
 	assign i_argoff = ucinsn_data[7:0];
 	assign i_hasargs = ucinsn_data[`IHASARGS];
 	assign i_emul = ucinsn_data[`IEMUL];
-	assign i_newflow = ucinsn_data[`NEWFLOW];
 	assign i_dohalt = ucinsn_data[`DOHALT];
 	assign i_useadd = ucinsn_data[`USEADD];
 	assign i_usesub = ucinsn_data[`USESUB];
@@ -128,6 +127,7 @@ parameter	A_ROM_ADDRS = 256;
 	assign i_setnz = ucinsn_data[`SETNZ];
 	assign i_clv = ucinsn_data[`CLV];
 	assign i_clc = ucinsn_data[`CLC];
+	assign i_setc = ucinsn_data[`SETC];
 
 	assign i_move2 = ucinsn_data[`MOVE2];
 	assign i_wback2 = ucinsn_data[`WBACK2];

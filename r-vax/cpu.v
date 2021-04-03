@@ -20,7 +20,6 @@
 `define S_READMEM2	8
 `define S_WRITEMEM	9
 `define S_WRITEMEM2	10
-`define S_EXECUTE	11
 `define MTPR		12
 `define S_DECODE	16
 `define MFPR		17
@@ -359,10 +358,10 @@ initial psl_ipl = 5'h1f;
 
 	/* "microcode" */
 	wire [7:0]	i_argoff, a_argoff, a_arg, cur_mux;
-	wire		i_enable, i_hasargs, i_emul, i_dohalt, i_newflow;
+	wire		i_enable, i_hasargs, i_emul, i_dohalt;
 	wire		a_enable, a_emul, a_last, i_move2, i_wback2;
 	wire		i_useadd, i_wback, i_usexor, i_usemtpr, i_usemfpr;
-	wire		i_isspsw, i_iscpsw, i_setnz, i_clv, i_clc;
+	wire		i_isspsw, i_iscpsw, i_setnz, i_clv, i_clc, i_setc;
 	wire		i_bispsw, i_bicpsw, i_movpsl, i_usesub, i_useand;
 	wire		i_usebis, i_usebic;
 	wire		arg_aR, arg_aW, arg_aA;
@@ -390,7 +389,6 @@ initial psl_ipl = 5'h1f;
 		.i_argoff(i_argoff),
 		.i_hasargs(i_hasargs),
 		.i_emul(i_emul),
-		.i_newflow(i_newflow),
 
 		.i_useadd(i_useadd),
 		.i_usexor(i_usexor),
@@ -410,6 +408,7 @@ initial psl_ipl = 5'h1f;
 		.i_setnz(i_setnz),
 		.i_clv(i_clv),
 		.i_clc(i_clc),
+		.i_setc(i_setc),
 
 		.i_movpsl(i_movpsl),
 
@@ -613,7 +612,7 @@ if (debug) $fdisplay(32'h80000002, "S_DECODE: i_hasargs %d\r", i_hasargs);
 				state <= `S_HALT;
 				haltpos <= 1;
 			end else if (i_hasargs == 0) // XXX emul
-				state <= `S_EXECUTE;
+				state <= `EXECUTE;
 			else
 				state <= `ASETUP;
 		end
@@ -808,45 +807,6 @@ if (debug) $fdisplay(32'h80000002, "EXECUTE2: isspsw %d iscpsw %d pswbits %x bis
 		end
 
 		/*
-		 * Simple operations. 
-		 * We cannot end up here if an argument fault occurred.
-		 */
-		`S_EXECUTE: begin
-if (debug) $fdisplay(32'h80000002, "S_EXECUTE: arg1p %x\r\n", arg1p);
-			state <= `S_ENDINST;
-			case (cur_inst)
-//			`I_CMPB, `I_CMPW, `I_CMPL: begin
-//				{ Ctmp, argd1 } <=
-//				    { 1'b0, arg1 } - { 1'b0, arg2 };
-//				set_vnz_dest <= 1;
-//				set_c_cmp <= 1;
-//			end
-//			`I_BITL: begin
-//				argd1 <= arg1 & arg2;
-//				set_vnz_dest <= 1;
-//			end
-//			`I_BISL2, `I_BISL3: begin
-//				argd1 <= arg2 | arg1;
-//$fdisplay(32'h80000002, "BICL: arg1 %x arg2 %x\r\n", arg1, arg2);
-//				writeback <= 1;
-//				set_vnz_dest <= 1;
-//			end
-//			`I_BICL2, `I_BICL3: begin
-//				argd1 <= arg2 & ~arg1;
-//$fdisplay(32'h80000002, "BICL: arg1 %x arg2 %x\r\n", arg1, arg2);
-//				writeback <= 1;
-//				set_vnz_dest <= 1;
-//			end
-			`I_MOVL: begin
-				argd1 <= arg1;
-				writeback <= 1;
-				set_vnz_dest <= 1;
-			end
-			default: begin state <= `S_HALT; haltpos <= 13; end
-			endcase
-		end
-
-		/*
 		 * If any fault occurred take action, else write back (to reg)
 		 * and set flags. Resulting value is always in arg[2].
 		 */
@@ -903,7 +863,8 @@ if (debug) $fdisplay(32'h80000002, "WB MEM: addr %x val %x\r\n", arg1p, argd1);
 				psw[`PSL_V] <= 0;
 			if (i_clc)
 				psw[`PSL_C] <= 0;
-
+			if (i_setc)
+				psw[`PSL_C] <= Ctmp;
 			if (step)
 				delay_halt <= 1;
 			cpu_pmem <= 0;
@@ -1170,7 +1131,7 @@ if (debug) $fdisplay(32'h80000002, "IPR_TXCS: pmem %d \r\n", cpu_pmem);
 			case (wregstate)
 //			`WREG_ARGEND: state <= `S_ARGEND;
 			`WREG_FETCH: state <= `S_FETCH;
-			`WREG_ENDINST: state <= `S_ENDINST;
+//			`WREG_ENDINST: state <= `S_ENDINST;
 			`WREG_MCHECK2: state <= `S_MCHECK2;
 			`WREG_ARG_INDIR: state <= `ARG_INDIR;
 			`WREG_xENDINST: state <= `ENDINST;
@@ -1191,7 +1152,7 @@ if (debug) $fdisplay(32'h80000002, "IPR_TXCS: pmem %d \r\n", cpu_pmem);
 				state <= `S_MCHECK;
 			else
 				case (wmemstate)
-				`WMEM_ENDINST: state <= `S_ENDINST;
+//				`WMEM_ENDINST: state <= `S_ENDINST;
 //				`WMEM_TXDB_W: state <= `S_TXDB_W;
 				`WMEM_PUSH2: state <= `S_PUSH2;
 				`WMEM_xENDINST: state <= `ENDINST;

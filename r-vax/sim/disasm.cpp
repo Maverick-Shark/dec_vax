@@ -49,7 +49,7 @@ void prtargs(Vnvax *tb, const char *);
 void
 itracedump(Vnvax *tb)
 {
-	int cur_inst = tb->sbi__DOT__cpu__DOT__cur_inst;
+	int cur_inst = 0; // tb->sbi__DOT__cpu__DOT__cur_inst;
 	int arg1p = tb->sbi__DOT__cpu__DOT__arg1p;
 	int arg1 = tb->sbi__DOT__cpu__DOT__arg1;
 	int arg2 = tb->sbi__DOT__cpu__DOT__arg2;
