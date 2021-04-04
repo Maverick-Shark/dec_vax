@@ -15,7 +15,6 @@
 `define S_FETCH		1
 `define S_WREG		2
 `define S_FILLUP	3
-`define S_ENDINST	4
 `define S_READMEM	5
 `define S_READMEM2	8
 `define S_WRITEMEM	9
@@ -46,8 +45,6 @@
 `define	WREG_xENDINST	10
 
 /* READMEM return states */
-`define	RMEM_INDOA	0
-`define	RMEM_ARGEND	1
 `define	RMEM_ARG_READ	4
 `define	RMEM_xARGEND	5
 `define	RMEM_xENDINST	6
@@ -286,8 +283,7 @@ initial psl_ipl = 5'h1f;
 	wire [3:0]  greg_addr;
 	assign greg_addr =
 		state == `S_HALT ? CON_ADR_I[3:0] :
-	    	state == `ASETUP ? cur_reg_num :
-	    	state == `S_ENDINST ? arg1p_regnum : cur_reg_num_save;
+	    	state == `ASETUP ? cur_reg_num : cur_reg_num_save;
 
 	always @(posedge clk)
 		if (state == `S_WREG)
@@ -425,11 +421,6 @@ initial psl_ipl = 5'h1f;
 		`O_QUAD: cra = 0;
 		endcase
 
-
-	/*
-	 * evaluation definitions.
-	 */
-	reg		calc_vnzc, set_vnz_dest, clear_c_dest, set_c_cmp;
 
 	/*
 	 * Program counter mgmt. curpc is the "live" version. greg[15] is
@@ -804,65 +795,6 @@ if (debug) $fdisplay(32'h80000002, "WB MEM: addr %x val %x\r\n", arg1p, argd1);
 			if (step)
 				delay_halt <= 1;
 			cpu_pmem <= 0;
-		end
-
-
-
-
-		/*
-		 * If any fault occurred take action, else write back (to reg)
-		 * and set flags. Resulting value is always in arg[2].
-		 */
-		`S_ENDINST: begin
-if (debug) $fdisplay(32'h80000002, "S_ENDINST: pc %x halted %d cont %d\r", curpc, halted, cont);
-			state <= `S_FETCH;
-			writeback <= 0;
-			calc_vnzc <= 0;
-			set_vnz_dest <= 0;
-			clear_c_dest <= 0;
-			set_c_cmp <= 0;
-
-			if (anyfault) begin
-				haltpos <= 5;
-				state <= `S_HALT;
-		//		resopflt <= 0;
-			end else if (writeback & (arg1p_isreg == 0)) begin
-// $fdisplay(32'h80000002, "WB MEM: addr %x val %x\r\n", arg1p, argd1);
-				cpu_addr <= arg1p;
-				cpu_wdata <= argd1;
-				cpu_size <= arg1p_size;
-				state <= `S_WRITEMEM;
-				wmemstate <= `WMEM_ENDINST;
-			end else if (writeback) begin
-// $fdisplay(32'h80000002, "WB REG: reg %x val %x\r\n", arg1p_regnum, greg_wback);
-				greg_wbdata <= greg_wback;
-				greg_wregnum <= arg1p_regnum;
-				wregstate <= `WREG_FETCH;
-				state <= `S_WREG;
-			end
-// $fdisplay(32'h80000002, "brpc: arg1p %x curpc %x\r\n", arg1p, curpc);
-			if (set_branch_pc)
-				curpc <= arg1p;
-			set_branch_pc <= 0;
-			if (set_vnz_dest) begin
-				psw[`PSL_N] <= argd1[31];
-				psw[`PSL_Z] <= ~|argd1;
-				psw[`PSL_V] <= 0;
-			end
-			if (calc_vnzc) begin
-				psw[`PSL_C] <= Ctmp;
-				psw[`PSL_N] <= argd1[31];
-				psw[`PSL_Z] <= ~|argd1;
-				psw[`PSL_V] <= 
-				    ((~arg1[31] & arg2[31]) &&
-				     (arg1[31] ^ argd1[31]));
-			end
-			if (clear_c_dest)
-				psw[`PSL_C] <= 0;
-			if (set_c_cmp)
-				psw[`PSL_C] <= (arg1 < arg2);
-			if (step)
-				delay_halt <= 1;
 		end
 
 		`MTPR: begin
