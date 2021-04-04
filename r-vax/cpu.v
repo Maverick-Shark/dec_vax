@@ -24,10 +24,6 @@
 `define S_DECODE	16
 `define MFPR		17
 `define S_TXCS_R	18
-`define S_GETVEC	24
-`define S_GETVEC1	25
-`define S_GETVEC2	26
-`define S_GETVEC3	27
 `define S_MCHECK1	29
 `define S_MCHECK2	30
 `define S_SETSTK	31
@@ -1113,33 +1109,6 @@ if (debug) $fdisplay(32'h80000002, "IPR_TXCS: pmem %d \r\n", cpu_pmem);
 			`RMEM_xENDINST: state <= `ENDINST;
 			default: state <= `S_HALT;
 			endcase
-		end
-
-		`S_GETVEC: begin
-			cpu_addr <= { 26'b0, `IPR_SCBB };
-			cpu_write <= 0;
-			cpu_stb <= 1;
-			state <= `S_GETVEC1;
-		end
-
-		`S_GETVEC1: if (CPU_ACK_I) begin
-			cpu_stb <= 0;
-			cpu_addr <= CPU_DAT_I + arg1;
-			state <= `S_GETVEC2;
-		end
-
-		`S_GETVEC2: begin
-			cpu_stb <= 1;
-			cpu_pmem <= 1;
-			cpu_size <= `O_LONG;
-			state <= `S_GETVEC3;
-		end
-
-		`S_GETVEC3: if (CPU_ACK_I) begin
-			cpu_stb <= 0;
-			cpu_pmem <= 0;
-			argd1 <= CPU_DAT_I;
-			state <= `S_MCHECK1;
 		end
 
 		default: begin state <= `S_HALT; haltpos <= 7; end
