@@ -24,15 +24,6 @@
 `define S_DECODE	16
 `define MFPR		17
 `define S_TXCS_R	18
-`define S_MCHECK1	29
-`define S_MCHECK2	30
-`define S_SETSTK	31
-`define S_SETSTK1	32
-`define S_SETSTK2	33
-`define S_SETSTK3	34
-`define S_MCHECK3	35
-`define S_PUSH		36
-`define S_PUSH2		37
 `define ASETUP		41
 `define ARG_GETBWL	42
 `define ARG_ADDTO	43
@@ -49,7 +40,6 @@
 `define	WREG_POSTINC	3
 `define	WREG_INDOA	4
 `define	WREG_FETCH	5
-//`define	WREG_JSB2	6
 `define	WREG_ENDINST	7
 `define	WREG_MCHECK2	8
 `define	WREG_ARG_INDIR	9
@@ -58,16 +48,12 @@
 /* READMEM return states */
 `define	RMEM_INDOA	0
 `define	RMEM_ARGEND	1
-//`define	RMEM_RSB2	2
-// `define	RMEM_TXCS_R	3
 `define	RMEM_ARG_READ	4
 `define	RMEM_xARGEND	5
 `define	RMEM_xENDINST	6
 
 /* WRITEMEM return states */
 `define	WMEM_ENDINST	0
-//`define	WMEM_TXDB_W	1
-`define	WMEM_PUSH2	2
 `define	WMEM_xENDINST	3
 
 /* FILLUP return states */
@@ -964,80 +950,8 @@ if (debug) $fdisplay(32'h80000002, "IPR_TXCS: pmem %d \r\n", cpu_pmem);
 		end
 
 		/*
-		 * Address from SCB in argd1. Do stack change.
-		 * (mcheck should always be served on the interrupt stack)
-		 */
-		`S_MCHECK1: begin
-			arg2 <= 0;
-			state <= `S_SETSTK;
-			wregstate <= `WREG_MCHECK2;
-		end
-
-		`S_MCHECK2: begin
-	//		state <= `S_PUSH;
-			state <= `S_HALT;
-			cur_reg_num_save <= `REG_SP;
-	//		fillstate <= `S_MCHECK2;
-			arg2 <= arg2 + 1;
-			case (arg2[3:0])
-			4'd0: cpu_wdata <=
-	{ 5'd0, psl_is, cur_mod, prv_mod, 1'b0, psl_ipl, 8'b0, psw };
-			4'd1: cpu_wdata <= oldpc;
-			4'd12: cpu_wdata <= 32'h28;
-			default: cpu_wdata <= 0;
-			endcase
-	//		if (arg2[3:0] == 4'd12)
-	//			fillstate <= `S_MCHECK3;
-		end
-
-		`S_MCHECK3: begin
-			psl_ipl <= 5'h1f;
-			psl_is <= argd1[0];
-			curpc <= { argd1[31:2], 2'b0 };
-			state <= `S_FETCH;
-		end
-
-		/*
-		 * push cpu_wdata onto stack.
-		 */
-		`S_PUSH: begin
-			cpu_addr <= cur_reg_val - 4;
-			cpu_size <= `O_LONG;
-			state <= `S_WRITEMEM;
-			wmemstate <= `WMEM_PUSH2;
-		end
-
-		/*
 		 * Set new stack based on ivec (in argd1).
 		 */
-		`S_SETSTK: begin
-			/* save current stack */
-			cpu_addr <= psl_is ? 32'd4 : { 30'b0, cur_mod };
-			cpu_wdata <= cur_reg_val; /* XXX */
-			cpu_write <= 1;
-			cpu_stb <= 1;
-			state <= `S_SETSTK1;
-		end
-
-		`S_SETSTK1: if (cpu_acki) begin
-			cpu_write <= 0;
-			cpu_stb <= 0;
-			state <= `S_SETSTK2;
-		end
-
-		`S_SETSTK2: begin
-			/* fetch new stack */
-			cpu_addr <= argd1[0] ? 32'd4 : 32'd0;
-			cpu_stb <= 1;
-			state <= `S_SETSTK3;
-		end
-
-		`S_SETSTK3: if (cpu_acki) begin
-			cpu_stb <= 0;
-			greg_wregnum <= `REG_SP;
-			greg_wbdata <= CPU_DAT_I;
-			state <= `S_WREG;
-		end
 
 		`S_FILLUP: begin
 			/* Fetch new longword */
@@ -1064,10 +978,7 @@ if (debug) $fdisplay(32'h80000002, "IPR_TXCS: pmem %d \r\n", cpu_pmem);
 			if (greg_wregnum == `REG_PC)
 				curpc <= greg_wbdata;
 			case (wregstate)
-//			`WREG_ARGEND: state <= `S_ARGEND;
 			`WREG_FETCH: state <= `S_FETCH;
-//			`WREG_ENDINST: state <= `S_ENDINST;
-			`WREG_MCHECK2: state <= `S_MCHECK2;
 			`WREG_ARG_INDIR: state <= `ARG_INDIR;
 			`WREG_xENDINST: state <= `ENDINST;
 			default: state <= `S_HALT;
@@ -1084,7 +995,6 @@ if (debug) $fdisplay(32'h80000002, "IPR_TXCS: pmem %d \r\n", cpu_pmem);
 			cpu_write <= 0;
 			cpu_stb <= 0;
 			case (wmemstate)
-			`WMEM_PUSH2: state <= `S_PUSH2;
 			`WMEM_xENDINST: state <= `ENDINST;
 			default: state <= `S_HALT;
 			endcase
