@@ -28,7 +28,6 @@
 `define S_GETVEC1	25
 `define S_GETVEC2	26
 `define S_GETVEC3	27
-`define S_MCHECK	28
 `define S_MCHECK1	29
 `define S_MCHECK2	30
 `define S_SETSTK	31
@@ -227,14 +226,9 @@ initial psl_ipl = 5'h1f;
 	reg [31:2]	itag;
 	reg [31:0]	inslword;
 	reg		ivalid;
-	reg [7:0]	cur_inst;
 	reg [7:0]	cur_byte;
 
-
-
-	reg [3:0]	regnum;
-
-	reg		isindex, writeback, writeback2;
+	reg		writeback, writeback2;
 	reg [31:0]	OA, IA, OP, OAt;
 	reg		OA_isreg;
 	reg [3:0]	OA_regnum;
@@ -242,9 +236,7 @@ initial psl_ipl = 5'h1f;
 
 
 	reg [31:0] curpc, oldpc, oldpsl;
-	wire [31:0] cur_reg_val_subsz;
 	wire [31:0] cur_reg_val;
-//	wire [1:0] curbyte;
 	wire [3:0] cur_reg_num;
 /* verilator lint_off UNUSED */
 	reg [3:0] cur_reg_num_save;
@@ -265,46 +257,11 @@ initial psl_ipl = 5'h1f;
 
 	/*
 	 * Argument stuff.
-	 * decode_inst is this instruction arg ptr until next instruction.
-	 * decode_arg is the current argument number under whole argument
 	 * evaluation.
 	 */
-	reg [2:0] cur_arg_number; // cleared in FETCH, increased in ARGEND
-	reg arg_defer;		// indirect flag set.
 	reg notrash;		// don't trash OA if reading from mem
-	wire [7:0] decode_inst;
-	wire [2:0] decode_arg;
-	wire [2:0] num_args;
-	wire [1:0] arg_size;
-	wire arg_R, arg_W, arg_A;
-	assign decode_inst = (state == `S_FETCH ? cur_byte : cur_inst);
-	assign decode_arg = (state == `S_FETCH ? 3'b0 : cur_arg_number);
-	decode decode(
-		.clk(clk),
-		.insn(decode_inst),		// instruction input
-		.current_arg(decode_arg),	// Current arg # input
 
-		.num_args(num_args),		// # of args set by decode_inst
-
-		.arg_R(arg_R),
-		.arg_W(arg_W), 
-		.arg_A(arg_A),
-		.arg_size(arg_size)
-	);
-
-
-	reg [3:0] op_size_ary;
 	reg Ctmp;
-	assign cur_reg_val_subsz = cur_reg_val - { 28'b0, op_size_ary };
-
-	always @(arg_size) begin
-		case (arg_size)
-		`O_BYTE: op_size_ary = 4'b0001;
-		`O_WORD: op_size_ary = 4'b0010;
-		`O_LONG: op_size_ary = 4'b0100;
-		default: op_size_ary = 4'b1000;
-		endcase
-	end
 
 	/*
 	 * Faults.
@@ -585,12 +542,9 @@ assign debug = 0;
 			end else if (isvalid) begin
 if (debug) $fdisplay(32'h80000002, "FETCH: pc %x curbyte %x\r", curpc, cur_byte);
 				/* put insbyte in decode reg */
-				cur_inst <= cur_byte;
 				num_arg <= 0;
 				num_argd <= 0;
 				num_argp <= 0;
-				cur_arg_number <= 0;
-				isindex <= 0;
 				oldpc <= curpc;
 				oldpsl <= psl;
 				curpc <= pc_plus_1;
@@ -733,7 +687,7 @@ if (debug)$fdisplay(32'h80000002, "ARG_READ: OA %x IA %x cur_byte %x curarg %x\r
 		 * Store the argument results in their next slot.
 		 */
 		`ARGEND: begin
-if (debug) $fdisplay(32'h80000002, "ARGEND: OP %x OA %x arg_rv %x acounter %d isreg %d regnum %d argsz %d\r", OP, OA, arg_rv, acounter, OA_isreg, OA_regnum, arg_size);
+if (debug) $fdisplay(32'h80000002, "ARGEND: OP %x OA %x arg_rv %x acounter %d isreg %d regnum %d \r", OP, OA, arg_rv, acounter, OA_isreg, OA_regnum);
 if (debug) $fdisplay(32'h80000002, "ARGEND: a_rargno %d a_wargno %d arg_aR %d arg_aA %d arg_aW %d\r\n", a_rargno, a_wargno, arg_aR, arg_aA, arg_aW);
 			if (arg_aR|arg_aA) begin
 				case (a_rargno)
@@ -1014,16 +968,6 @@ if (debug) $fdisplay(32'h80000002, "IPR_TXCS: pmem %d \r\n", cpu_pmem);
 		end
 
 		/*
-		 * Got a machine check.
-		 * Fetch SCB mcheck address and jump there.
-		 */
-		`S_MCHECK: begin
-			arg1 <= `VEC_MCHECK;
-			state <= `S_GETVEC;
-		//	haltpos <= 8;
-		end
-
-		/*
 		 * Address from SCB in argd1. Do stack change.
 		 * (mcheck should always be served on the interrupt stack)
 		 */
@@ -1110,17 +1054,12 @@ if (debug) $fdisplay(32'h80000002, "IPR_TXCS: pmem %d \r\n", cpu_pmem);
 				itag <= curpc[31:2];
 				ivalid <= 1;
 				cpu_stb <= 0;
-				if (mcheck)
-					state <= `S_MCHECK;
-				else
-					case (fupstate)
-					`FUP_FETCH: state <= `S_FETCH;
-		//			`FUP_ARG: state <= `S_ARG;
-		//			`FUP_RDCDATA: state <= `S_RDCDATA;
-					`FUP_ASETUP: state <= `ASETUP;
-					`FUP_ARG_GETBWL: state <= `ARG_GETBWL;
-					default: state <= `S_HALT;
-					endcase
+				case (fupstate)
+				`FUP_FETCH: state <= `S_FETCH;
+				`FUP_ASETUP: state <= `ASETUP;
+				`FUP_ARG_GETBWL: state <= `ARG_GETBWL;
+				default: state <= `S_HALT;
+				endcase
 			end
 		end
 
@@ -1148,16 +1087,11 @@ if (debug) $fdisplay(32'h80000002, "IPR_TXCS: pmem %d \r\n", cpu_pmem);
 		`S_WRITEMEM2: if (cpu_acki) begin
 			cpu_write <= 0;
 			cpu_stb <= 0;
-			if (mcheck)
-				state <= `S_MCHECK;
-			else
-				case (wmemstate)
-//				`WMEM_ENDINST: state <= `S_ENDINST;
-//				`WMEM_TXDB_W: state <= `S_TXDB_W;
-				`WMEM_PUSH2: state <= `S_PUSH2;
-				`WMEM_xENDINST: state <= `ENDINST;
-				default: state <= `S_HALT;
-				endcase
+			case (wmemstate)
+			`WMEM_PUSH2: state <= `S_PUSH2;
+			`WMEM_xENDINST: state <= `ENDINST;
+			default: state <= `S_HALT;
+			endcase
 		end
 
 		`S_READMEM: begin
@@ -1173,19 +1107,12 @@ if (debug) $fdisplay(32'h80000002, "IPR_TXCS: pmem %d \r\n", cpu_pmem);
 			OP <= CPU_DAT_I;
 			argd1 <= CPU_DAT_I;
 			cpu_stb <= 0;
-			if (mcheck)
-				state <= `S_MCHECK;
-			else
-				case (rmemstate)
-//				`RMEM_INDOA: state <= `S_INDOA;
-//				`RMEM_ARGEND: state <= `S_ARGEND;
-//				`RMEM_RSB2: state <= `S_RSB2;
-//				`RMEM_TXCS_R: state <= `S_TXCS_R;
-				`RMEM_ARG_READ: state <= `ARG_READ;
-				`RMEM_xARGEND: state <= `ARGEND;
-				`RMEM_xENDINST: state <= `ENDINST;
-				default: state <= `S_HALT;
-				endcase
+			case (rmemstate)
+			`RMEM_ARG_READ: state <= `ARG_READ;
+			`RMEM_xARGEND: state <= `ARGEND;
+			`RMEM_xENDINST: state <= `ENDINST;
+			default: state <= `S_HALT;
+			endcase
 		end
 
 		`S_GETVEC: begin
