@@ -5,7 +5,7 @@
 
 `define	IHASARGS	8
 `define	IEMUL		9
-//`define	NEWFLOW		10
+`define	SETADDV		10
 `define	USEADD		11
 `define	WBACK		12
 `define	ISSPSW		13
@@ -34,7 +34,7 @@
 `define	USEBIC		34
 `define	SETC		35
 
-`define	SETADDV		43
+/* 40-45 are emulate offset */
 
 `define	DOHALT		63
 
@@ -48,6 +48,8 @@ module ucode(
 	output [7:0]		i_argoff,
 	output			i_hasargs,
 	output			i_emul,
+
+	output [5:0]		i_emuoff,
 
 	output			i_dohalt,
 
@@ -113,6 +115,7 @@ parameter	A_ROM_ADDRS = 256;
 	assign i_argoff = ucinsn_data[7:0];
 	assign i_hasargs = ucinsn_data[`IHASARGS];
 	assign i_emul = ucinsn_data[`IEMUL];
+	assign i_emuoff = ucinsn_data[45:40];
 	assign i_dohalt = ucinsn_data[`DOHALT];
 	assign i_useadd = ucinsn_data[`USEADD];
 	assign i_usesub = ucinsn_data[`USESUB];

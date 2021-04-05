@@ -25,49 +25,48 @@
 RSB	rl#(sp)+,rl#0,wl#pc	useadd wback 			# 05
 #
 BSBB	ab#b^d(pc),rl#0,rl#pc,wl#pc,wl#-(sp)	useadd move2 wback wback2
-BRB	aw#b^d(pc),rl#0,wl#pc	useadd wback # 11
+BRB	aw#b^d(pc),rl#0,wl#pc	useadd wback			# 11
 #
-BEQL	ab#b^d(pc),rl#0,wl#pc	useadd wback ccz isspsw # 13
+BEQL	ab#b^d(pc),rl#0,wl#pc	useadd wback ccz isspsw		# 13
 #
 JSB	ab,rl#0,rl#pc,wl#pc,wl#-(sp)	useadd move2 wback wback2 # 16
-JMP	ab,rl#0,wl#pc	useadd wback # 17
+JMP	ab,rl#0,wl#pc	useadd wback				# 17
 #
 BSBW	aw#w^d(pc),rl#0,rl#pc,wl#pc,wl#-(sp)	useadd move2 wback wback2 
-BRW	aw#w^d(pc),rl#0,wl#pc	useadd wback # 31
+BRW	aw#w^d(pc),rl#0,wl#pc	useadd wback			# 31
 #
-CMPB	rb,rb		usesub setnz clv setc		# 91
+CMPB	rb,rb		usesub setnz clv setc			# 91
 #
-BITB	rb,rb		useand setnz clv # 93
-CLRB	rl#0,rl#0,wb	useadd setnz clv wback # 94
-TSTB	rb,rl#0		useadd setnz clv clc # 95
+BITB	rb,rb		useand setnz clv			# 93
+CLRB	rl#0,rl#0,wb	useadd setnz clv wback			# 94
+TSTB	rb,rl#0		useadd setnz clv clc			# 95
 #
 CMPW	rw,rw		usesub setnz clv setc			# b1
 #
-BISPSW	rw		bispsw # b8
-BICPSW	rw		bicpsw # b9
+BISPSW	rw		bispsw					# b8
+BICPSW	rw		bicpsw					# b9
 # 
-ADDL2	rl,ml		useadd setnz setaddv setc wback # c0
-ADDL3	rl,rl,wl	useadd setnz setaddv setc wback # c1
+ADDL2	rl,ml		useadd setnz setaddv setc wback 	# c0
+ADDL3	rl,rl,wl	useadd setnz setaddv setc wback 	# c1
 #
-BISL2	rl,ml		usebis setnz clv wback # c8
-BICL2	rl,ml		usebic setnz clv wback # ca
+BISL2	rl,ml		usebis setnz clv wback			# c8
+BICL2	rl,ml		usebic setnz clv wback			# ca
 #
-XORL3	rl,rl,wl	usexor setnz clv wback # cd
+XORL3	rl,rl,wl	usexor setnz clv wback			# cd
 #
-MOVL	rl,rl#0,wl	useadd setnz clv wback # d0
+MOVL	rl,rl#0,wl	useadd setnz clv wback			# d0
 CMPL	rl,rl		usesub setnz clv setc			# d1
 #
-BITL	rl,rl		useand setnz clv # d3
-CLRL	rl#0,rl#0,wl	useadd setnz clv wback # d4
-TSTL	rl,rl#0		useadd setnz clv clc # d5
-INCL	rl#1,ml		useadd setnz setaddv setc wback # d6
-DECL	ml,rl#1		usesub setnz wback # d7
+BITL	rl,rl		useand setnz clv 			# d3
+CLRL	rl#0,rl#0,wl	useadd setnz clv wback 			# d4
+TSTL	rl,rl#0		useadd setnz clv clc 			# d5
+INCL	rl#1,ml		useadd setnz setaddv setc wback 	# d6
+DECL	ml,rl#1		usesub setnz wback 			# d7
 #
-MTPR	rl,rl		usemtpr # da
-MFPR	rl,wl		usemfpr wback # db
-MOVPSL	wl		movpsl wback # dc
+MTPR	rl,rl		usemtpr 				# da
+MFPR	rl,wl		usemfpr wback				# db
+MOVPSL	wl		movpsl wback				# dc
 #
-MOVAL	al,rl#0,wl	useadd setnz clv wback # de
+MOVAL	al,rl#0,wl	useadd setnz clv wback			# de
 #
-# PUSHL rl,0,2				# addl3 rl,0,-(sp)
-#
+AOBLEQ	rl,ml,ab#b^d(pc) iemul					# f3

@@ -132,13 +132,16 @@ BEGIN {
 	fakearg["w^d(pc)"] = "11001111";
 
 	curargoff=0;
+	emuloff = 1;
 
 	# arglist contains the argument specifications.
 	# inslist contains the instructions
 	#
 	# Create instruction specifications
 	FN="ucode.def";
+	lineno = 1;
 	while ((getline < FN) > 0) {
+		lineno++;
 		if (substr($1,1,1) == "#")
 			continue;
 		if (NF == 0)
@@ -211,13 +214,19 @@ BEGIN {
 				break;
 			nn = substr($i,1,1);
 			no = substr($i,2);
-			if ((nn == "0" || nn == "1") && no in hiddenbits)
+			if ((nn == "0" || nn == "1") && no in hiddenbits) {
 				bitset3(insnr, nn*3+30, hiddenbits[no]);
-			else if ($i in legalbits)
+			} else if ($i in legalbits) {
 				inslist[insnr] = \
 				    bitset(inslist[insnr], legalbits[$i]);
-			else
-				err("bad bit " $i);
+				if ($i == "iemul") {
+					inslist[insnr] = \
+					    substr(inslist[insnr], 1, 64-46) \
+					    num2bit(emuloff, 6) \
+					    substr(inslist[insnr], 25);
+				}
+			} else
+				err("bad bit " $i " line " lineno);
 		}
 
 
