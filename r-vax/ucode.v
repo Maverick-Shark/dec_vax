@@ -33,6 +33,8 @@
 `define	USEBIS		33
 `define	USEBIC		34
 `define	SETC		35
+`define	BBS		36
+`define	BBC		37
 
 /* 40-45 are emulate offset */
 
@@ -70,6 +72,8 @@ module ucode(
 	output			i_clv,
 	output			i_clc,
 	output			i_setc,
+	output			i_bbs,
+	output			i_bbc,
 
 	output			i_move2,
 	output			i_wback2,
@@ -131,6 +135,8 @@ parameter	A_ROM_ADDRS = 256;
 	assign i_clv = ucinsn_data[`CLV];
 	assign i_clc = ucinsn_data[`CLC];
 	assign i_setc = ucinsn_data[`SETC];
+	assign i_bbs = ucinsn_data[`BBS];
+	assign i_bbc = ucinsn_data[`BBC];
 
 	assign i_move2 = ucinsn_data[`MOVE2];
 	assign i_wback2 = ucinsn_data[`WBACK2];

@@ -69,4 +69,6 @@ MOVPSL	wl		movpsl wback				# dc
 #
 MOVAL	al,rl#0,wl	useadd setnz clv wback			# de
 #
+BLBC	rl#0,rl,ab#b^d(pc),wl#pc,wl#pc bbc move2 wback2		# e9
+#
 AOBLEQ	rl,ml,ab#b^d(pc) iemul					# f3

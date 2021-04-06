@@ -224,6 +224,8 @@ BEGIN {
 					    substr(inslist[insnr], 1, 64-46) \
 					    num2bit(emuloff, 6) \
 					    substr(inslist[insnr], 25);
+					print "#define EMU_" $1 " " \
+					    emuloff++ >> "ofdef.h";
 				}
 			} else
 				err("bad bit " $i " line " lineno);

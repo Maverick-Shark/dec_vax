@@ -35,13 +35,7 @@
 
 /* WREG return states */
 `define	WREG_HALT	0
-`define	WREG_OAREAD	1
-`define	WREG_ARGEND	2
-`define	WREG_POSTINC	3
-`define	WREG_INDOA	4
 `define	WREG_FETCH	5
-`define	WREG_ENDINST	7
-`define	WREG_MCHECK2	8
 `define	WREG_ARG_INDIR	9
 `define	WREG_xENDINST	10
 
@@ -51,7 +45,6 @@
 `define	RMEM_xENDINST	6
 
 /* WRITEMEM return states */
-`define	WMEM_ENDINST	0
 `define	WMEM_xENDINST	3
 
 /* FILLUP return states */
@@ -304,13 +297,22 @@ initial psl_ipl = 5'h1f;
 	reg [31:0]	general_reg[15:0];
 
 	/* decoding of greg writeback */
-	reg [31:0] greg_wback, greg_wbdata;
+	reg [31:0] greg_wback, greg_wback2, greg_wbdata;
 	always @* begin
 		case (arg1p_size)
 		`O_BYTE: greg_wback = { cur_reg_val[31:8], argd1[7:0] };
 		`O_WORD: greg_wback = { cur_reg_val[31:16], argd1[15:0] };
 		`O_LONG: greg_wback = argd1;
 		`O_QUAD: greg_wback = argd1;
+		endcase
+	end
+
+	always @* begin
+		case (arg2p_size)
+		`O_BYTE: greg_wback2 = { cur_reg_val[31:8], argd2[7:0] };
+		`O_WORD: greg_wback2 = { cur_reg_val[31:16], argd2[15:0] };
+		`O_LONG: greg_wback2 = argd2;
+		`O_QUAD: greg_wback2 = argd2;
 		endcase
 	end
 
@@ -333,7 +335,7 @@ initial psl_ipl = 5'h1f;
 	wire		i_useadd, i_wback, i_usexor, i_usemtpr, i_usemfpr;
 	wire		i_isspsw, i_iscpsw, i_setnz, i_clv, i_clc, i_setc;
 	wire		i_bispsw, i_bicpsw, i_movpsl, i_usesub, i_useand;
-	wire		i_usebis, i_usebic;
+	wire		i_usebis, i_usebic, i_bbs, i_bbc;
 	wire		arg_aR, arg_aW, arg_aA;
 	wire [2:0]	a_argcode;
 	wire [1:0]	a_argsz;
@@ -381,6 +383,8 @@ initial psl_ipl = 5'h1f;
 		.i_clv(i_clv),
 		.i_clc(i_clc),
 		.i_setc(i_setc),
+		.i_bbs(i_bbs),
+		.i_bbc(i_bbc),
 
 		.i_movpsl(i_movpsl),
 
@@ -758,6 +762,10 @@ if (debug) $fdisplay(32'h80000002, "EXECUTE2: isspsw %d iscpsw %d pswbits %x bis
 				writeback <= 0;
 			if (i_iscpsw && (|(psw[3:0] & i_pswbits)))
 				writeback <= 0;
+			if (i_bbs && ~|(arg2 & (1 << arg1[4:0])))
+				writeback2 <= 0;
+			if (i_bbc && |(arg2 & (1 << arg1[4:0])))
+				writeback2 <= 0;
 			if (i_bicpsw)
 				psw <= psw & ~arg1[7:0];
 			if (i_bispsw)
@@ -774,6 +782,7 @@ if (debug) $fdisplay(32'h80000002, "EXECUTE2: isspsw %d iscpsw %d pswbits %x bis
 		 */
 		`ENDINST: begin
 if (debug) $fdisplay(32'h80000002, "ENDINST: pc %x argd1 %x arg1p %x isreg %d regno %d wb %d\r", curpc, argd1, arg1p, arg1p_isreg, arg1p_regnum, writeback);
+if (debug) $fdisplay(32'h80000002, "ENDINST: pc %x argd2 %x arg2p %x isreg %d regno %d wb %d\r", curpc, argd2, arg2p, arg2p_isreg, arg2p_regnum, writeback2);
 if (debug) $fdisplay(32'h80000002, "ENDINST2: greg_wback %x\r", greg_wback);
 			state <= `S_FETCH;
 
@@ -803,7 +812,8 @@ if (debug) $fdisplay(32'h80000002, "WB MEM: addr %x val %x\r\n", arg1p, argd1);
 				writeback <= 0;
 			end else if (writeback2) begin
 				if (arg2p_isreg) begin
-					greg_wbdata <= greg_wback;
+if (debug) $fdisplay(32'h80000002, "WB2 REG: reg %x val %x size %d\r\n", arg2p_regnum, greg_wback2, arg2p_size);
+					greg_wbdata <= greg_wback2;
 					greg_wregnum <= arg2p_regnum;
 					cur_reg_num_save <= arg2p_regnum;
 					wregstate <= `WREG_FETCH;
