@@ -109,7 +109,7 @@ defparam console.tto.CLKPERBIT = 2604;
 	/* wires between mmu and pcache */
 	wire mmu_to_sw_write, mmu_to_sw_stb, sw_to_pc_write, sw_to_pc_stb;
 	wire pc_to_mmu_ack;
-	wire [29:0] mmu_to_sw_addr, sw_to_pc_addr;
+	wire [31:0] mmu_to_sw_addr, sw_to_pc_addr;
 	wire [31:0] mmu_to_sw_wdata, sw_to_pc_wdata, pc_to_mmu_rdata;
 
 	vcache vcache(
@@ -140,7 +140,7 @@ defparam console.tto.CLKPERBIT = 2604;
 
 	wire		qbus_stb, qbus_ack;
 	wire [31:0]	qbus_wdata;
-	assign	qbus_stb = mmu_to_sw_addr[29] & mmu_to_sw_stb;
+	assign	qbus_stb = (mmu_to_sw_addr[31:28] == 4'h2)  & mmu_to_sw_stb;
 
 	/*
 	 * Qbus controller.
@@ -169,39 +169,16 @@ defparam console.tto.CLKPERBIT = 2604;
 
 	/* wires between mem and pcache */
 	wire pc_to_sw_write, pc_to_sw_stb, sw_to_mem_write, sw_to_mem_stb;
-	wire mem_to_pc_ack;
-/* verilator lint_off UNUSED */
-	wire [29:0] pc_to_sw_addr, sw_to_mem_addr;
-/* verilator lint_on UNUSED */
+	wire mem_to_pc_ack, rom_to_pc_ack;
+	wire [31:0] pc_to_sw_addr, sw_to_mem_addr, rom_to_pc_rdata;
 	wire [31:0] pc_to_sw_wdata, sw_to_mem_wdata, mem_to_pc_rdata;
 
-`ifdef notdef
-	pcache pcache(
-		.clk(clk),
-		.rst(rst),
-
-		.f_mmu_addr(sw_to_pc_addr),
-		.f_mmu_wdata(sw_to_pc_wdata),
-		.f_mmu_write(sw_to_pc_write),
-		.f_mmu_stb(sw_to_pc_stb),
-		.f_mmu_rdata(pc_to_mmu_rdata),
-		.f_mmu_ack(pc_to_mmu_ack),
-
-		.t_mem_addr(pc_to_sw_addr),
-		.t_mem_wdata(pc_to_sw_wdata),
-		.t_mem_write(pc_to_sw_write),
-		.t_mem_stb(pc_to_sw_stb),
-		.t_mem_rdata(mem_to_pc_rdata),
-		.t_mem_ack(mem_to_pc_ack)
-	);
-`else
 	assign pc_to_sw_addr = sw_to_pc_addr;
 	assign pc_to_sw_wdata = sw_to_pc_wdata;
 	assign pc_to_sw_write = sw_to_pc_write;
 	assign pc_to_sw_stb = sw_to_pc_stb;
-	assign pc_to_mmu_rdata = mem_to_pc_rdata | qbus_wdata;
-	assign pc_to_mmu_ack = mem_to_pc_ack | qbus_ack;
-`endif
+	assign pc_to_mmu_rdata = mem_to_pc_rdata | qbus_wdata | rom_to_pc_rdata;
+	assign pc_to_mmu_ack = mem_to_pc_ack | qbus_ack | rom_to_pc_ack;
 
 	/* switch mem input between console and pcache */
 	assign sw_to_mem_addr = pc_to_sw_addr;
@@ -231,9 +208,26 @@ defparam console.tto.CLKPERBIT = 2604;
 		.ADR_I(sw_to_mem_addr[23:2]),		// i
 		.WE_I(sw_to_mem_write),		// i
 		.DAT_I(sw_to_mem_wdata),		// i
-		.STB_I(~|sw_to_mem_addr[29:24] & sw_to_mem_stb), // i
+		.STB_I(~|sw_to_mem_addr[31:24] & sw_to_mem_stb), // i
 		.DAT_O(mem_to_pc_rdata),		// o
 		.ACK_O(mem_to_pc_ack)		// o
+	);
+
+	wire		rom_stb;
+	assign rom_stb = &sw_to_mem_addr[31:28] & sw_to_mem_stb;
+
+//always @(posedge clk) begin
+//	if (rom_stb)
+//		$fdisplay(32'h80000002, "ROM: adr %x ack %d data %x\r", sw_to_mem_addr, rom_to_pc_ack, rom_to_pc_rdata);
+//end
+
+	mcode mcode(
+		.clk(clk),
+
+		.ADR_I(sw_to_mem_addr[10:2]),
+		.STB_I(rom_stb),
+		.DAT_O(rom_to_pc_rdata),
+		.ACK_O(rom_to_pc_ack)
 	);
 
 endmodule

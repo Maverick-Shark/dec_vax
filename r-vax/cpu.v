@@ -61,6 +61,12 @@
 `define	FUP_ASETUP	3
 `define	FUP_ARG_GETBWL	4
 
+/* halt codes */
+`define	HALT_RESET	0
+`define	HALT_INSN	1
+`define	HALT_MCHECK	2
+`define	HALT_STEP	3
+
 module cpu(
 	input clk,
 	input rst,
@@ -542,7 +548,7 @@ assign debug = 0;
 			if (step && delay_halt) begin
 				state <= `S_HALT;
 				delay_halt <= 0;
-				haltpos <= 6;
+				haltpos <= `HALT_STEP;
 			end else if (isvalid) begin
 if (debug) $fdisplay(32'h80000002, "FETCH: pc %x curbyte %x\r", curpc, cur_byte);
 				/* put insbyte in decode reg */
@@ -565,7 +571,7 @@ if (debug) $fdisplay(32'h80000002, "S_DECODE: i_hasargs %d i_emul %d\r", i_hasar
 			acounter <= i_argoff;
 			if (i_dohalt) begin
 				state <= `S_HALT;
-				haltpos <= 1;
+				haltpos <= `HALT_INSN;
 			end else if (i_hasargs == 0) // XXX emul
 				state <= `EXECUTE;
 			else
@@ -833,8 +839,8 @@ if (debug) $fdisplay(32'h80000002, "WB MEM: addr %x val %x\r\n", arg1p, argd1);
 			mcodectr <= mcodectr + 1;
 if (debug) $fdisplay(32'h80000002, "MCODE: mcodectr %d arg %x\r", mcodectr, mc_rv);
 			if (mcodectr == 4'd15) begin
-				curpc <= { 24'hf00000, 2'b00, i_emuoff };
-				state <= `S_HALT;
+				curpc <= { 24'hf00000, i_emuoff, 2'b00 };
+				state <= `S_FETCH;
 			end
 		end
 
@@ -946,6 +952,10 @@ if (debug) $fdisplay(32'h80000002, "IPR_TXCS: pmem %d \r\n", cpu_pmem);
 				`FUP_ARG_GETBWL: state <= `ARG_GETBWL;
 				default: state <= `S_HALT;
 				endcase
+				if (mcheck) begin
+					state <= `S_HALT;
+					haltpos <= `HALT_MCHECK;
+				end
 			end
 		end
 
@@ -974,6 +984,8 @@ if (debug) $fdisplay(32'h80000002, "IPR_TXCS: pmem %d \r\n", cpu_pmem);
 			`WMEM_xENDINST: state <= `ENDINST;
 			default: state <= `S_HALT;
 			endcase
+			if (mcheck)
+				state <= `S_HALT;
 		end
 
 		`S_READMEM: begin
@@ -995,6 +1007,10 @@ if (debug) $fdisplay(32'h80000002, "IPR_TXCS: pmem %d \r\n", cpu_pmem);
 			`RMEM_xENDINST: state <= `ENDINST;
 			default: state <= `S_HALT;
 			endcase
+			if (mcheck) begin
+				state <= `S_HALT;
+				haltpos <= `HALT_MCHECK;
+			end
 		end
 
 		default: begin state <= `S_HALT; haltpos <= 7; end

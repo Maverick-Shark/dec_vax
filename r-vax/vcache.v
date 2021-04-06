@@ -42,7 +42,7 @@ module vcache(
 //	output [1:0]	ut_sz,
 
 	output 		UT_STB_O,
-	output [29:0]	UT_ADR_O,
+	output [31:0]	UT_ADR_O,
 	output [31:0]	UT_DAT_O,
 	output		UT_WE_O,
 	input [31:0]	UT_DAT_I,
@@ -54,7 +54,7 @@ module vcache(
 	reg [3:0]	state;
 	reg		needtwo;
 	reg [31:0]	shifted_bytes;
-	reg [29:0]	caddrl, caddrh;
+	reg [31:0]	caddrl, caddrh;
 	reg [1:0]	coff, csz;
 
 	wire in_stb;
@@ -65,7 +65,7 @@ module vcache(
 	assign IN_ACK_O = IN_STB_I ? in_ack : 1'b0;
 
 	reg		ut_stb, ut_write;
-	reg [29:0]	ut_addr;
+	reg [31:0]	ut_addr;
 	reg [31:0]	ut_wdata;
 //	reg [1:0]	ut_sz;
 	assign UT_STB_O = ut_stb;
@@ -131,11 +131,11 @@ module vcache(
 			else if (in_stb == 0)
 				in_ack <= 0;
 			else begin
-//				ut_addr <= { IN_ADR_I[29:2], 2'b0 };
-				ut_addr <= IN_ADR_I[29:0];
+//				ut_addr <= { IN_ADR_I[31:2], 2'b0 };
+				ut_addr <= IN_ADR_I[31:0];
 				ut_stb <= 1;
-				caddrl <= { IN_ADR_I[29:2], 2'b0 };
-				caddrh <= { IN_ADR_I[29:2], 2'b0 } + 4;
+				caddrl <= { IN_ADR_I[31:2], 2'b0 };
+				caddrh <= { IN_ADR_I[31:2], 2'b0 } + 4;
 				coff <= IN_ADR_I[1:0];
 				csz <= in_sz;
 				if (in_passthru ||
