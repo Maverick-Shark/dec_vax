@@ -88,7 +88,8 @@ int main(int argc, char **argv)
 		if (needeval)
 			tb->eval();
 
-		if (itrace && tb->sbi__DOT__cpu__DOT__state == 16) // S_DECODE
+		if (itrace && tb->sbi__DOT__cpu__DOT__state == 1 &&
+		    tb->sbi__DOT__cpu__DOT__isvalid) // S_FETCH
 			itracedump(tb);
 		if (cpubusdebug && tb->sbi__DOT__cpu_stb)
 			cpubusdump(tb);

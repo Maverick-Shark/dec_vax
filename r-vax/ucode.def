@@ -35,11 +35,14 @@ JMP	ab,rl#0,wl#pc	useadd wback				# 17
 BSBW	aw#w^d(pc),rl#0,rl#pc,wl#pc,wl#-(sp)	useadd move2 wback wback2 
 BRW	aw#w^d(pc),rl#0,wl#pc	useadd wback			# 31
 #
+MOVB	rb,rb#0,wb	useadd setnz clv wback			# 90
 CMPB	rb,rb		usesub setnz clv setc			# 91
 #
 BITB	rb,rb		useand setnz clv			# 93
 CLRB	rl#0,rl#0,wb	useadd setnz clv wback			# 94
 TSTB	rb,rl#0		useadd setnz clv clc			# 95
+#
+ROTL	rb,rl,wl	userot setnz clv wback			# 9C
 #
 CMPW	rw,rw		usesub setnz clv setc			# b1
 #

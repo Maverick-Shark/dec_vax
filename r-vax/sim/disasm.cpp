@@ -49,7 +49,7 @@ void prtargs(Vnvax *tb, const char *);
 void
 itracedump(Vnvax *tb)
 {
-	int cur_inst = 0; // tb->sbi__DOT__cpu__DOT__cur_inst;
+	int cur_inst = tb->sbi__DOT__cpu__DOT__cur_byte;
 	int arg1p = tb->sbi__DOT__cpu__DOT__arg1p;
 	int arg1 = tb->sbi__DOT__cpu__DOT__arg1;
 	int arg2 = tb->sbi__DOT__cpu__DOT__arg2;
@@ -60,7 +60,7 @@ itracedump(Vnvax *tb)
 	    (tb->sbi__DOT__cpu__DOT__psl_ipl << 16);
 #endif
 	psl = 0x041f0000 | tb->sbi__DOT__cpu__DOT__psw;
-	F("%08X %08X| ", tb->sbi__DOT__cpu__DOT__oldpc, psl);
+	F("%08X %08X| ", tb->sbi__DOT__cpu__DOT__curpc, psl);
 
 	if (vax_inst[cur_inst].name)
 		F("%s ", vax_inst[cur_inst].name);
@@ -99,9 +99,14 @@ const char *rnames[] = { "R0", "R1", "R2", "R3", "R4", "R5", "R6", "R7",
 void
 prtargs(Vnvax *tb, const char *s)
 {
-	int argpc = tb->sbi__DOT__cpu__DOT__oldpc + 1;
+	int argpc = tb->sbi__DOT__cpu__DOT__curpc + 1;
 	char *memp = (char *)sdramet;
 	int i, curarg, ixarg, regno, n;
+
+	if (argpc & 0xf0000000) {
+		argpc &= 0xffffff;
+		memp = (char *)tb->sbi__DOT__mcode__DOT__mcode_rom;
+	}
 
 	for (; *s; s++) {
 		if (*s == 'b') {
@@ -147,7 +152,7 @@ more:		curarg = memp[argpc++];
 				n |= ((memp[argpc++] & 255) << 8);
 				n |= ((memp[argpc++] & 255) << 16);
 				n |= ((memp[argpc++] & 255) << 24);
-				F("#%X", n);
+				F("#%08X", n);
 				if (ixarg)
 					F("[%s]", rnames[ixarg-1]);
 			} else {
@@ -464,7 +469,7 @@ struct vop vax_inst[256] = {
 /* 0xf0 */	{	"insv",		"rl,rl,rb,vb"		},
 /* 0xf1 */	{	"acbl",		"rl,rl,ml,bw"		},
 /* 0xf2 */	{	"aoblss",	"rl,ml,bb"		},
-/* 0xf3 */	{	"aobleq",	"rl,ml,bb"		},
+/* 0xf3 */	{	"AOBLEQ",	"rl,ml,bb"		},
 /* 0xf4 */	{	"sobgeq",	"ml,bb"			},
 /* 0xf5 */	{	"sobgtr",	"ml,bb"			},
 /* 0xf6 */	{	"cvtlb",	"rl,wb"			},

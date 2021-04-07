@@ -179,6 +179,12 @@ module cpu(
 /* verilator lint_on UNDRIVEN */
 /* verilator lint_on UNUSED */
 
+	wire [4:0]	a1neg;
+	negate negate(
+		.val(arg1[4:0]),
+		.neg(a1neg)
+	);
+
 	assign ipr_regraddr = halted ? CON_ADR_I[3:0] : arg1[3:0];
 	assign ipr_regwaddr = halted ? CON_ADR_I[3:0] : arg2[3:0];
 	assign ipr_wdata = halted ? CON_DAT_I : arg1;
@@ -205,7 +211,7 @@ initial psl_ipl = 5'h1f;
 	reg [31:2]	itag;
 	reg [31:0]	inslword;
 	reg		ivalid;
-	reg [7:0]	cur_byte;
+	reg [7:0]	cur_byte, cur_inst;
 
 	reg		writeback, writeback2;
 	reg [31:0]	OA, IA, OP, OAt;
@@ -335,7 +341,7 @@ initial psl_ipl = 5'h1f;
 	wire		i_useadd, i_wback, i_usexor, i_usemtpr, i_usemfpr;
 	wire		i_isspsw, i_iscpsw, i_setnz, i_clv, i_clc, i_setc;
 	wire		i_bispsw, i_bicpsw, i_movpsl, i_usesub, i_useand;
-	wire		i_usebis, i_usebic, i_bbs, i_bbc;
+	wire		i_usebis, i_usebic, i_bbs, i_bbc, i_userot;
 	wire		arg_aR, arg_aW, arg_aA;
 	wire [2:0]	a_argcode;
 	wire [1:0]	a_argsz;
@@ -372,6 +378,7 @@ initial psl_ipl = 5'h1f;
 		.i_useand(i_useand),
 		.i_usebis(i_usebis),
 		.i_usebic(i_usebic),
+		.i_userot(i_userot),
 		.i_wback(i_wback),
 
 		.i_pswbits(i_pswbits),
@@ -471,13 +478,13 @@ initial psl_ipl = 5'h1f;
 	wire [31:0] pc_plus_1;
 	assign pc_plus_1 = curpc + 1;
 
+wire debug;
+assign debug = 1;
 //reg debug;
 //initial debug = 0;
 //	always @(posedge clk)
 //		if (curpc == 32'hbde0)
 //			debug <= 1;
-wire debug;
-assign debug = 0;
 
 	/* console communications */
 	wire ref_greg_read, ref_greg_write, ipr_greg_read, ipr_greg_write;
@@ -556,6 +563,7 @@ assign debug = 0;
 			end else if (isvalid) begin
 if (debug) $fdisplay(32'h80000002, "FETCH: pc %x curbyte %x\r", curpc, cur_byte);
 				/* put insbyte in decode reg */
+				cur_inst <= cur_byte;
 				oldpc <= curpc;
 				oldpsl <= psl;
 				curpc <= pc_plus_1;
@@ -762,10 +770,15 @@ if (debug) $fdisplay(32'h80000002, "EXECUTE2: isspsw %d iscpsw %d pswbits %x bis
 				writeback <= 0;
 			if (i_iscpsw && (|(psw[3:0] & i_pswbits)))
 				writeback <= 0;
-			if (i_bbs && ~|(arg2 & (1 << arg1[4:0])))
+			if (i_bbs && ~|(arg2 & (1 << arg1[4:0]))) // OPT
 				writeback2 <= 0;
-			if (i_bbc && |(arg2 & (1 << arg1[4:0])))
+			if (i_bbc && |(arg2 & (1 << arg1[4:0]))) // OPT
 				writeback2 <= 0;
+			if (i_userot)
+				argd1 <= (arg2 << arg1[4:0]) |
+					    (arg2 << a1neg);
+if (i_userot)
+$fdisplay(32'h80000002, "ROT: oldpc %x arg1 %x arg2 %x shift %x\r", oldpc, arg1, arg2, (arg2 << arg1[4:0]) | (arg2 >> a1neg));
 			if (i_bicpsw)
 				psw <= psw & ~arg1[7:0];
 			if (i_bispsw)
