@@ -456,16 +456,16 @@ initial psl_ipl = 5'h1f;
 	/* double mux for arguments */
 	reg [31:0]	cra, arg_rv;
 	always @*
-		case (arg_reg)
-		1'b0: arg_rv = OP;
-		1'b1: arg_rv = cra;
+		case (arg_aA)
+		1'b1: arg_rv = OP;
+		1'b0: arg_rv = cra;
 		endcase
 
 	always @*
 		case (a_argsz)
-		`O_BYTE: cra = { {24{cur_reg_val[7]}}, cur_reg_val[7:0] };
-		`O_WORD: cra = { {16{cur_reg_val[15]}}, cur_reg_val[15:0] };
-		`O_LONG: cra = cur_reg_val;
+		`O_BYTE: cra = { {24{OP[7]}}, OP[7:0] };
+		`O_WORD: cra = { {16{OP[15]}}, OP[15:0] };
+		`O_LONG: cra = OP;
 		`O_QUAD: cra = 0;
 		endcase
 
@@ -479,7 +479,7 @@ initial psl_ipl = 5'h1f;
 	assign pc_plus_1 = curpc + 1;
 
 wire debug;
-assign debug = 1;
+assign debug = 0;
 //reg debug;
 //initial debug = 0;
 //	always @(posedge clk)
@@ -617,7 +617,8 @@ if (debug) $fdisplay(32'h80000002, "ASETUP2: cur_reg_val %x a_argsz %x\r", cur_r
 				end else if (cur_mux[7:4] == 4'b0101) begin
 					OA_isreg <= 1;
 					OA_regnum <= cur_mux[3:0];
-					state <= `ARGEND;
+			//		state <= `ARGEND;
+					state <= `ARG_READ;
 				end
 			end else begin
 				state <= `S_FILLUP;
