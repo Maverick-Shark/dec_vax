@@ -46,6 +46,8 @@ void prtargs(Vnvax *tb, const char *);
 
 #define	F(...) fprintf(stderr, __VA_ARGS__)
 
+extern int mcode;
+
 void
 itracedump(Vnvax *tb)
 {
@@ -54,6 +56,9 @@ itracedump(Vnvax *tb)
 	int arg1 = tb->sbi__DOT__cpu__DOT__arg1;
 	int arg2 = tb->sbi__DOT__cpu__DOT__arg2;
 	int psl;
+
+	if ((tb->sbi__DOT__cpu__DOT__curpc & 0xf0000000) && !mcode)
+		return;
 
 #if 0
 	psl = (tb->sbi__DOT__cpu__DOT__psl_is << 26) |
@@ -152,7 +157,7 @@ more:		curarg = memp[argpc++];
 				n |= ((memp[argpc++] & 255) << 8);
 				n |= ((memp[argpc++] & 255) << 16);
 				n |= ((memp[argpc++] & 255) << 24);
-				F("#%08X", n);
+				F("#%X", n);
 				if (ixarg)
 					F("[%s]", rnames[ixarg-1]);
 			} else {
@@ -376,7 +381,7 @@ struct vop vax_inst[256] = {
 /* 0x99 */	{	"cvtbw",	"rb,ww"			},
 /* 0x9a */	{	"MOVZBL",	"rb,wl"			},
 /* 0x9b */	{	"MOVZBW",	"wb,ww"			},
-/* 0x9c */	{	"rotl",		"rb,rl,wl"		},
+/* 0x9c */	{	"ROTL",		"rb,rl,wl"		},
 /* 0x9d */	{	"acbb",		"rb,rb,mb,bw"		},
 /* 0x9e */	{	"MOVAB",	"ab,wl"			},
 /* 0x9f */	{	"pushab",	"ab"			},
@@ -435,7 +440,7 @@ struct vop vax_inst[256] = {
 /* 0xd0 */	{	"MOVL",		"rl,wl"			},
 /* 0xd1 */	{	"CMPL",		"rl,rl"			},
 /* 0xd2 */	{	"mcoml",	"rl,wl"			},
-/* 0xd3 */	{	"bitl",		"rl,rl"			},
+/* 0xd3 */	{	"BITL",		"rl,rl"			},
 /* 0xd4 */	{	"CLRL",		"wl"			},
 /* 0xd5 */	{	"TSTL",		"rl"			},
 /* 0xd6 */	{	"INCL",		"ml"			},
@@ -449,18 +454,18 @@ struct vop vax_inst[256] = {
 /* 0xde */	{	"MOVAL",	"al,wl"			},
 /* 0xdf */	{	"pushal",	"al"			},
 	   
-/* 0xe0 */	{	"bbs",		"rl,vb,bb"		},
-/* 0xe1 */	{	"bbc",		"rl,vb,bb"		},
-/* 0xe2 */	{	"bbss",		"rl,vb,bb"		},
-/* 0xe3 */	{	"bbcs",		"rl,vb,bb"		},
-/* 0xe4 */	{	"bbsc",		"rl,vb,bb"		},
-/* 0xe5 */	{	"bbcc",		"rl,vb,bb"		},
-/* 0xe6 */	{	"bbssi",	"rl,vb,bb"		},
-/* 0xe7 */	{	"bbcci",	"rl,vb,bb"		},
-/* 0xe8 */	{	"blbs",		"rl,bb"			},
-/* 0xe9 */	{	"blbc",		"rl,bb"			},
-/* 0xea */	{	"ffs",		"rl,rb,vb"		},
-/* 0xeb */	{	"ffc",		"rl,rb,vb"		},
+/* 0xe0 */	{	"BBS",		"rl,vb,bb"		},
+/* 0xe1 */	{	"BBC",		"rl,vb,bb"		},
+/* 0xe2 */	{	"BBSS",		"rl,vb,bb"		},
+/* 0xe3 */	{	"BBCS",		"rl,vb,bb"		},
+/* 0xe4 */	{	"BBSC",		"rl,vb,bb"		},
+/* 0xe5 */	{	"BBCC",		"rl,vb,bb"		},
+/* 0xe6 */	{	"BBSSI",	"rl,vb,bb"		},
+/* 0xe7 */	{	"BBCCI",	"rl,vb,bb"		},
+/* 0xe8 */	{	"BLBS",		"rl,bb"			},
+/* 0xe9 */	{	"BLBC",		"rl,bb"			},
+/* 0xea */	{	"FFS",		"rl,rb,vb"		},
+/* 0xeb */	{	"FFC",		"rl,rb,vb"		},
 /* 0xec */	{	"CMPV",		"rl,rb,vb,rl"		},
 /* 0xed */	{	"CMPZV",	"rl,rb,vb,rl"		},
 /* 0xee */	{	"extv",		"rl,rb,vb,wl"		},

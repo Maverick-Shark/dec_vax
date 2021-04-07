@@ -8,7 +8,7 @@
 
 #include "nvax.h"
 
-int cpubusdebug, itrace;
+int cpubusdebug, itrace, mcode;
 
 unsigned long nticks;
 void dumpvcache(Vnvax *tb);
@@ -51,6 +51,8 @@ int main(int argc, char **argv)
 				cpubusdebug++;
 			else if (strcmp(optarg, "itrace") == 0)
 				itrace++;
+			else if (strcmp(optarg, "mcode") == 0)
+				mcode++;
 			else
 				errx(1, "unknown flag %s", optarg);
 			break;

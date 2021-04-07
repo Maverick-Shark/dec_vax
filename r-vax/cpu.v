@@ -777,8 +777,8 @@ if (debug) $fdisplay(32'h80000002, "EXECUTE2: isspsw %d iscpsw %d pswbits %x bis
 				writeback2 <= 0;
 			if (i_userot)
 				argd1 <= (arg2 << arg1[4:0]) |
-					    (arg2 << a1neg);
-if (i_userot)
+					    (arg2 >> a1neg);
+if (debug)
 $fdisplay(32'h80000002, "ROT: oldpc %x arg1 %x arg2 %x shift %x\r", oldpc, arg1, arg2, (arg2 << arg1[4:0]) | (arg2 >> a1neg));
 			if (i_bicpsw)
 				psw <= psw & ~arg1[7:0];
