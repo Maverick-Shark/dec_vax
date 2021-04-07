@@ -175,7 +175,7 @@ module cpu(
 	reg [31:0]	arg1, arg2, arg3, arg4, argd1, argd2, arg1p, arg2p;
 	reg		arg1p_isreg, arg2p_isreg;
 	reg [3:0]	arg1p_regnum, arg2p_regnum;
-	reg [1:0]	arg1p_size, arg2p_size;
+	reg [1:0]	arg1p_size, arg2p_size, a1sz;
 /* verilator lint_on UNDRIVEN */
 /* verilator lint_on UNUSED */
 
@@ -341,7 +341,7 @@ initial psl_ipl = 5'h1f;
 	wire		i_useadd, i_wback, i_usexor, i_usemtpr, i_usemfpr;
 	wire		i_isspsw, i_iscpsw, i_setnz, i_clv, i_clc, i_setc;
 	wire		i_bispsw, i_bicpsw, i_movpsl, i_usesub, i_useand;
-	wire		i_usebis, i_usebic, i_bbs, i_bbc, i_userot;
+	wire		i_usebis, i_usebic, i_bbs, i_bbc, i_userot, i_usezex;
 	wire		arg_aR, arg_aW, arg_aA;
 	wire [2:0]	a_argcode;
 	wire [1:0]	a_argsz;
@@ -379,6 +379,7 @@ initial psl_ipl = 5'h1f;
 		.i_usebis(i_usebis),
 		.i_usebic(i_usebic),
 		.i_userot(i_userot),
+		.i_usezex(i_usezex),
 		.i_wback(i_wback),
 
 		.i_pswbits(i_pswbits),
@@ -711,7 +712,10 @@ if (debug) $fdisplay(32'h80000002, "ARGEND: OP %x OA %x arg_rv %x acounter %d is
 if (debug) $fdisplay(32'h80000002, "ARGEND: a_rargno %d a_wargno %d arg_aR %d arg_aA %d arg_aW %d\r\n", a_rargno, a_wargno, arg_aR, arg_aA, arg_aW);
 			if (arg_aR|arg_aA) begin
 				case (a_rargno)
-				3'b000: arg1 <= arg_rv;
+				3'b000: begin
+					arg1 <= arg_rv;
+					a1sz <= a_argsz;
+				end
 				3'b001: arg2 <= arg_rv;
 				3'b010: arg3 <= arg_rv;
 		//		2'b11: arg2 <= OP; // XX
@@ -780,6 +784,14 @@ if (debug) $fdisplay(32'h80000002, "EXECUTE2: isspsw %d iscpsw %d pswbits %x bis
 					    (arg2 >> a1neg);
 if (debug)
 $fdisplay(32'h80000002, "ROT: oldpc %x arg1 %x arg2 %x shift %x\r", oldpc, arg1, arg2, (arg2 << arg1[4:0]) | (arg2 >> a1neg));
+			if (i_usezex) begin
+				if (a1sz == `O_BYTE)
+					argd1 <= { 24'b0, arg1[7:0] };
+				else if (a1sz == `O_WORD)
+					argd1 <= { 16'b0, arg1[15:0] };
+				else
+					argd1 <= arg1;
+			end
 			if (i_bicpsw)
 				psw <= psw & ~arg1[7:0];
 			if (i_bispsw)

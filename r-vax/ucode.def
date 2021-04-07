@@ -26,14 +26,25 @@ RSB	rl#(sp)+,rl#0,wl#pc	useadd wback 			# 05
 #
 BSBB	ab#b^d(pc),rl#0,rl#pc,wl#pc,wl#-(sp)	useadd move2 wback wback2
 BRB	aw#b^d(pc),rl#0,wl#pc	useadd wback			# 11
-#
+BNEQ	ab#b^d(pc),rl#0,wl#pc	useadd wback ccz iscpsw		# 12
 BEQL	ab#b^d(pc),rl#0,wl#pc	useadd wback ccz isspsw		# 13
-#
+BGTR	ab#b^d(pc),rl#0,wl#pc	useadd wback ccz ccn iscpsw	# 14
+BLEQ	ab#b^d(pc),rl#0,wl#pc	useadd wback ccz ccn isspsw	# 15
 JSB	ab,rl#0,rl#pc,wl#pc,wl#-(sp)	useadd move2 wback wback2 # 16
 JMP	ab,rl#0,wl#pc	useadd wback				# 17
+BGEQ	ab#b^d(pc),rl#0,wl#pc	useadd wback ccn iscpsw		# 18
+BLSS	ab#b^d(pc),rl#0,wl#pc	useadd wback ccn isspsw		# 19
+BGTRU	ab#b^d(pc),rl#0,wl#pc	useadd wback ccc ccz iscpsw	# 1a
+BLEQU	ab#b^d(pc),rl#0,wl#pc	useadd wback ccc ccz isspsw	# 1b
+BVC	ab#b^d(pc),rl#0,wl#pc	useadd wback ccv iscpsw		# 1c
+BVS	ab#b^d(pc),rl#0,wl#pc	useadd wback ccv isspsw		# 1d
+BGEQU	ab#b^d(pc),rl#0,wl#pc	useadd wback ccc iscpsw		# 1e
+BLSSU	ab#b^d(pc),rl#0,wl#pc	useadd wback ccc isspsw		# 1f
 #
 BSBW	aw#w^d(pc),rl#0,rl#pc,wl#pc,wl#-(sp)	useadd move2 wback wback2 
 BRW	aw#w^d(pc),rl#0,wl#pc	useadd wback			# 31
+#
+MOVZWL	rw,wl		usezex setnz clv wback			# 3c
 #
 MOVB	rb,rb#0,wb	useadd setnz clv wback			# 90
 CMPB	rb,rb		usesub setnz clv setc			# 91
@@ -42,9 +53,14 @@ BITB	rb,rb		useand setnz clv			# 93
 CLRB	rl#0,rl#0,wb	useadd setnz clv wback			# 94
 TSTB	rb,rl#0		useadd setnz clv clc			# 95
 #
-ROTL	rb,rl,wl	userot setnz clv wback			# 9C
+MOVZBL	rb,wl		usezex setnz clv wback			# 9a
+MOVZBW	rb,ww		usezex setnz clv wback			# 9b
+ROTL	rb,rl,wl	userot setnz clv wback			# 9c
 #
+MOVW	rw,rw#0,ww	useadd setnz clv wback			# b0
 CMPW	rw,rw		usesub setnz clv setc			# b1
+#
+TSTW	rw,rw#0		useadd setnz clv clc			# b5
 #
 BISPSW	rw		bispsw					# b8
 BICPSW	rw		bicpsw					# b9
@@ -71,6 +87,9 @@ MFPR	rl,wl		usemfpr wback				# db
 MOVPSL	wl		movpsl wback				# dc
 #
 MOVAL	al,rl#0,wl	useadd setnz clv wback			# de
+#
+BBS	rl,rl,ab#b^d(pc),wl#pc,wl#pc bbs move2 wback2		# e0
+BBC	rl,rl,ab#b^d(pc),wl#pc,wl#pc bbc move2 wback2		# e1
 #
 BLBC	rl#0,rl,ab#b^d(pc),wl#pc,wl#pc bbc move2 wback2		# e9
 #

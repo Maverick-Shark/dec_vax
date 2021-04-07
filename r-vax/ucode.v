@@ -36,6 +36,7 @@
 `define	BBS		36
 `define	BBC		37
 `define	USEROT		38
+`define	USEZEX		39
 
 /* 40-45 are emulate offset */
 
@@ -65,6 +66,7 @@ module ucode(
 	output			i_usebis,
 	output			i_usebic,
 	output			i_userot,
+	output			i_usezex,
 	output			i_wback,
 
 	output [3:0]		i_pswbits,
@@ -129,6 +131,7 @@ parameter	A_ROM_ADDRS = 256;
 	assign i_usebic = ucinsn_data[`USEBIC];
 	assign i_usebis = ucinsn_data[`USEBIS];
 	assign i_userot = ucinsn_data[`USEROT];
+	assign i_usezex = ucinsn_data[`USEZEX];
 	assign i_wback = ucinsn_data[`WBACK];
 
 	assign i_pswbits = ucinsn_data[19:16];
