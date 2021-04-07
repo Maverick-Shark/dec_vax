@@ -100,6 +100,8 @@ function num2bit(num, sz,    shsz, i, rv) {
 
 BEGIN {
 	# Get instruction name<->opcode mapping
+	HFN="ofdef.h"
+	system("rm -f " HFN);
 	FN="opcode.def";
 	while ((getline < FN) > 0) {
 		if (substr($1,1,1) == "#")
@@ -224,8 +226,8 @@ BEGIN {
 					    substr(inslist[insnr], 1, 64-46) \
 					    num2bit(emuloff, 6) \
 					    substr(inslist[insnr], 25);
-					print "#define EMU_" $1 " " \
-					    emuloff++ >> "ofdef.h";
+					print "#define LB" 4*emuloff++ \
+					    " I_" $1 >> "ofdef.h";
 				}
 			} else
 				err("bad bit " $i " line " lineno);

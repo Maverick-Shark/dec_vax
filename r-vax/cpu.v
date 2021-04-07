@@ -185,6 +185,14 @@ module cpu(
 		.neg(a1neg)
 	);
 
+	wire [31:0]	arg1mask, arg2and;
+	wire		arg2any;
+	assign arg1mask = (1 << arg1[4:0]);
+	assign arg2and = (arg2 & arg1mask);
+	assign arg2any = |arg2and;
+
+
+
 	assign ipr_regraddr = halted ? CON_ADR_I[3:0] : arg1[3:0];
 	assign ipr_regwaddr = halted ? CON_ADR_I[3:0] : arg2[3:0];
 	assign ipr_wdata = halted ? CON_DAT_I : arg1;
@@ -342,6 +350,7 @@ initial psl_ipl = 5'h1f;
 	wire		i_isspsw, i_iscpsw, i_setnz, i_clv, i_clc, i_setc;
 	wire		i_bispsw, i_bicpsw, i_movpsl, i_usesub, i_useand;
 	wire		i_usebis, i_usebic, i_bbs, i_bbc, i_userot, i_usezex;
+	wire		i_setbit, i_clrbit;
 	wire		arg_aR, arg_aW, arg_aA;
 	wire [2:0]	a_argcode;
 	wire [1:0]	a_argsz;
@@ -393,6 +402,8 @@ initial psl_ipl = 5'h1f;
 		.i_setc(i_setc),
 		.i_bbs(i_bbs),
 		.i_bbc(i_bbc),
+		.i_setbit(i_setbit),
+		.i_clrbit(i_clrbit),
 
 		.i_movpsl(i_movpsl),
 
@@ -775,10 +786,14 @@ if (debug) $fdisplay(32'h80000002, "EXECUTE2: isspsw %d iscpsw %d pswbits %x bis
 				writeback <= 0;
 			if (i_iscpsw && (|(psw[3:0] & i_pswbits)))
 				writeback <= 0;
-			if (i_bbs && ~|(arg2 & (1 << arg1[4:0]))) // OPT
+			if (i_bbs && ~arg2any)
 				writeback2 <= 0;
-			if (i_bbc && |(arg2 & (1 << arg1[4:0]))) // OPT
+			if (i_bbc && arg2any)
 				writeback2 <= 0;
+			if (i_setbit)
+				argd1 <= arg2 | arg1mask;
+			if (i_clrbit)
+				argd1 <= arg2 & ~arg1mask;
 			if (i_userot)
 				argd1 <= (arg2 << arg1[4:0]) |
 					    (arg2 >> a1neg);

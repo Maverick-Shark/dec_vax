@@ -37,6 +37,8 @@
 `define	BBC		37
 `define	USEROT		38
 `define	USEZEX		39
+`define	SETBIT		40
+`define	CLRBIT		41
 
 /* 40-45 are emulate offset */
 
@@ -78,6 +80,8 @@ module ucode(
 	output			i_setc,
 	output			i_bbs,
 	output			i_bbc,
+	output			i_setbit,
+	output			i_clrbit,
 
 	output			i_move2,
 	output			i_wback2,
@@ -143,6 +147,8 @@ parameter	A_ROM_ADDRS = 256;
 	assign i_setc = ucinsn_data[`SETC];
 	assign i_bbs = ucinsn_data[`BBS];
 	assign i_bbc = ucinsn_data[`BBC];
+	assign i_setbit = ucinsn_data[`SETBIT];
+	assign i_clrbit = ucinsn_data[`CLRBIT];
 
 	assign i_move2 = ucinsn_data[`MOVE2];
 	assign i_wback2 = ucinsn_data[`WBACK2];

@@ -6,7 +6,7 @@ LD=vaxld
 OBJCOPY=vaxobjcopy
 INFIL=mcode
 
-${AS} -o ${INFIL}.o ${INFIL}.s
+cpp ${INFIL}.s | ${AS} -o ${INFIL}.o
 if [ $? -ne 0 ]; then
 	exit 1;
 fi
