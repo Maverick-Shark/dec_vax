@@ -137,10 +137,9 @@ module vcache(
 				caddrl <= { IN_ADR_I[31:2], 2'b0 };
 				caddrh <= { IN_ADR_I[31:2], 2'b0 } + 4;
 				coff <= IN_ADR_I[1:0];
-				csz <= in_sz;
+				csz <= in_sz[1] ? `O_LONG : in_sz;
 				if (in_passthru ||
-				    (IN_ADR_I[1:0] == 2'b00 &&
-				     in_sz == `O_LONG)) begin
+				    (IN_ADR_I[1:0] == 2'b00 && in_sz[1])) begin
 					/* fastpath, aligned longword access */
 					ut_write <= IN_WE_I;
 					ut_wdata <= IN_DAT_I;

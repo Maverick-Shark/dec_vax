@@ -88,20 +88,3 @@ wbreg:
 	movl	4(%sp),%r15
 2:
 	rsb
-
-/*
- * BBSS
- */
-I_BBSS:
-	addl2	$-24,%sp		# 6 longwords on stack
-	mfpr	$64,12(%sp)		# arg1 (pos)
-	mfpr	$65,8(%sp)		# arg2 (base)
-	mfpr	$66,4(%sp)		# arg3 (braddr)
-
-	mfpr	$73,18(%sp)		# return psl (unaligned)
-	mfpr	$72,20(%sp)		# fetch ret pc
-
-	bbs	12(%sp),8(%sp),1f	# br if bit set?
-	movl	$1,(sp)
-	rotl	12(%sp),(sp),(sp) 	# position bit
-	bisl2	(sp),

@@ -46,6 +46,8 @@ BRW	aw#w^d(pc),rl#0,wl#pc	useadd wback			# 31
 #
 MOVZWL	rw,wl		usezex setnz clv wback			# 3c
 #
+CLRQ	rl#0,rl#0,rl#0,wq useadd setnz clv move2 wback wback2	# 7c
+#
 MOVB	rb,rb#0,wb	useadd setnz clv wback			# 90
 CMPB	rb,rb		usesub setnz clv setc			# 91
 #
@@ -67,6 +69,7 @@ BICPSW	rw		bicpsw					# b9
 # 
 ADDL2	rl,ml		useadd setnz setaddv setc wback 	# c0
 ADDL3	rl,rl,wl	useadd setnz setaddv setc wback 	# c1
+SUBL2	1rl,0ml		usesub setnz wback			# c2
 #
 BISL2	rl,ml		usebis setnz clv wback			# c8
 BICL2	rl,ml		usebic setnz clv wback			# ca

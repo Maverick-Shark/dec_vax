@@ -166,7 +166,15 @@ BEGIN {
 		if ($2 != "-")
 		for (i = 1; i <= n; i++) {
 			setrd = setwr = 0;
+			rdno = -1;
 			c = substr(a[i], 1, 1);
+			if (c >= 0 && c <= 9) {
+				rdno = c+0;
+				a[i] = substr(a[i], 2);
+				c = substr(a[i], 1, 1);
+			}
+# print $1 ": rdno " rdno " a[i] " a[i];
+
 			if (c == "r") { al = "100"; setrd = 1; }
 			else if (c == "w") { al = "010"; setwr = 1; }
 			else if (c == "m") { al = "110"; setwr = setrd = 1; }
@@ -195,7 +203,10 @@ BEGIN {
 			}
 
 			rdwr = "0000";
-			if (setrd) {
+			if (rdno >= 0) {
+				rdwr = num2bit(rdno,3);
+				rdcnt++;
+			} else if (setrd) {
 				rdwr = num2bit(rdcnt,3);
 				rdcnt++;
 			} else

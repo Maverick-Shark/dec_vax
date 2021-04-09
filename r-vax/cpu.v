@@ -573,7 +573,7 @@ assign debug = 0;
 				delay_halt <= 0;
 				haltpos <= `HALT_STEP;
 			end else if (isvalid) begin
-if (debug) $fdisplay(32'h80000002, "FETCH: pc %x curbyte %x\r", curpc, cur_byte);
+if (debug) $fdisplay(32'h80000002, "FETCH: pc %x curbyte %x inslword %x\r", curpc, cur_byte, inslword);
 				/* put insbyte in decode reg */
 				cur_inst <= cur_byte;
 				oldpc <= curpc;
@@ -608,6 +608,7 @@ if (debug) $fdisplay(32'h80000002, "S_DECODE: i_hasargs %d i_emul %d\r", i_hasar
 		 */
 		`ASETUP: begin
 if (debug) $fdisplay(32'h80000002, "ASETUP: a_argcode %x a_emul %d cur_byte %x a_arg %x IA %x acounter %d\r", a_argcode, a_emul, cur_byte, a_arg, IA, acounter);
+if (debug) $fdisplay(32'h80000002, "ASETUPx: isvalid %x curpc %x inslword %x\r", isvalid, curpc, inslword);
 			arg_rdbmsk <=
 			    { {2{&cur_mux[6:5]}}, cur_mux[6], |cur_mux[6:5]};
 			cur_reg_num_save <= cur_mux[3:0];
@@ -740,6 +741,10 @@ if (debug) $fdisplay(32'h80000002, "ARGEND: a_rargno %d a_wargno %d arg_aR %d ar
 					arg1p_isreg  <= OA_isreg;
 					arg1p_regnum <= OA_regnum;
 					arg1p_size <= a_argsz;
+					arg2p <= OA + 4;
+					arg2p_isreg  <= OA_isreg;
+					arg2p_regnum <= OA_regnum+1;
+					arg2p_size <= a_argsz;
 				end
 				if (a_wargno == 1) begin
 					arg2p <= OA;
@@ -851,6 +856,8 @@ if (debug) $fdisplay(32'h80000002, "WB MEM: addr %x val %x\r\n", arg1p, argd1);
 					wmemstate <= `WMEM_xENDINST;
 				end
 				writeback <= 0;
+				if (arg1p_size == `O_QUAD)
+					writeback2 <= 1; // XXX hack
 			end else if (writeback2) begin
 				if (arg2p_isreg) begin
 if (debug) $fdisplay(32'h80000002, "WB2 REG: reg %x val %x size %d\r\n", arg2p_regnum, greg_wback2, arg2p_size);
@@ -987,6 +994,7 @@ if (debug) $fdisplay(32'h80000002, "IPR_TXCS: pmem %d \r\n", cpu_pmem);
 		 */
 
 		`S_FILLUP: begin
+// $fdisplay(32'h80000002, "S_FILLUP: addr %x acki %d isvalid %d dati %x\r\n", { curpc[31:2], 2'b00 }, cpu_acki, isvalid, CPU_DAT_I);
 			/* Fetch new longword */
 			cpu_addr <= { curpc[31:2], 2'b00 };
 			cpu_write <= 0;
@@ -1003,10 +1011,10 @@ if (debug) $fdisplay(32'h80000002, "IPR_TXCS: pmem %d \r\n", cpu_pmem);
 				`FUP_ARG_GETBWL: state <= `ARG_GETBWL;
 				default: state <= `S_HALT;
 				endcase
-				if (mcheck) begin
-					state <= `S_HALT;
-					haltpos <= `HALT_MCHECK;
-				end
+			end
+			if (mcheck) begin
+				state <= `S_HALT;
+				haltpos <= `HALT_MCHECK;
 			end
 		end
 

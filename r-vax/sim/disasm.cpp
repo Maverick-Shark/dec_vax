@@ -154,9 +154,12 @@ more:		curarg = memp[argpc++];
 		case 8:
 			if (regno == 15) {
 				n = memp[argpc++] & 255;
-				n |= ((memp[argpc++] & 255) << 8);
-				n |= ((memp[argpc++] & 255) << 16);
-				n |= ((memp[argpc++] & 255) << 24);
+				if (s[1] == 'w' || s[1] == 'l') 
+					n |= ((memp[argpc++] & 255) << 8);
+				if (s[1] == 'l') {
+					n |= ((memp[argpc++] & 255) << 16);
+					n |= ((memp[argpc++] & 255) << 24);
+				}
 				F("#%X", n);
 				if (ixarg)
 					F("[%s]", rnames[ixarg-1]);
