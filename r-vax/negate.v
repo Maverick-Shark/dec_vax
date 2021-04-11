@@ -1,6 +1,11 @@
 /*      $Id$       */
 `timescale 1ns / 1ps
 `default_nettype none
+/*
+ * 2-complement conversion of a negative number to positive (for shifting)
+ * ISE creates a combinatorial LUT net (using many LUTs), hence we do the 
+ * LUT ROM definition manually (using fewer LUTs).
+ */
 
 
 module negate(
@@ -8,49 +13,66 @@ module negate(
 	output [4:0]	neg
 );
 
-	(* rom_style = "DISTRIBUTED" *)
+`ifdef VERILATOR
 	reg [4:0]	dneg;
 
 	always @* begin
 		case (val)
-		5'd31: dneg = 5'd1;
-		5'd30: dneg = 5'd2;
+		5'd31: dneg = 5'b00001;
+		5'd30: dneg = 5'b00010;
 
-		5'd29: dneg = 5'd3;
-		5'd28: dneg = 5'd4;
-		5'd27: dneg = 5'd5;
-		5'd26: dneg = 5'd6;
-		5'd25: dneg = 5'd7;
-		5'd24: dneg = 5'd8;
-		5'd23: dneg = 5'd9;
-		5'd22: dneg = 5'd10;
-		5'd21: dneg = 5'd11;
-		5'd20: dneg = 5'd12;
+		5'd29: dneg = 5'b00011;
+		5'd28: dneg = 5'b00100;
+		5'd27: dneg = 5'b00101;
+		5'd26: dneg = 5'b00110;
+		5'd25: dneg = 5'b00111;
+		5'd24: dneg = 5'b01000;
+		5'd23: dneg = 5'b01001;
+		5'd22: dneg = 5'b01010;
+		5'd21: dneg = 5'b01011;
+		5'd20: dneg = 5'b01100;
 
-		5'd19: dneg = 5'd13;
-		5'd18: dneg = 5'd14;
-		5'd17: dneg = 5'd15;
-		5'd16: dneg = 5'd16;
-		5'd15: dneg = 5'd17;
-		5'd14: dneg = 5'd18;
-		5'd13: dneg = 5'd19;
-		5'd12: dneg = 5'd20;
-		5'd11: dneg = 5'd21;
-		5'd10: dneg = 5'd22;
+		5'd19: dneg = 5'b01101;
+		5'd18: dneg = 5'b01110;
+		5'd17: dneg = 5'b01111;
+		5'd16: dneg = 5'b10000;
+		5'd15: dneg = 5'b10001;
+		5'd14: dneg = 5'b10010;
+		5'd13: dneg = 5'b10011;
+		5'd12: dneg = 5'b10100;
+		5'd11: dneg = 5'b10101;
+		5'd10: dneg = 5'b10110;
 
-		5'd09: dneg = 5'd23;
-		5'd08: dneg = 5'd24;
-		5'd07: dneg = 5'd25;
-		5'd06: dneg = 5'd26;
-		5'd05: dneg = 5'd27;
-		5'd04: dneg = 5'd28;
-		5'd03: dneg = 5'd29;
-		5'd02: dneg = 5'd30;
-		5'd01: dneg = 5'd31;
-		5'd00: dneg = 5'd0;
+		5'd09: dneg = 5'b10111;
+		5'd08: dneg = 5'b11000;
+		5'd07: dneg = 5'b11001;
+		5'd06: dneg = 5'b11010;
+		5'd05: dneg = 5'b11011;
+		5'd04: dneg = 5'b11100;
+		5'd03: dneg = 5'b11101;
+		5'd02: dneg = 5'b11110;
+		5'd01: dneg = 5'b11111;
+		5'd00: dneg = 5'b00000;
 		endcase
 	end
 
 	assign neg = dneg;
+`else
+	wire		b4, b3, b2, b1, b0;
 
+
+	ROM32X1 #( .INIT(32'h0001FFFE))
+	    R4 ( .O(b4), .A0(val[0]), .A1(val[1]), .A2(val[2]), .A3(val[3]), .A4(val[4]));
+	ROM32X1 #( .INIT(32'h01FE01FE))
+	    R3 ( .O(b3), .A0(val[0]), .A1(val[1]), .A2(val[2]), .A3(val[3]), .A4(val[4]));
+	ROM32X1 #( .INIT(32'h1E1E1E1E))
+	    R2 ( .O(b2), .A0(val[0]), .A1(val[1]), .A2(val[2]), .A3(val[3]), .A4(val[4]));
+	ROM32X1 #( .INIT(32'h66666666))
+	    R1 ( .O(b1), .A0(val[0]), .A1(val[1]), .A2(val[2]), .A3(val[3]), .A4(val[4]));
+	ROM32X1 #( .INIT(32'hAAAAAAAA))
+	    R0 ( .O(b0), .A0(val[0]), .A1(val[1]), .A2(val[2]), .A3(val[3]), .A4(val[4]));
+
+	assign neg = { b4, b3, b2, b1, b0 };
+
+`endif
 endmodule
