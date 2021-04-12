@@ -102,4 +102,6 @@ BBCCI	rl,ml,ab#b^d(pc),wl#pc bbc clrbit move2 wback wback2	# e7
 BLBS	rl#0,rl,ab#b^d(pc),wl#pc,wl#pc bbs move2 wback2		# e8
 BLBC	rl#0,rl,ab#b^d(pc),wl#pc,wl#pc bbc move2 wback2		# e9
 #
+INSV	rl,rl,rb,ml	insv					# f0
+#
 AOBLEQ	rl,ml,ab#b^d(pc) iemul					# f3

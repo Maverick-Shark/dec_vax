@@ -350,7 +350,7 @@ initial psl_ipl = 5'h1f;
 	wire		i_isspsw, i_iscpsw, i_setnz, i_clv, i_clc, i_setc;
 	wire		i_bispsw, i_bicpsw, i_movpsl, i_usesub, i_useand;
 	wire		i_usebis, i_usebic, i_bbs, i_bbc, i_userot, i_usezex;
-	wire		i_setbit, i_clrbit;
+	wire		i_setbit, i_clrbit, i_insv;
 	wire		arg_aR, arg_aW, arg_aA;
 	wire [2:0]	a_argcode;
 	wire [1:0]	a_argsz;
@@ -389,6 +389,7 @@ initial psl_ipl = 5'h1f;
 		.i_usebic(i_usebic),
 		.i_userot(i_userot),
 		.i_usezex(i_usezex),
+		.i_insv(i_insv),
 		.i_wback(i_wback),
 
 		.i_pswbits(i_pswbits),
@@ -481,6 +482,9 @@ initial psl_ipl = 5'h1f;
 		`O_QUAD: cra = 0;
 		endcase
 
+
+	wire [31:0]	bm_pos, bm_neg;
+	bitmasks bitmasks(arg2[4:0], arg3[4:0], bm_pos, bm_neg);
 
 	/*
 	 * Program counter mgmt. curpc is the "live" version. greg[15] is
@@ -730,7 +734,7 @@ if (debug) $fdisplay(32'h80000002, "ARGEND: a_rargno %d a_wargno %d arg_aR %d ar
 				end
 				3'b001: arg2 <= arg_rv;
 				3'b010: arg3 <= arg_rv;
-		//		2'b11: arg2 <= OP; // XX
+				2'b011: arg4 <= arg_rv;
 				default: ;
 				endcase
 			end
@@ -820,6 +824,9 @@ $fdisplay(32'h80000002, "ROT: oldpc %x arg1 %x arg2 %x shift %x\r", oldpc, arg1,
 				argd1 <= psl;
 			if (i_move2)
 				argd2 <= arg3;
+			if (i_insv)
+				argd1 <= (arg4 & bm_neg) | 
+				    ((arg1 << arg2[4:0]) & bm_pos);
 		end
 
 		/*
