@@ -39,7 +39,8 @@
 `define	USEZEX		39
 `define	SETBIT		40
 `define	CLRBIT		41
-`define	INSV		41
+`define	INSV		42
+`define	QUAD		43
 
 /* 40-45 are emulate offset */
 
@@ -84,6 +85,7 @@ module ucode(
 	output			i_bbc,
 	output			i_setbit,
 	output			i_clrbit,
+	output			i_quad,
 
 	output			i_move2,
 	output			i_wback2,
@@ -152,6 +154,7 @@ parameter	A_ROM_ADDRS = 256;
 	assign i_bbc = ucinsn_data[`BBC];
 	assign i_setbit = ucinsn_data[`SETBIT];
 	assign i_clrbit = ucinsn_data[`CLRBIT];
+	assign i_quad = ucinsn_data[`QUAD];
 
 	assign i_move2 = ucinsn_data[`MOVE2];
 	assign i_wback2 = ucinsn_data[`WBACK2];

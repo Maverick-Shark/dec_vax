@@ -350,7 +350,7 @@ initial psl_ipl = 5'h1f;
 	wire		i_isspsw, i_iscpsw, i_setnz, i_clv, i_clc, i_setc;
 	wire		i_bispsw, i_bicpsw, i_movpsl, i_usesub, i_useand;
 	wire		i_usebis, i_usebic, i_bbs, i_bbc, i_userot, i_usezex;
-	wire		i_setbit, i_clrbit, i_insv;
+	wire		i_setbit, i_clrbit, i_insv, i_quad;
 	wire		arg_aR, arg_aW, arg_aA;
 	wire [2:0]	a_argcode;
 	wire [1:0]	a_argsz;
@@ -405,6 +405,7 @@ initial psl_ipl = 5'h1f;
 		.i_bbc(i_bbc),
 		.i_setbit(i_setbit),
 		.i_clrbit(i_clrbit),
+		.i_quad(i_quad),
 
 		.i_movpsl(i_movpsl),
 
@@ -479,7 +480,7 @@ initial psl_ipl = 5'h1f;
 		`O_BYTE: cra = { {24{OP[7]}}, OP[7:0] };
 		`O_WORD: cra = { {16{OP[15]}}, OP[15:0] };
 		`O_LONG: cra = OP;
-		`O_QUAD: cra = 0;
+		`O_QUAD: cra = OP;
 		endcase
 
 
@@ -734,7 +735,7 @@ if (debug) $fdisplay(32'h80000002, "ARGEND: a_rargno %d a_wargno %d arg_aR %d ar
 				end
 				3'b001: arg2 <= arg_rv;
 				3'b010: arg3 <= arg_rv;
-				2'b011: arg4 <= arg_rv;
+				3'b011: arg4 <= arg_rv;
 				default: ;
 				endcase
 			end
@@ -767,6 +768,12 @@ if (debug) $fdisplay(32'h80000002, "ARGEND: a_rargno %d a_wargno %d arg_aR %d ar
 				state <= `MCODE;
 			else
 				state <= `EXECUTE;
+			if (i_quad && a_rargno == 0 && arg_aR) begin
+				acounter <= acounter + 1;
+				OA <= OA + 4;
+				cur_reg_num_save <= cur_reg_num_save + 1;
+				state <= `ARG_READ;
+			end
 			OA_isreg <= 0;
 			IA <= 0;
 		end
