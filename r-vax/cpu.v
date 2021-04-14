@@ -17,21 +17,22 @@
 `define S_FILLUP	3
 `define	MCODE		4
 `define S_READMEM	5
-`define S_READMEM2	8
-`define S_WRITEMEM	9
-`define S_WRITEMEM2	10
-`define MTPR		12
-`define S_DECODE	16
-`define MFPR		17
-`define S_TXCS_R	18
-`define ASETUP		41
-`define ARG_GETBWL	42
-`define ARG_ADDTO	43
-`define ARG_INDIR	44
-`define ARG_READ	45
-`define ARGEND		46
-`define EXECUTE		47
-`define ENDINST		48
+`define S_READMEM2	6
+`define S_WRITEMEM	7
+`define S_WRITEMEM2	8
+`define MTPR		9
+`define S_DECODE	10
+`define MFPR		11
+`define S_TXCS_R	12
+`define ASETUP		13
+`define ARG_GETBWL	14
+`define ARG_ADDTO	15
+`define ARG_INDIR	16
+`define ARG_READ	17
+`define ARGEND		18
+`define EXECUTE		19
+`define ENDINST		20
+`define ACBINST		21
 
 /* WREG return states */
 `define	WREG_HALT	0
@@ -350,7 +351,7 @@ initial psl_ipl = 5'h1f;
 	wire		i_isspsw, i_iscpsw, i_setnz, i_clv, i_clc, i_setc;
 	wire		i_bispsw, i_bicpsw, i_movpsl, i_usesub, i_useand;
 	wire		i_usebis, i_usebic, i_bbs, i_bbc, i_userot, i_usezex;
-	wire		i_setbit, i_clrbit, i_insv, i_quad;
+	wire		i_setbit, i_clrbit, i_insv, i_quad, i_useacb;
 	wire		arg_aR, arg_aW, arg_aA;
 	wire [2:0]	a_argcode;
 	wire [1:0]	a_argsz;
@@ -390,6 +391,7 @@ initial psl_ipl = 5'h1f;
 		.i_userot(i_userot),
 		.i_usezex(i_usezex),
 		.i_insv(i_insv),
+		.i_useacb(i_useacb),
 		.i_wback(i_wback),
 
 		.i_pswbits(i_pswbits),
@@ -495,13 +497,16 @@ initial psl_ipl = 5'h1f;
 	wire [31:0] pc_plus_1;
 	assign pc_plus_1 = curpc + 1;
 
+`ifdef notdef
 wire debug;
-assign debug = 0;
-//reg debug;
-//initial debug = 0;
-//	always @(posedge clk)
-//		if (curpc == 32'hbde0)
-//			debug <= 1;
+assign debug = 1;
+`else
+reg debug;
+initial debug = 0;
+	always @(posedge clk)
+		if (curpc == 32'h5d26)
+			debug <= 1;
+`endif
 
 	/* console communications */
 	wire ref_greg_read, ref_greg_write, ipr_greg_read, ipr_greg_write;
@@ -766,6 +771,8 @@ if (debug) $fdisplay(32'h80000002, "ARGEND: a_rargno %d a_wargno %d arg_aR %d ar
 				state <= `MFPR;
 			else if (i_emul)
 				state <= `MCODE;
+			else if (i_useacb)
+				state <= `ACBINST;
 			else
 				state <= `EXECUTE;
 			if (i_quad && a_rargno == 0 && arg_aR) begin
@@ -813,8 +820,6 @@ if (debug) $fdisplay(32'h80000002, "EXECUTE2: isspsw %d iscpsw %d pswbits %x bis
 			if (i_userot)
 				argd1 <= (arg2 << arg1[4:0]) |
 					    (arg2 >> a1neg);
-if (debug)
-$fdisplay(32'h80000002, "ROT: oldpc %x arg1 %x arg2 %x shift %x\r", oldpc, arg1, arg2, (arg2 << arg1[4:0]) | (arg2 >> a1neg));
 			if (i_usezex) begin
 				if (a1sz == `O_BYTE)
 					argd1 <= { 24'b0, arg1[7:0] };
@@ -832,8 +837,19 @@ $fdisplay(32'h80000002, "ROT: oldpc %x arg1 %x arg2 %x shift %x\r", oldpc, arg1,
 			if (i_move2)
 				argd2 <= arg3;
 			if (i_insv)
-				argd1 <= (arg4 & bm_neg) | 
+				argd1 <= (arg4 & bm_neg) |
 				    ((arg1 << arg2[4:0]) & bm_pos);
+if (i_insv) $fdisplay(32'h80000002, "INSV: pc %x arg1 %x arg2 %x arg3 %x\r", oldpc, arg1, arg2, arg3);
+		end
+
+		`ACBINST: begin
+if (debug) $fdisplay(32'h80000002, "ACBINST: pc %x arg1 %x arg2 %x arg3 %x\r", oldpc, arg1, arg2, arg3);
+			argd1 <= arg2 + 32'b1;
+			writeback <= 1;
+			if (arg2 + 32'b1 <= arg1)
+				writeback2 <= 1;
+			argd2 <= arg3;
+			state <= `ENDINST;
 		end
 
 		/*
@@ -912,7 +928,7 @@ if (debug) $fdisplay(32'h80000002, "WB2 REG: reg %x val %x size %d\r\n", arg2p_r
 if (debug) $fdisplay(32'h80000002, "MCODE: mcodectr %d arg %x\r", mcodectr, mc_rv);
 			if (mcodectr == 4'd15) begin
 				curpc <= { 24'hf00000, i_emuoff, 2'b00 };
-				state <= `S_FETCH;
+				state <= `S_HALT;
 			end
 		end
 

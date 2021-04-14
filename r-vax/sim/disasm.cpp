@@ -68,12 +68,14 @@ itracedump(Vnvax *tb)
 	F("%08X %08X| ", tb->sbi__DOT__cpu__DOT__curpc, psl);
 
 	if (vax_inst[cur_inst].name)
-		F("%s ", vax_inst[cur_inst].name);
+		F("%s", vax_inst[cur_inst].name);
 	else
 		F("opcode %02x", cur_inst);
 
-	if (vax_inst[cur_inst].arg)
+	if (vax_inst[cur_inst].arg) {
+		F(" ");
 		prtargs(tb, vax_inst[cur_inst].arg);
+	}
 	F("\r\n");
 	
 }
@@ -250,8 +252,8 @@ struct vop vax_inst[256] = {
 /* 0x1b */	{	"BLEQU",	"bb"			},
 /* 0x1c */	{	"BVC",		"bb"			},
 /* 0x1d */	{	"BVS",		"bb"			},
-/* 0x1e */	{	"BCC",		"bb"			},
-/* 0x1f */	{	"BCS",		"bb"			},
+/* 0x1e */	{	"BGEQU",	"bb"			},
+/* 0x1f */	{	"BLSSU",	"bb"			},
 	   
 /* 0x20 */	{	"addp4",	"rw,ab,rw,ab"		},
 /* 0x21 */	{	"addp6",	"rw,ab,rw,ab,rw,ab"	},
@@ -425,7 +427,7 @@ struct vop vax_inst[256] = {
 
 /* 0xc0 */	{	"addl2",	"rl,ml"			},
 /* 0xc1 */	{	"addl3",	"rl,rl,wl"		},
-/* 0xc2 */	{	"subl2",	"rl,ml"			},
+/* 0xc2 */	{	"SUBL2",	"rl,ml"			},
 /* 0xc3 */	{	"subl3",	"rl,rl,wl"		},
 /* 0xc4 */	{	"mull2",	"rl,ml"			},
 /* 0xc5 */	{	"mull3",	"rl,rl,wl"		},
@@ -474,7 +476,7 @@ struct vop vax_inst[256] = {
 /* 0xee */	{	"extv",		"rl,rb,vb,wl"		},
 /* 0xef */	{	"extzv",	"rl,rb,vb,wl"		},
 
-/* 0xf0 */	{	"insv",		"rl,rl,rb,vb"		},
+/* 0xf0 */	{	"INSV",		"rl,rl,rb,vb"		},
 /* 0xf1 */	{	"acbl",		"rl,rl,ml,bw"		},
 /* 0xf2 */	{	"aoblss",	"rl,ml,bb"		},
 /* 0xf3 */	{	"AOBLEQ",	"rl,ml,bb"		},

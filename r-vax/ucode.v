@@ -41,6 +41,7 @@
 `define	CLRBIT		41
 `define	INSV		42
 `define	QUAD		43
+`define	USEACB		44
 
 /* 40-45 are emulate offset */
 
@@ -72,6 +73,7 @@ module ucode(
 	output			i_userot,
 	output			i_usezex,
 	output			i_insv,
+	output			i_useacb,
 	output			i_wback,
 
 	output [3:0]		i_pswbits,
@@ -141,6 +143,7 @@ parameter	A_ROM_ADDRS = 256;
 	assign i_userot = ucinsn_data[`USEROT];
 	assign i_usezex = ucinsn_data[`USEZEX];
 	assign i_insv = ucinsn_data[`INSV];
+	assign i_useacb = ucinsn_data[`USEACB];
 	assign i_wback = ucinsn_data[`WBACK];
 
 	assign i_pswbits = ucinsn_data[19:16];
