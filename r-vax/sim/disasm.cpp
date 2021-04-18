@@ -53,8 +53,8 @@ itracedump(Vnvax *tb)
 {
 	int cur_inst = tb->sbi__DOT__cpu__DOT__cur_byte;
 	int arg1p = tb->sbi__DOT__cpu__DOT__argp[0];
-	int arg1 = tb->sbi__DOT__cpu__DOT__arg1;
-	int arg2 = tb->sbi__DOT__cpu__DOT__arg2;
+	int arg1 = tb->sbi__DOT__cpu__DOT__arg[0];
+	int arg2 = tb->sbi__DOT__cpu__DOT__arg[1];
 	int psl;
 
 	if ((tb->sbi__DOT__cpu__DOT__curpc & 0xf0000000) && !mcode)

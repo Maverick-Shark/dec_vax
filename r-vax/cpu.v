@@ -174,8 +174,8 @@ module cpu(
 	 */
 /* verilator lint_off UNDRIVEN */
 /* verilator lint_off UNUSED */
-	reg [31:0]	arg1, arg2, arg3, arg4, argd1, argd2;
-	reg [31:0]	argp[1:0];
+	reg [31:0]	/* arg1, arg2, arg3, arg4, */argd1, argd2;
+	reg [31:0]	argp[1:0], arg[3:0];
 	reg		arg1p_isreg, arg2p_isreg;
 	reg [3:0]	arg1p_regnum, arg2p_regnum;
 	reg [1:0]	arg1p_size, arg2p_size, a1sz;
@@ -184,21 +184,21 @@ module cpu(
 
 	wire [4:0]	a1neg;
 	negate negate(
-		.val(arg1[4:0]),
+		.val(arg[0][4:0]),
 		.neg(a1neg)
 	);
 
 	wire [31:0]	arg1mask, arg2and;
 	wire		arg2any;
-	assign arg1mask = (1 << arg1[4:0]);
-	assign arg2and = (arg2 & arg1mask);
+	assign arg1mask = (1 << arg[0][4:0]);
+	assign arg2and = (arg[1] & arg1mask);
 	assign arg2any = |arg2and;
 
 
 
-	assign ipr_regraddr = halted ? CON_ADR_I[3:0] : arg1[3:0];
-	assign ipr_regwaddr = halted ? CON_ADR_I[3:0] : arg2[3:0];
-	assign ipr_wdata = halted ? CON_DAT_I : arg1;
+	assign ipr_regraddr = halted ? CON_ADR_I[3:0] : arg[0][3:0];
+	assign ipr_regwaddr = halted ? CON_ADR_I[3:0] : arg[1][3:0];
+	assign ipr_wdata = halted ? CON_DAT_I : arg[0];
 
 	reg [`STATBITS-1:0]	state;
 	reg [3:0]	wregstate;
@@ -258,9 +258,9 @@ initial psl_ipl = 5'h1f;
 	reg [31:0]	mc_rv;
 	always @*
 		case (mcodectr)
-		4'd0: mc_rv = arg1;
-		4'd1: mc_rv = arg2;
-		4'd2: mc_rv = arg3;
+//		4'd0: mc_rv = arg1;
+//		4'd1: mc_rv = arg2;
+//		4'd2: mc_rv = arg3;
 //		4'd4: mc_rv = argp[0];
 		4'd5: mc_rv = { 25'b0, arg1p_size, arg1p_isreg, arg1p_regnum };
 	//	4'd6: mc_rv = argp[1];
@@ -274,12 +274,12 @@ initial psl_ipl = 5'h1f;
 	wire [3:0]	mc_ipr_addr, mc_ipr_regraddr;
 	wire [31:0]	mcode_ipr_val;
 	assign is_mcode = (state == `MCODE);
-	assign mc_ipr_addr = is_mcode ? mcodectr : arg2[3:0];
-	assign mc_ipr_regraddr = arg1[3:0];
-	assign mc_ipr_write = is_mcode | ((state == `MTPR) & arg2[6]);
+	assign mc_ipr_addr = is_mcode ? mcodectr : arg[1][3:0];
+	assign mc_ipr_regraddr = arg[0][3:0];
+	assign mc_ipr_write = is_mcode | ((state == `MTPR) & arg[1][6]);
 	always @(posedge clk)
 		if (mc_ipr_write)
-			mcode_ipr_reg[mc_ipr_addr] <= is_mcode ? mc_rv : arg1;
+			mcode_ipr_reg[mc_ipr_addr] <= is_mcode ? mc_rv : arg[0];
 	assign mcode_ipr_val = mcode_ipr_reg[mc_ipr_regraddr];
 	/*
 	 * Argument stuff.
@@ -492,7 +492,7 @@ initial psl_ipl = 5'h1f;
 
 
 	wire [31:0]	bm_pos, bm_neg;
-	bitmasks bitmasks(arg2[4:0], arg3[4:0], bm_pos, bm_neg);
+	bitmasks bitmasks(arg[1][4:0], arg[2][4:0], bm_pos, bm_neg);
 
 	/*
 	 * Program counter mgmt. curpc is the "live" version. greg[15] is
@@ -558,13 +558,15 @@ initial debug = 0;
 				    { 23'b0, resopflt, haltpos };
 				5'h1c: con_dat_o_reg <= inslword;
 				5'h1b: con_dat_o_reg <= { itag, 1'b0, ivalid };
-				5'h19: con_dat_o_reg <= argp[1];
-				5'h18: con_dat_o_reg <= argp[0];
+				5'b1100?: con_dat_o_reg <= argp[CON_ADR_I[0]];
+		//		5'h19: con_dat_o_reg <= argp[1];
+		//		5'h18: con_dat_o_reg <= argp[0];
 				5'h14: con_dat_o_reg <= argd1;
-				5'h13: con_dat_o_reg <= arg4;
-				5'h12: con_dat_o_reg <= arg3;
-				5'h11: con_dat_o_reg <= arg2;
-				5'h10: con_dat_o_reg <= arg1;
+				5'b100??: con_dat_o_reg <= arg[CON_ADR_I[1:0]];
+		//		5'h13: con_dat_o_reg <= arg4;
+		//		5'h12: con_dat_o_reg <= arg3;
+		//		5'h11: con_dat_o_reg <= arg2;
+		//		5'h10: con_dat_o_reg <= arg1;
 				5'h0?: con_dat_o_reg <= cur_reg_val;
 				default: con_dat_o_reg <= 0;
 				endcase
@@ -745,12 +747,12 @@ if (debug) $fdisplay(32'h80000002, "ARGEND: a_rargno %d a_wargno %d arg_aR %d ar
 			if (arg_aR|arg_aA) begin
 				case (a_rargno)
 				3'b000: begin
-					arg1 <= arg_rv;
+					arg[0] <= arg_rv;
 					a1sz <= a_argsz;
 				end
-				3'b001: arg2 <= arg_rv;
-				3'b010: arg3 <= arg_rv;
-				3'b011: arg4 <= arg_rv;
+				3'b001: arg[1] <= arg_rv;
+				3'b010: arg[2] <= arg_rv;
+				3'b011: arg[3] <= arg_rv;
 				default: ;
 				endcase
 			end
@@ -797,24 +799,24 @@ if (debug) $fdisplay(32'h80000002, "ARGEND: a_rargno %d a_wargno %d arg_aR %d ar
 
 		`EXECUTE: begin
 			state <= `ENDINST;
-if (debug) $fdisplay(32'h80000002, "EXECUTE: pc %x arg1 %x arg2 %x useadd %d wback %d\r", curpc, arg1, arg2, i_useadd, i_wback);
+if (debug) $fdisplay(32'h80000002, "EXECUTE: pc %x arg1 %x arg2 %x useadd %d wback %d\r", curpc, arg[0], arg[1], i_useadd, i_wback);
 if (debug) $fdisplay(32'h80000002, "EXECUTE2: isspsw %d iscpsw %d pswbits %x bis %d bic %d\r", i_isspsw, i_iscpsw, i_pswbits, i_usebis, i_usebic);
 			writeback <= i_wback;
 			writeback2 <= i_wback2;
 			if (i_useadd)
 				{ Ctmp, argd1 } <=
-				    { 1'b0, arg1 } + { 1'b0, arg2 };
+				    { 1'b0, arg[0] } + { 1'b0, arg[1] };
 			if (i_usesub)
 				{ Ctmp, argd1 } <=
-				    { 1'b0, arg1 } - { 1'b0, arg2 };
+				    { 1'b0, arg[0] } - { 1'b0, arg[1] };
 			if (i_useand)
-				argd1 <= arg1 & arg2;
+				argd1 <= arg[0] & arg[1];
 			if (i_usexor)
-				argd1 <= arg1 ^ arg2;
+				argd1 <= arg[0] ^ arg[1];
 			if (i_usebis)
-				argd1 <= arg1 | arg2;
+				argd1 <= arg[0] | arg[1];
 			if (i_usebic)
-				argd1 <= ~arg1 & arg2;
+				argd1 <= ~arg[0] & arg[1];
 			if (i_isspsw && (|(psw[3:0] & i_pswbits)) == 0)
 				writeback <= 0;
 			if (i_iscpsw && (|(psw[3:0] & i_pswbits)))
@@ -824,41 +826,41 @@ if (debug) $fdisplay(32'h80000002, "EXECUTE2: isspsw %d iscpsw %d pswbits %x bis
 			if (i_bbc && arg2any)
 				writeback2 <= 0;
 			if (i_setbit)
-				argd1 <= arg2 | arg1mask;
+				argd1 <= arg[1] | arg1mask;
 			if (i_clrbit)
-				argd1 <= arg2 & ~arg1mask;
+				argd1 <= arg[1] & ~arg1mask;
 			if (i_userot)
-				argd1 <= (arg2 << arg1[4:0]) |
-					    (arg2 >> a1neg);
+				argd1 <= (arg[1] << arg[0][4:0]) |
+					    (arg[1] >> a1neg);
 			if (i_usezex) begin
 				if (a1sz == `O_BYTE)
-					argd1 <= { 24'b0, arg1[7:0] };
+					argd1 <= { 24'b0, arg[0][7:0] };
 				else if (a1sz == `O_WORD)
-					argd1 <= { 16'b0, arg1[15:0] };
+					argd1 <= { 16'b0, arg[0][15:0] };
 				else
-					argd1 <= arg1;
+					argd1 <= arg[0];
 			end
 			if (i_bicpsw)
-				psw <= psw & ~arg1[7:0];
+				psw <= psw & ~arg[0][7:0];
 			if (i_bispsw)
-				psw <= psw | arg1[7:0];
+				psw <= psw | arg[0][7:0];
 			if (i_movpsl)
 				argd1 <= psl;
 			if (i_move2)
-				argd2 <= arg3;
+				argd2 <= arg[2];
 			if (i_insv)
-				argd1 <= (arg4 & bm_neg) |
-				    ((arg1 << arg2[4:0]) & bm_pos);
-if (i_insv) $fdisplay(32'h80000002, "INSV: pc %x arg1 %x arg2 %x arg3 %x\r", oldpc, arg1, arg2, arg3);
+				argd1 <= (arg[3] & bm_neg) |
+				    ((arg[0] << arg[1][4:0]) & bm_pos);
+if (i_insv) $fdisplay(32'h80000002, "INSV: pc %x arg[0] %x arg[1] %x arg[2] %x\r", oldpc, arg[0], arg[1], arg[2]);
 		end
 
 		`ACBINST: begin
-if (debug) $fdisplay(32'h80000002, "ACBINST: pc %x arg1 %x arg2 %x arg3 %x\r", oldpc, arg1, arg2, arg3);
-			argd1 <= arg2 + 32'b1;
+if (debug) $fdisplay(32'h80000002, "ACBINST: pc %x arg[0] %x arg[1] %x arg[2] %x\r", oldpc, arg[0], arg[1], arg[2]);
+			argd1 <= arg[1] + 32'b1;
 			writeback <= 1;
-			if (arg2 + 32'b1 <= arg1)
+			if (arg[1] + 32'b1 <= arg[0])
 				writeback2 <= 1;
-			argd2 <= arg3;
+			argd2 <= arg[2];
 			state <= `ENDINST;
 		end
 
@@ -943,17 +945,17 @@ if (debug) $fdisplay(32'h80000002, "MCODE: mcodectr %d arg %x\r", mcodectr, mc_r
 		end
 
 		`MTPR: begin
-if (debug) $fdisplay(32'h80000002, "MTPR: arg1 %x arg2 %x\r", arg1, arg2);
+if (debug) $fdisplay(32'h80000002, "MTPR: arg[0] %x arg[1] %x\r", arg[0], arg[1]);
 			state <= `ENDINST;
 			ipr_write <= 0;
-			if (|arg2[31:7])
+			if (|arg[1][31:7])
 				resopflt <= 1;
-			else if (~arg2[6])
-			casez (arg2[5:0])
+			else if (~arg[1][6])
+			casez (arg[1][5:0])
 			`IPR_KSP, `IPR_SSP, `IPR_ESP, `IPR_USP: begin
-				if (psl_is == 0 && arg2[1:0] == cur_mod) begin
+				if (psl_is == 0 && arg[1][1:0] == cur_mod) begin
 					arg1p_size <= `O_LONG;
-					argd1 <= arg1;
+					argd1 <= arg[0];
 					arg1p_regnum <= `REG_SP;
 					arg1p_isreg <= 1;
 					writeback <= 1;
@@ -963,19 +965,19 @@ if (debug) $fdisplay(32'h80000002, "MTPR: arg1 %x arg2 %x\r", arg1, arg2);
 			`IPR_ISP: begin
 				if (psl_is == 1) begin
 					arg1p_size <= `O_LONG;
-					argd1 <= arg1;
+					argd1 <= arg[0];
 					arg1p_regnum <= `REG_SP;
 					arg1p_isreg <= 1;
 					writeback <= 1;
 				end
 				ipr_write <= 1;
 			end
-			`IPR_SCBB: scbb <= arg1[23:9];
+			`IPR_SCBB: scbb <= arg[0][23:9];
 			`IPR_PCBB: ;
-			`IPR_IPL: psl_ipl <= arg1[4:0];
+			`IPR_IPL: psl_ipl <= arg[0][4:0];
 			`IPR_TXDB: begin
 				cpu_addr <= 32'h20001f76;
-				cpu_wdata <= arg1;
+				cpu_wdata <= arg[0];
 				cpu_size <= `O_LONG;
 				cpu_pmem <= 1;
 				state <= `S_WRITEMEM;
@@ -989,17 +991,17 @@ if (debug) $fdisplay(32'h80000002, "MTPR: arg1 %x arg2 %x\r", arg1, arg2);
 		 * XXX check if current sp is the same
 		 */
 		`MFPR: begin
-if (debug) $fdisplay(32'h80000002, "S_MFPR: arg1 %x arg2 %x\r\n", arg1, arg2);
+if (debug) $fdisplay(32'h80000002, "S_MFPR: arg[0] %x arg[1] %x\r\n", arg[0], arg[1]);
 			state <= `ENDINST;
 			writeback <= i_wback;
-			if (|arg1[31:7])
+			if (|arg[0][31:7])
 				resopflt <= 1;
-			if (arg1[6])
+			if (arg[0][6])
 				argd1 <= mcode_ipr_val;
 			else
-			casez (arg1[5:0])
+			casez (arg[0][5:0])
 			`IPR_KSP, `IPR_SSP, `IPR_ESP, `IPR_USP: begin
-				if (arg1[1:0] == cur_mod)
+				if (arg[0][1:0] == cur_mod)
 					argd1 <= cur_reg_val;
 				else
 					argd1 <= ipr_val;
@@ -1017,7 +1019,7 @@ if (debug) $fdisplay(32'h80000002, "S_MFPR: arg1 %x arg2 %x\r\n", arg1, arg2);
 if (debug) $fdisplay(32'h80000002, "IPR_TXCS: pmem %d \r\n", cpu_pmem);
 				state <= `S_READMEM;
 				rmemstate <= `RMEM_xENDINST;
-				if (arg1[1])
+				if (arg[0][1])
 					cpu_addr <= 32'h20001f74;
 				else
 					cpu_addr <= 32'h20001f70;
