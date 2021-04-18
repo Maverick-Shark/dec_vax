@@ -201,6 +201,7 @@ module cpu(
 	reg [`STATBITS-1:0]	state;
 	reg [3:0]	wregstate;
 	reg [2:0]	rmemstate, wmemstate, fupstate;
+	reg [31:0]	rmem_dat;
 	// synthesis attribute INIT of state is "0"
 
 /* verilator lint_off UNDRIVEN */
@@ -223,7 +224,8 @@ initial psl_ipl = 5'h1f;
 	reg [7:0]	cur_byte, cur_inst;
 
 	reg		writeback, writeback2;
-	reg [31:0]	OA, IA, OP, OAt;
+	reg [31:0]	OA, IA, OP;
+	reg [31:0]	getbwl_OA;
 	reg		OA_isreg;
 	reg [3:0]	OA_regnum;
 
@@ -497,9 +499,9 @@ initial psl_ipl = 5'h1f;
 	wire [31:0] pc_plus_1;
 	assign pc_plus_1 = curpc + 1;
 
-`ifdef notdef
+`ifndef notdef
 wire debug;
-assign debug = 1;
+assign debug = 0;
 `else
 reg debug;
 initial debug = 0;
@@ -622,7 +624,7 @@ if (debug) $fdisplay(32'h80000002, "ASETUPx: isvalid %x curpc %x inslword %x\r",
 			arg_rdbmsk <=
 			    { {2{&cur_mux[6:5]}}, cur_mux[6], |cur_mux[6:5]};
 			cur_reg_num_save <= cur_mux[3:0];
-			OAt <= 0;
+			getbwl_OA <= 0;
 			bcnt <= 1;
 			if ((a_emul || isvalid) && cur_mux[7:4] != 4'b0100)
 				acounter <= acounter + 1;
@@ -653,7 +655,7 @@ if (debug) $fdisplay(32'h80000002, "ASETUP2: cur_reg_val %x a_argsz %x\r", cur_r
 if (debug)$fdisplay(32'h80000002, "ARG_GETBWL: pc %x arg_rdbmsk %x bcnt %x argsh %x\r",
 	curpc, arg_rdbmsk, bcnt, arg_sh);
 			if (arg_adec)
-				OAt <= { 28'hfffffff, neg_arg_size };
+				getbwl_OA <= { 28'hfffffff, neg_arg_size };
 			if (arg_adec)
 				arg_radd <= { 1'b1, neg_arg_size };
 			if (arg_ainc)
@@ -662,16 +664,16 @@ if (debug)$fdisplay(32'h80000002, "ARG_GETBWL: pc %x arg_rdbmsk %x bcnt %x argsh
 				arg_radd <= 5'd4;
 			if (arg_sh[0]) begin
 				if (arg_rdbmsk[0]) begin
-if (debug)$fdisplay(32'h80000002, "ARG_GETBWL2: isvalid %x OAt %x cur_byte %x\r", isvalid, OAt, cur_byte);
+if (debug)$fdisplay(32'h80000002, "ARG_GETBWL2: isvalid %x getbwl_OA %x cur_byte %x\r", isvalid, getbwl_OA, cur_byte);
 					if (isvalid) begin
-						OAt <= { cur_byte, OAt[31:8] };
+						getbwl_OA <= { cur_byte, getbwl_OA[31:8] };
 						curpc <= pc_plus_1;
 					end else begin
 						state <= `S_FILLUP;
 						fupstate <= `FUP_ARG_GETBWL;
 					end
 				end else begin
-					OAt <= { {8{OAt[31]}}, OAt[31:8] };
+					getbwl_OA <= { {8{getbwl_OA[31]}}, getbwl_OA[31:8] };
 				end
 				if ((arg_rdbmsk[0] & isvalid) ||
 				    arg_rdbmsk[0] == 0) begin
@@ -685,8 +687,8 @@ if (debug)$fdisplay(32'h80000002, "ARG_GETBWL2: isvalid %x OAt %x cur_byte %x\r"
 		end
 
 		`ARG_ADDTO: begin
-if (debug)$fdisplay(32'h80000002, "ARG_ADDTO: OAt %x cur_reg_val %x cur_reg_num_save %d\r", OAt, cur_reg_val, cur_reg_num_save);
-			OA <= OAt + cur_reg_val;
+if (debug)$fdisplay(32'h80000002, "ARG_ADDTO: getbwl_OA %x cur_reg_val %x cur_reg_num_save %d\r", getbwl_OA, cur_reg_val, cur_reg_num_save);
+			OA <= getbwl_OA + cur_reg_val;
 			wregstate <= `WREG_ARG_INDIR;
 			if (arg_adec|arg_ainc|arg_aincd) begin
 				greg_wbdata <= cur_reg_val +
@@ -699,6 +701,7 @@ if (debug)$fdisplay(32'h80000002, "ARG_ADDTO: OAt %x cur_reg_val %x cur_reg_num_
 
 		`ARG_INDIR: begin
 if (debug)$fdisplay(32'h80000002, "ARG_INDIR\r");
+			OA <= OA;
 			if (arg_indir) begin
 				cpu_addr <= OA;
 				cpu_size <= `O_LONG;
