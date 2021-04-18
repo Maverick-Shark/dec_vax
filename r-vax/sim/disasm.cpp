@@ -52,7 +52,7 @@ void
 itracedump(Vnvax *tb)
 {
 	int cur_inst = tb->sbi__DOT__cpu__DOT__cur_byte;
-	int arg1p = tb->sbi__DOT__cpu__DOT__arg1p;
+	int arg1p = tb->sbi__DOT__cpu__DOT__argp[0];
 	int arg1 = tb->sbi__DOT__cpu__DOT__arg1;
 	int arg2 = tb->sbi__DOT__cpu__DOT__arg2;
 	int psl;
@@ -86,7 +86,7 @@ preg_or_pos(Vnvax *tb)
 	if (tb->sbi__DOT__cpu__DOT__arg1p_isreg)
 		F("r%d", tb->sbi__DOT__cpu__DOT__arg1p_regnum);
 	else
-		F("%x", tb->sbi__DOT__cpu__DOT__arg1p);
+		F("%x", tb->sbi__DOT__cpu__DOT__argp[0]);
 }
 
 void

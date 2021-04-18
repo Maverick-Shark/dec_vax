@@ -41,6 +41,7 @@
 `define	WREG_xENDINST	10
 
 /* READMEM return states */
+`define	RMEM_ARG_INDIR	0
 `define	RMEM_ARG_READ	4
 `define	RMEM_xARGEND	5
 `define	RMEM_xENDINST	6
@@ -173,7 +174,8 @@ module cpu(
 	 */
 /* verilator lint_off UNDRIVEN */
 /* verilator lint_off UNUSED */
-	reg [31:0]	arg1, arg2, arg3, arg4, argd1, argd2, arg1p, arg2p;
+	reg [31:0]	arg1, arg2, arg3, arg4, argd1, argd2;
+	reg [31:0]	argp[1:0];
 	reg		arg1p_isreg, arg2p_isreg;
 	reg [3:0]	arg1p_regnum, arg2p_regnum;
 	reg [1:0]	arg1p_size, arg2p_size, a1sz;
@@ -225,7 +227,7 @@ initial psl_ipl = 5'h1f;
 
 	reg		writeback, writeback2;
 	reg [31:0]	OA, IA, OP;
-	reg [31:0]	getbwl_OA;
+	reg [31:0]	getbwl_OA, addto_OA, indir_OA;
 	reg		OA_isreg;
 	reg [3:0]	OA_regnum;
 
@@ -259,9 +261,9 @@ initial psl_ipl = 5'h1f;
 		4'd0: mc_rv = arg1;
 		4'd1: mc_rv = arg2;
 		4'd2: mc_rv = arg3;
-		4'd4: mc_rv = arg1p;
+//		4'd4: mc_rv = argp[0];
 		4'd5: mc_rv = { 25'b0, arg1p_size, arg1p_isreg, arg1p_regnum };
-		4'd6: mc_rv = arg2p;
+	//	4'd6: mc_rv = argp[1];
 		4'd7: mc_rv = { 25'b0, arg2p_size, arg2p_isreg, arg2p_regnum };
 		4'd8: mc_rv = curpc;
 		4'd9: mc_rv = psl;
@@ -437,6 +439,7 @@ initial psl_ipl = 5'h1f;
 	wire [3:0]	arg_sh; /* bit mapping */
 	reg [4:0]	arg_radd;
 	reg [3:0]	arg_rdbmsk, bcnt;
+	reg		arg_indir_loop;
 	argdecode argdecode(
 		/* input */
 		.curarg(curarg),
@@ -555,8 +558,8 @@ initial debug = 0;
 				    { 23'b0, resopflt, haltpos };
 				5'h1c: con_dat_o_reg <= inslword;
 				5'h1b: con_dat_o_reg <= { itag, 1'b0, ivalid };
-				5'h19: con_dat_o_reg <= arg2p;
-				5'h18: con_dat_o_reg <= arg1p;
+				5'h19: con_dat_o_reg <= argp[1];
+				5'h18: con_dat_o_reg <= argp[0];
 				5'h14: con_dat_o_reg <= argd1;
 				5'h13: con_dat_o_reg <= arg4;
 				5'h12: con_dat_o_reg <= arg3;
@@ -688,7 +691,8 @@ if (debug)$fdisplay(32'h80000002, "ARG_GETBWL2: isvalid %x getbwl_OA %x cur_byte
 
 		`ARG_ADDTO: begin
 if (debug)$fdisplay(32'h80000002, "ARG_ADDTO: getbwl_OA %x cur_reg_val %x cur_reg_num_save %d\r", getbwl_OA, cur_reg_val, cur_reg_num_save);
-			OA <= getbwl_OA + cur_reg_val;
+			arg_indir_loop <= 0;
+			addto_OA <= getbwl_OA + cur_reg_val;
 			wregstate <= `WREG_ARG_INDIR;
 			if (arg_adec|arg_ainc|arg_aincd) begin
 				greg_wbdata <= cur_reg_val +
@@ -701,32 +705,35 @@ if (debug)$fdisplay(32'h80000002, "ARG_ADDTO: getbwl_OA %x cur_reg_val %x cur_re
 
 		`ARG_INDIR: begin
 if (debug)$fdisplay(32'h80000002, "ARG_INDIR\r");
-			OA <= OA;
-			if (arg_indir) begin
-				cpu_addr <= OA;
-				cpu_size <= `O_LONG;
-				notrash <= 0;
+			arg_indir_loop <= 1;
+			indir_OA <= addto_OA;
+			rmemstate <= `RMEM_ARG_INDIR;
+			cpu_addr <= addto_OA;
+			cpu_size <= `O_LONG;
+			notrash <= 0;
+			state <= `ARG_READ;
+			if (arg_indir && arg_indir_loop == 0)
 				state <= `S_READMEM;
-				rmemstate <= `RMEM_ARG_READ;
-			end else
-				state <= `ARG_READ;
+			else if (arg_indir)
+				indir_OA <= rmem_dat;
 		end
 
 		`ARG_READ: begin
 if (debug)$fdisplay(32'h80000002, "ARG_READ: OA %x IA %x cur_byte %x curarg %x\r", OA, IA, cur_byte, curarg);
 			state <= `ARGEND;
+			OA <= indir_OA + IA;
 			if (arg_lit) begin
 				OP <= { 24'b0, curarg};
 			end else if (arg_reg) begin
 				OP <= cur_reg_val;
 			end else if (arg_aR) begin
-				cpu_addr <= OA + IA;
+				cpu_addr <= indir_OA + IA;
 				cpu_size <= a_argsz;
 				notrash <= 1;
 				state <= `S_READMEM;
 				rmemstate <= `RMEM_xARGEND;
 			end else
-				OP <= OA + IA;
+				OP <= indir_OA + IA;
 		end
 
 		/*
@@ -750,17 +757,17 @@ if (debug) $fdisplay(32'h80000002, "ARGEND: a_rargno %d a_wargno %d arg_aR %d ar
 
 			if (arg_aW) begin
 				if (a_wargno == 0) begin
-					arg1p <= OA;
+					argp[0] <= OA;
 					arg1p_isreg  <= OA_isreg;
 					arg1p_regnum <= OA_regnum;
 					arg1p_size <= a_argsz;
-					arg2p <= OA + 4;
+					argp[1] <= OA + 4;
 					arg2p_isreg  <= OA_isreg;
 					arg2p_regnum <= OA_regnum+1;
 					arg2p_size <= a_argsz;
 				end
 				if (a_wargno == 1) begin
-					arg2p <= OA;
+					argp[1] <= OA;
 					arg2p_isreg  <= OA_isreg;
 					arg2p_regnum <= OA_regnum;
 					arg2p_size <= a_argsz;
@@ -860,8 +867,8 @@ if (debug) $fdisplay(32'h80000002, "ACBINST: pc %x arg1 %x arg2 %x arg3 %x\r", o
 		 * and set flags. Resulting value is always in arg[2].
 		 */
 		`ENDINST: begin
-if (debug) $fdisplay(32'h80000002, "ENDINST: pc %x argd1 %x arg1p %x isreg %d regno %d wb %d\r", curpc, argd1, arg1p, arg1p_isreg, arg1p_regnum, writeback);
-if (debug) $fdisplay(32'h80000002, "ENDINST: pc %x argd2 %x arg2p %x isreg %d regno %d wb %d\r", curpc, argd2, arg2p, arg2p_isreg, arg2p_regnum, writeback2);
+if (debug) $fdisplay(32'h80000002, "ENDINST: pc %x argd1 %x arg1p %x isreg %d regno %d wb %d\r", curpc, argd1, argp[0], arg1p_isreg, arg1p_regnum, writeback);
+if (debug) $fdisplay(32'h80000002, "ENDINST: pc %x argd2 %x arg2p %x isreg %d regno %d wb %d\r", curpc, argd2, argp[1], arg2p_isreg, arg2p_regnum, writeback2);
 if (debug) $fdisplay(32'h80000002, "ENDINST2: greg_wback %x\r", greg_wback);
 			state <= `S_FETCH;
 
@@ -881,8 +888,8 @@ if (debug) $fdisplay(32'h80000002, "WB REG: reg %x val %x size %d\r\n", arg1p_re
 						wregstate <= `WREG_FETCH;
 					state <= `S_WREG;
 				end else begin
-if (debug) $fdisplay(32'h80000002, "WB MEM: addr %x val %x\r\n", arg1p, argd1);
-					cpu_addr <= arg1p;
+if (debug) $fdisplay(32'h80000002, "WB MEM: addr %x val %x\r\n", argp[0], argd1);
+					cpu_addr <= argp[0];
 					cpu_wdata <= argd1;
 					cpu_size <= arg1p_size;
 					state <= `S_WRITEMEM;
@@ -900,7 +907,7 @@ if (debug) $fdisplay(32'h80000002, "WB2 REG: reg %x val %x size %d\r\n", arg2p_r
 					wregstate <= `WREG_FETCH;
 					state <= `S_WREG;
 				end else begin
-					cpu_addr <= arg2p;
+					cpu_addr <= argp[1];
 					cpu_wdata <= argd2;
 					cpu_size <= arg2p_size;
 					state <= `S_WRITEMEM;
@@ -1092,8 +1099,10 @@ if (debug) $fdisplay(32'h80000002, "IPR_TXCS: pmem %d \r\n", cpu_pmem);
 				OA <= CPU_DAT_I;
 			OP <= CPU_DAT_I;
 			argd1 <= CPU_DAT_I;
+			rmem_dat <= CPU_DAT_I;
 			cpu_stb <= 0;
 			case (rmemstate)
+			`RMEM_ARG_INDIR: state <= `ARG_INDIR;
 			`RMEM_ARG_READ: state <= `ARG_READ;
 			`RMEM_xARGEND: state <= `ARGEND;
 			`RMEM_xENDINST: state <= `ENDINST;
