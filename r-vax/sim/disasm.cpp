@@ -83,8 +83,8 @@ itracedump(Vnvax *tb)
 void
 preg_or_pos(Vnvax *tb)
 {
-	if (tb->sbi__DOT__cpu__DOT__arg1p_isreg)
-		F("r%d", tb->sbi__DOT__cpu__DOT__arg1p_regnum);
+	if (tb->sbi__DOT__cpu__DOT__argp_isreg[0])
+		F("r%d", tb->sbi__DOT__cpu__DOT__argp_regnum[0]);
 	else
 		F("%x", tb->sbi__DOT__cpu__DOT__argp[0]);
 }
