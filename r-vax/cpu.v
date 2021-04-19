@@ -174,8 +174,7 @@ module cpu(
 	 */
 /* verilator lint_off UNDRIVEN */
 /* verilator lint_off UNUSED */
-	reg [31:0]	/* arg1, arg2, arg3, arg4, */argd1, argd2;
-	reg [31:0]	argp[1:0], arg[3:0];
+	reg [31:0]	argp[1:0], arg[3:0], argd[1:0];
 	reg		arg1p_isreg, arg2p_isreg;
 	reg [3:0]	arg1p_regnum, arg2p_regnum;
 	reg [1:0]	arg1p_size, arg2p_size, a1sz;
@@ -317,23 +316,25 @@ initial psl_ipl = 5'h1f;
 
 	/* decoding of greg writeback */
 	reg [31:0] greg_wback, greg_wback2, greg_wbdata;
+`ifdef notdef
 	always @* begin
 		case (arg1p_size)
-		`O_BYTE: greg_wback = { cur_reg_val[31:8], argd1[7:0] };
-		`O_WORD: greg_wback = { cur_reg_val[31:16], argd1[15:0] };
-		`O_LONG: greg_wback = argd1;
-		`O_QUAD: greg_wback = argd1;
+		`O_BYTE: greg_wback = { cur_reg_val[31:8], argd[0][7:0] };
+		`O_WORD: greg_wback = { cur_reg_val[31:16], argd[0][15:0] };
+		`O_LONG: greg_wback = argd[0];
+		`O_QUAD: greg_wback = argd[0];
 		endcase
 	end
 
 	always @* begin
 		case (arg2p_size)
-		`O_BYTE: greg_wback2 = { cur_reg_val[31:8], argd2[7:0] };
-		`O_WORD: greg_wback2 = { cur_reg_val[31:16], argd2[15:0] };
-		`O_LONG: greg_wback2 = argd2;
-		`O_QUAD: greg_wback2 = argd2;
+		`O_BYTE: greg_wback2 = { cur_reg_val[31:8], argd[1][7:0] };
+		`O_WORD: greg_wback2 = { cur_reg_val[31:16], argd[1][15:0] };
+		`O_LONG: greg_wback2 = argd[1];
+		`O_QUAD: greg_wback2 = argd[1];
 		endcase
 	end
+`endif
 
 	reg [3:0] greg_wregnum;
 	wire [3:0]  greg_addr;
@@ -561,7 +562,7 @@ initial debug = 0;
 				5'b1100?: con_dat_o_reg <= argp[CON_ADR_I[0]];
 		//		5'h19: con_dat_o_reg <= argp[1];
 		//		5'h18: con_dat_o_reg <= argp[0];
-				5'h14: con_dat_o_reg <= argd1;
+				5'h14: con_dat_o_reg <= argd[0];
 				5'b100??: con_dat_o_reg <= arg[CON_ADR_I[1:0]];
 		//		5'h13: con_dat_o_reg <= arg4;
 		//		5'h12: con_dat_o_reg <= arg3;
@@ -804,19 +805,19 @@ if (debug) $fdisplay(32'h80000002, "EXECUTE2: isspsw %d iscpsw %d pswbits %x bis
 			writeback <= i_wback;
 			writeback2 <= i_wback2;
 			if (i_useadd)
-				{ Ctmp, argd1 } <=
+				{ Ctmp, argd[0] } <=
 				    { 1'b0, arg[0] } + { 1'b0, arg[1] };
 			if (i_usesub)
-				{ Ctmp, argd1 } <=
+				{ Ctmp, argd[0] } <=
 				    { 1'b0, arg[0] } - { 1'b0, arg[1] };
 			if (i_useand)
-				argd1 <= arg[0] & arg[1];
+				argd[0] <= arg[0] & arg[1];
 			if (i_usexor)
-				argd1 <= arg[0] ^ arg[1];
+				argd[0] <= arg[0] ^ arg[1];
 			if (i_usebis)
-				argd1 <= arg[0] | arg[1];
+				argd[0] <= arg[0] | arg[1];
 			if (i_usebic)
-				argd1 <= ~arg[0] & arg[1];
+				argd[0] <= ~arg[0] & arg[1];
 			if (i_isspsw && (|(psw[3:0] & i_pswbits)) == 0)
 				writeback <= 0;
 			if (i_iscpsw && (|(psw[3:0] & i_pswbits)))
@@ -826,41 +827,41 @@ if (debug) $fdisplay(32'h80000002, "EXECUTE2: isspsw %d iscpsw %d pswbits %x bis
 			if (i_bbc && arg2any)
 				writeback2 <= 0;
 			if (i_setbit)
-				argd1 <= arg[1] | arg1mask;
+				argd[0] <= arg[1] | arg1mask;
 			if (i_clrbit)
-				argd1 <= arg[1] & ~arg1mask;
+				argd[0] <= arg[1] & ~arg1mask;
 			if (i_userot)
-				argd1 <= (arg[1] << arg[0][4:0]) |
+				argd[0] <= (arg[1] << arg[0][4:0]) |
 					    (arg[1] >> a1neg);
 			if (i_usezex) begin
 				if (a1sz == `O_BYTE)
-					argd1 <= { 24'b0, arg[0][7:0] };
+					argd[0] <= { 24'b0, arg[0][7:0] };
 				else if (a1sz == `O_WORD)
-					argd1 <= { 16'b0, arg[0][15:0] };
+					argd[0] <= { 16'b0, arg[0][15:0] };
 				else
-					argd1 <= arg[0];
+					argd[0] <= arg[0];
 			end
 			if (i_bicpsw)
 				psw <= psw & ~arg[0][7:0];
 			if (i_bispsw)
 				psw <= psw | arg[0][7:0];
 			if (i_movpsl)
-				argd1 <= psl;
+				argd[0] <= psl;
 			if (i_move2)
-				argd2 <= arg[2];
+				argd[1] <= arg[2];
 			if (i_insv)
-				argd1 <= (arg[3] & bm_neg) |
+				argd[0] <= (arg[3] & bm_neg) |
 				    ((arg[0] << arg[1][4:0]) & bm_pos);
 if (i_insv) $fdisplay(32'h80000002, "INSV: pc %x arg[0] %x arg[1] %x arg[2] %x\r", oldpc, arg[0], arg[1], arg[2]);
 		end
 
 		`ACBINST: begin
 if (debug) $fdisplay(32'h80000002, "ACBINST: pc %x arg[0] %x arg[1] %x arg[2] %x\r", oldpc, arg[0], arg[1], arg[2]);
-			argd1 <= arg[1] + 32'b1;
+			argd[0] <= arg[1] + 32'b1;
 			writeback <= 1;
 			if (arg[1] + 32'b1 <= arg[0])
 				writeback2 <= 1;
-			argd2 <= arg[2];
+			argd[1] <= arg[2];
 			state <= `ENDINST;
 		end
 
@@ -869,8 +870,8 @@ if (debug) $fdisplay(32'h80000002, "ACBINST: pc %x arg[0] %x arg[1] %x arg[2] %x
 		 * and set flags. Resulting value is always in arg[2].
 		 */
 		`ENDINST: begin
-if (debug) $fdisplay(32'h80000002, "ENDINST: pc %x argd1 %x arg1p %x isreg %d regno %d wb %d\r", curpc, argd1, argp[0], arg1p_isreg, arg1p_regnum, writeback);
-if (debug) $fdisplay(32'h80000002, "ENDINST: pc %x argd2 %x arg2p %x isreg %d regno %d wb %d\r", curpc, argd2, argp[1], arg2p_isreg, arg2p_regnum, writeback2);
+if (debug) $fdisplay(32'h80000002, "ENDINST: pc %x argd[0] %x arg1p %x isreg %d regno %d wb %d\r", curpc, argd[0], argp[0], arg1p_isreg, arg1p_regnum, writeback);
+if (debug) $fdisplay(32'h80000002, "ENDINST: pc %x argd[1] %x arg2p %x isreg %d regno %d wb %d\r", curpc, argd[1], argp[1], arg2p_isreg, arg2p_regnum, writeback2);
 if (debug) $fdisplay(32'h80000002, "ENDINST2: greg_wback %x\r", greg_wback);
 			state <= `S_FETCH;
 
@@ -881,7 +882,13 @@ if (debug) $fdisplay(32'h80000002, "ENDINST2: greg_wback %x\r", greg_wback);
 			end else if (writeback) begin
 				if (arg1p_isreg) begin
 if (debug) $fdisplay(32'h80000002, "WB REG: reg %x val %x size %d\r\n", arg1p_regnum, greg_wback, arg1p_size);
-					greg_wbdata <= greg_wback;
+					case (arg1p_size)
+					`O_BYTE: greg_wbdata <= 
+					    { cur_reg_val[31:8], argd[0][7:0] };
+					`O_WORD: greg_wbdata <= 
+					    { cur_reg_val[31:16],argd[0][15:0]};
+					default: greg_wbdata <= argd[0];
+					endcase
 					greg_wregnum <= arg1p_regnum;
 					cur_reg_num_save <= arg1p_regnum;
 					if (writeback2)
@@ -890,9 +897,9 @@ if (debug) $fdisplay(32'h80000002, "WB REG: reg %x val %x size %d\r\n", arg1p_re
 						wregstate <= `WREG_FETCH;
 					state <= `S_WREG;
 				end else begin
-if (debug) $fdisplay(32'h80000002, "WB MEM: addr %x val %x\r\n", argp[0], argd1);
+if (debug) $fdisplay(32'h80000002, "WB MEM: addr %x val %x\r\n", argp[0], argd[0]);
 					cpu_addr <= argp[0];
-					cpu_wdata <= argd1;
+					cpu_wdata <= argd[0];
 					cpu_size <= arg1p_size;
 					state <= `S_WRITEMEM;
 					wmemstate <= `WMEM_xENDINST;
@@ -903,14 +910,20 @@ if (debug) $fdisplay(32'h80000002, "WB MEM: addr %x val %x\r\n", argp[0], argd1)
 			end else if (writeback2) begin
 				if (arg2p_isreg) begin
 if (debug) $fdisplay(32'h80000002, "WB2 REG: reg %x val %x size %d\r\n", arg2p_regnum, greg_wback2, arg2p_size);
-					greg_wbdata <= greg_wback2;
+					case (arg2p_size)
+					`O_BYTE: greg_wbdata <= 
+					    { cur_reg_val[31:8], argd[1][7:0] };
+					`O_WORD: greg_wbdata <= 
+					    { cur_reg_val[31:16],argd[1][15:0]};
+					default: greg_wbdata <= argd[1];
+					endcase
 					greg_wregnum <= arg2p_regnum;
 					cur_reg_num_save <= arg2p_regnum;
 					wregstate <= `WREG_FETCH;
 					state <= `S_WREG;
 				end else begin
 					cpu_addr <= argp[1];
-					cpu_wdata <= argd2;
+					cpu_wdata <= argd[1];
 					cpu_size <= arg2p_size;
 					state <= `S_WRITEMEM;
 					wmemstate <= `WMEM_xENDINST;
@@ -918,8 +931,8 @@ if (debug) $fdisplay(32'h80000002, "WB2 REG: reg %x val %x size %d\r\n", arg2p_r
 				writeback2 <= 0;
 			end
 			if (i_setnz) begin
-				psw[`PSL_N] <= argd1[31];
-				psw[`PSL_Z] <= ~|argd1;
+				psw[`PSL_N] <= argd[0][31];
+				psw[`PSL_Z] <= ~|argd[0];
 			end
 			if (i_clv)
 				psw[`PSL_V] <= 0;
@@ -955,7 +968,7 @@ if (debug) $fdisplay(32'h80000002, "MTPR: arg[0] %x arg[1] %x\r", arg[0], arg[1]
 			`IPR_KSP, `IPR_SSP, `IPR_ESP, `IPR_USP: begin
 				if (psl_is == 0 && arg[1][1:0] == cur_mod) begin
 					arg1p_size <= `O_LONG;
-					argd1 <= arg[0];
+					argd[0] <= arg[0];
 					arg1p_regnum <= `REG_SP;
 					arg1p_isreg <= 1;
 					writeback <= 1;
@@ -965,7 +978,7 @@ if (debug) $fdisplay(32'h80000002, "MTPR: arg[0] %x arg[1] %x\r", arg[0], arg[1]
 			`IPR_ISP: begin
 				if (psl_is == 1) begin
 					arg1p_size <= `O_LONG;
-					argd1 <= arg[0];
+					argd[0] <= arg[0];
 					arg1p_regnum <= `REG_SP;
 					arg1p_isreg <= 1;
 					writeback <= 1;
@@ -997,24 +1010,24 @@ if (debug) $fdisplay(32'h80000002, "S_MFPR: arg[0] %x arg[1] %x\r\n", arg[0], ar
 			if (|arg[0][31:7])
 				resopflt <= 1;
 			if (arg[0][6])
-				argd1 <= mcode_ipr_val;
+				argd[0] <= mcode_ipr_val;
 			else
 			casez (arg[0][5:0])
 			`IPR_KSP, `IPR_SSP, `IPR_ESP, `IPR_USP: begin
 				if (arg[0][1:0] == cur_mod)
-					argd1 <= cur_reg_val;
+					argd[0] <= cur_reg_val;
 				else
-					argd1 <= ipr_val;
+					argd[0] <= ipr_val;
 			end
 			`IPR_ISP: begin
 				if (psl_is)
-					argd1 <= cur_reg_val;
+					argd[0] <= cur_reg_val;
 				else
-					argd1 <= ipr_val;
+					argd[0] <= ipr_val;
 			end
-			`IPR_SCBB: argd1 <= { 8'b0, scbb, 9'b0 };
+			`IPR_SCBB: argd[0] <= { 8'b0, scbb, 9'b0 };
 			`IPR_PCBB: ;
-			`IPR_IPL: argd1 <= { 27'b0, psl_ipl };
+			`IPR_IPL: argd[0] <= { 27'b0, psl_ipl };
 			`IPR_RXCS, `IPR_TXCS: begin
 if (debug) $fdisplay(32'h80000002, "IPR_TXCS: pmem %d \r\n", cpu_pmem);
 				state <= `S_READMEM;
@@ -1026,13 +1039,13 @@ if (debug) $fdisplay(32'h80000002, "IPR_TXCS: pmem %d \r\n", cpu_pmem);
 				cpu_size <= `O_LONG;
 				cpu_pmem <= 1;
 			end
-			`IPR_SID: argd1 <= 32'h0A000006;
+			`IPR_SID: argd[0] <= 32'h0A000006;
 			default: resopflt <= 1;
 			endcase
 		end
 
 		/*
-		 * Set new stack based on ivec (in argd1).
+		 * Set new stack based on ivec (in argd[0]).
 		 */
 
 		`S_FILLUP: begin
@@ -1100,7 +1113,7 @@ if (debug) $fdisplay(32'h80000002, "IPR_TXCS: pmem %d \r\n", cpu_pmem);
 			if (notrash == 0)
 				OA <= CPU_DAT_I;
 			OP <= CPU_DAT_I;
-			argd1 <= CPU_DAT_I;
+			argd[0] <= CPU_DAT_I;
 			rmem_dat <= CPU_DAT_I;
 			cpu_stb <= 0;
 			case (rmemstate)
