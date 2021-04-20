@@ -46,8 +46,8 @@ BRW	aw#w^d(pc),rl#0,wl#pc	useadd wback			# 31
 #
 MOVZWL	rw,wl		usezex setnz clv wback			# 3c
 #
-CLRQ	rl#0,rl#0,rl#0,wq useadd setnz clv move2 wback wback2	# 7c
-MOVQ	rq,2rl#0,1rl#0,wq useadd setnz clv quad move2 wback wback2	# 7d
+CLRQ	rq#0,wq		useadd setnz clv quad wback wback2	# 7c
+#MOVQ	rq,rl#0,wq	useadd setnz clv quad wback wback2	# 7d
 #
 MOVB	rb,rb#0,wb	useadd setnz clv wback			# 90
 CMPB	rb,rb		usesub setnz clv setc			# 91
