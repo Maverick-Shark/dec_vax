@@ -1,6 +1,43 @@
 /*	$Id$ */
 
-#include "ofdef.h"
+/*
+ * The emul is called with the stack set up as follows:
+ *
+ *        (%sp): Opcode
+ *       4(%sp): Instruction PC
+ *       8(%sp): Operand 1
+ *      12(%sp): Operand 2
+ *      16(%sp): Operand 3
+ *      20(%sp): Operand 4
+ *      24(%sp): Operand 5
+ *      28(%sp): Operand 6
+ *      32(%sp): Dest op 1
+ *      36(%sp): Dest op 2
+ *      40(%sp): Return PC
+ *      44(%sp): Return PSL
+ *      48(%sp): TOS before instruction
+ */
+
+emul:
+	cmpb	(sp),$0xf0	# insv
+	beql	i_insv
+	halt
+
+
+#define	SRC	8(%sp)
+#define	POS	12(%sp)
+#define	SIZE	16(%sp)
+#define	BASEP	32(%sp)
+
+i_insv:
+	tstl	BASEP	# register?
+	blss	1f	# yep, branch
+
+	# bit_addr = { arg3, 3'b0 } + { {3{arg1[31]}}, arg1 };
+	movl	POS,
+
+
+#if 0
 
 	.long	0
 	brw	LB4
@@ -88,3 +125,4 @@ wbreg:
 	movl	4(%sp),%r15
 2:
 	rsb
+#endif

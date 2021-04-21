@@ -67,6 +67,8 @@ TSTW	rw,rw#0		useadd setnz clv clc			# b5
 #
 BISPSW	rw		bispsw					# b8
 BICPSW	rw		bicpsw					# b9
+POPR	rw		popr					# ba
+PUSHR	rw		pushr					# bb
 # 
 ADDL2	rl,ml		useadd setnz setaddv setc wback 	# c0
 ADDL3	rl,rl,wl	useadd setnz setaddv setc wback 	# c1
@@ -103,6 +105,7 @@ BBCCI	rl,ml,ab#b^d(pc),wl#pc bbc clrbit move2 wback wback2	# e7
 BLBS	rl#0,rl,ab#b^d(pc),wl#pc,wl#pc bbs move2 wback2		# e8
 BLBC	rl#0,rl,ab#b^d(pc),wl#pc,wl#pc bbc move2 wback2		# e9
 #
-INSV	rl,rl,rb,ml	insv wback				# f0
+#INSV	rl,rl,rb,ml	insv wback				# f0
+#INSV	rl,rl,rb,wb	iemul					# f0
 #
 AOBLEQ	rl,ml,ab#b^d(pc),wl#pc setnz useacb move2 wback		# f3

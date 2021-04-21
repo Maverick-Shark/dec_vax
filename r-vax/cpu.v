@@ -33,9 +33,11 @@
 `define EXECUTE		19
 `define ENDINST		20
 `define ACBINST		21
+`define POPPUSHR	22
 
 /* WREG return states */
 `define	WREG_HALT	0
+`define	WREG_WRITEMEM	1
 `define	WREG_FETCH	5
 `define	WREG_ARG_INDIR	9
 `define	WREG_xENDINST	10
@@ -47,6 +49,7 @@
 `define	RMEM_xENDINST	6
 
 /* WRITEMEM return states */
+`define WMEM_MCODE	0
 `define	WMEM_xENDINST	3
 
 /* FILLUP return states */
@@ -154,7 +157,7 @@ module cpu(
 	 * IPR regs.  First 15 in LUT RAM, rest in flipflops.
 	 */
 	(* ram_style = "DISTRIBUTED" *)
-	reg [31:0]	ipr_reg[15:0], mcode_ipr_reg[15:0];
+	reg [31:0]	ipr_reg[15:0];
 
 	wire [3:0]	ipr_regraddr, ipr_regwaddr;
 	wire [31:0]	ipr_val, ipr_wdata;
@@ -255,31 +258,18 @@ initial psl_ipl = 5'h1f;
 
 	reg [3:0]	mcodectr;
 	reg [31:0]	mc_rv;
-	always @*
-		case (mcodectr)
-//		4'd0: mc_rv = arg1;
-//		4'd1: mc_rv = arg2;
-//		4'd2: mc_rv = arg3;
-//		4'd4: mc_rv = argp[0];
-//		4'd5: mc_rv = { 25'b0, argp_size[0], arg1p_isreg, arg1p_regnum };
-	//	4'd6: mc_rv = argp[1];
-//		4'd7: mc_rv = { 25'b0, argp_size[1], arg2p_isreg, argp_regnum[1] };
-		4'd8: mc_rv = curpc;
-		4'd9: mc_rv = psl;
+	always @(mcodectr)
+		casez (mcodectr)
+		4'd13: mc_rv = psl;
+		4'd12: mc_rv = curpc;
+		4'b101?: mc_rv = argp_isreg[mcodectr[0]] ?
+		    ~{ 28'b0, argp_regnum[mcodectr[0]] } : argp[mcodectr[0]];
+		4'b01??: mc_rv = arg[mcodectr[1:0]];
+		4'b0011: mc_rv = oldpc;
+		4'b0010: mc_rv = { 24'b0, cur_inst };
 		default: mc_rv = 0;
 		endcase
 
-	wire		mc_ipr_write, is_mcode;
-	wire [3:0]	mc_ipr_addr, mc_ipr_regraddr;
-	wire [31:0]	mcode_ipr_val;
-	assign is_mcode = (state == `MCODE);
-	assign mc_ipr_addr = is_mcode ? mcodectr : arg[1][3:0];
-	assign mc_ipr_regraddr = arg[0][3:0];
-	assign mc_ipr_write = is_mcode | ((state == `MTPR) & arg[1][6]);
-	always @(posedge clk)
-		if (mc_ipr_write)
-			mcode_ipr_reg[mc_ipr_addr] <= is_mcode ? mc_rv : arg[0];
-	assign mcode_ipr_val = mcode_ipr_reg[mc_ipr_regraddr];
 	/*
 	 * Argument stuff.
 	 * evaluation.
@@ -338,6 +328,7 @@ initial psl_ipl = 5'h1f;
 	wire		i_bispsw, i_bicpsw, i_movpsl, i_usesub, i_useand;
 	wire		i_usebis, i_usebic, i_bbs, i_bbc, i_userot, i_usezex;
 	wire		i_setbit, i_clrbit, i_insv, i_quad, i_useacb;
+	wire		i_popr, i_pushr;
 	wire		arg_aR, arg_aW, arg_aA;
 	wire [2:0]	a_argcode;
 	wire [1:0]	a_argsz;
@@ -397,6 +388,8 @@ initial psl_ipl = 5'h1f;
 		.i_quad(i_quad),
 
 		.i_movpsl(i_movpsl),
+		.i_popr(i_popr),
+		.i_pushr(i_pushr),
 
 		.i_move2(i_move2),
 		.i_wback2(i_wback2),
@@ -760,10 +753,14 @@ if (debug) $fdisplay(32'h80000002, "ARGEND: a_rargno %d a_wargno %d arg_aR %d ar
 				state <= `MTPR;
 			else if (i_usemfpr)
 				state <= `MFPR;
-			else if (i_emul)
+			else if (i_emul) begin
 				state <= `MCODE;
-			else if (i_useacb)
+				mcodectr <= 13;
+				cur_reg_num_save <= `REG_SP;
+			end else if (i_useacb)
 				state <= `ACBINST;
+			else if (i_popr|i_pushr)
+				state <= `POPPUSHR;
 			else
 				state <= `EXECUTE;
 			OA_isreg <= 0;
@@ -919,16 +916,48 @@ if (debug) $fdisplay(32'h80000002, "WB0: argd0 %x size %d curreg %x curval %x\r"
 		end
 
 		/*
-		 * loop this state 16 times to save internal regs
+		 * Push an emulate frame onto stack.
+		 * cur_reg_num_save is 14 (stack)
+		 * cur_reg_val contains stack pointer value.
 		 */
 		`MCODE: begin
-			mcodectr <= mcodectr + 1;
-if (debug) $fdisplay(32'h80000002, "MCODE: mcodectr %d arg %x\r", mcodectr, mc_rv);
-			if (mcodectr == 4'd15) begin
-				curpc <= { 24'hf00000, i_emuoff, 2'b00 };
-				state <= `S_HALT;
+$fdisplay(32'h80000002, "MCODE: ctr %d mc_rv %x\r", mcodectr, mc_rv);
+			mcodectr <= mcodectr - 1;
+			greg_wregnum <= `REG_SP;
+			greg_wbdata <= cur_reg_val - 4;
+			cpu_addr <= cur_reg_val - 4;
+			wregstate <= `WREG_WRITEMEM;
+			wmemstate <= `WMEM_MCODE;
+			state <= `S_WREG;
+			cpu_wdata <= mc_rv;
+			if (mcodectr == 1) begin
+				curpc <= 32'hf0000000;
+				state <= `S_FETCH;
 			end
 		end
+
+`ifdef notdef
+		/*
+		 * Popr/pushr
+		 * Entry:
+		 *	cur_reg_num_save == REG_SP;
+		 * 	greg_wregnum == 15
+		 */
+		`POPPUSHR: begin
+			if (&greg_wregnum) begin
+				cpu_addr <= cur_reg_val - 4;
+			end else begin
+				greg_wregnum <= `REG_SP;
+				popushcnt <= popushcnt - 1;
+				greg_wbdata <= cur_reg_val - 4;
+				cpu_addr <= cur_reg_val - 4;
+				wregstate <= `WREG_WRITEMEM;
+				wmemstate <= `WMEM_POPPUSHR;
+				state <= `S_WREG;
+				cpu_wdata <= 
+			end
+		end
+`endif
 
 		`MTPR: begin
 if (debug) $fdisplay(32'h80000002, "MTPR: arg[0] %x arg[1] %x\r", arg[0], arg[1]);
@@ -980,11 +1009,8 @@ if (debug) $fdisplay(32'h80000002, "MTPR: arg[0] %x arg[1] %x\r", arg[0], arg[1]
 if (debug) $fdisplay(32'h80000002, "S_MFPR: arg[0] %x arg[1] %x\r\n", arg[0], arg[1]);
 			state <= `ENDINST;
 			writeback <= i_wback;
-			if (|arg[0][31:7])
+			if (|arg[0][31:6])
 				resopflt <= 1;
-			if (arg[0][6])
-				argd[0] <= mcode_ipr_val;
-			else
 			casez (arg[0][5:0])
 			`IPR_KSP, `IPR_SSP, `IPR_ESP, `IPR_USP: begin
 				if (arg[0][1:0] == cur_mod)
@@ -1051,6 +1077,7 @@ if (debug) $fdisplay(32'h80000002, "IPR_TXCS: pmem %d \r\n", cpu_pmem);
 			if (greg_wregnum == `REG_PC)
 				curpc <= greg_wbdata;
 			case (wregstate)
+			`WREG_WRITEMEM: state <= `S_WRITEMEM;
 			`WREG_FETCH: state <= `S_FETCH;
 			`WREG_ARG_INDIR: state <= `ARG_INDIR;
 			`WREG_xENDINST: state <= `ENDINST;
@@ -1068,6 +1095,7 @@ if (debug) $fdisplay(32'h80000002, "IPR_TXCS: pmem %d \r\n", cpu_pmem);
 			cpu_write <= 0;
 			cpu_stb <= 0;
 			case (wmemstate)
+			`WMEM_MCODE: state <= `MCODE;
 			`WMEM_xENDINST: state <= `ENDINST;
 			default: state <= `S_HALT;
 			endcase

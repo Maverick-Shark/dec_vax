@@ -42,6 +42,8 @@
 `define	INSV		42
 `define	QUAD		43
 `define	USEACB		44
+`define	POPR		45
+`define	PUSHR		46
 
 /* 40-45 are emulate offset */
 
@@ -94,6 +96,8 @@ module ucode(
 	output			i_bispsw,
 	output			i_bicpsw,
 	output			i_movpsl,
+	output			i_popr,
+	output			i_pushr,
 
 	/* Argument ROM */
 	input			a_enable,
@@ -158,6 +162,8 @@ parameter	A_ROM_ADDRS = 256;
 	assign i_setbit = ucinsn_data[`SETBIT];
 	assign i_clrbit = ucinsn_data[`CLRBIT];
 	assign i_quad = ucinsn_data[`QUAD];
+	assign i_popr = ucinsn_data[`POPR];
+	assign i_pushr = ucinsn_data[`PUSHR];
 
 	assign i_move2 = ucinsn_data[`MOVE2];
 	assign i_wback2 = ucinsn_data[`WBACK2];
