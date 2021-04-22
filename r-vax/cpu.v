@@ -236,7 +236,6 @@ initial psl_ipl = 5'h1f;
 
 
 	reg [31:0] curpc, oldpc, oldpsl;
-	wire [31:0] cur_reg_val;
 	wire [3:0] cur_reg_num;
 /* verilator lint_off UNUSED */
 	reg [3:0] cur_reg_num_save;
@@ -258,7 +257,7 @@ initial psl_ipl = 5'h1f;
 
 	reg [3:0]	mcodectr;
 	reg [31:0]	mc_rv;
-	always @(mcodectr)
+	always @(mcodectr, psl, curpc, oldpc, cur_inst)
 		casez (mcodectr)
 		4'd13: mc_rv = psl;
 		4'd12: mc_rv = curpc;
@@ -308,16 +307,33 @@ initial psl_ipl = 5'h1f;
 	reg [31:0]	greg_wbdata;
 
 	reg [3:0] greg_wregnum;
+`ifdef notdef
 	wire [3:0]  greg_addr;
 	assign greg_addr =
 		state == `S_HALT ? CON_ADR_I[3:0] :
 	    	state == `ASETUP ? cur_reg_num : cur_reg_num_save;
+`endif
+	reg [3:0]	greg_addr;
+	always @(*)
+		case (state)
+		`S_HALT: greg_addr = CON_ADR_I[3:0];
+		`ASETUP: greg_addr = cur_reg_num;
+		default: greg_addr = cur_reg_num_save;
+		endcase
 
 	always @(posedge clk)
 		if (state == `S_WREG)
 			general_reg[greg_wregnum] <= greg_wbdata;
+`ifdef notdef
 	assign cur_reg_val =
 	    (greg_addr == `REG_PC ? curpc : general_reg[greg_addr]);
+`endif
+	reg [31:0] cur_reg_val;
+	always @(greg_addr, curpc)
+		case (greg_addr)
+		`REG_PC: cur_reg_val = curpc;
+		default: cur_reg_val = general_reg[greg_addr];
+		endcase
 
 	/* "microcode" */
 	wire [7:0]	i_argoff, a_argoff, a_arg, cur_mux;
