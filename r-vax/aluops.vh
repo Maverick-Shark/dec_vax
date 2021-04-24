@@ -1,0 +1,6 @@
+/*      $Id$       */
+
+`define	ALU_PLUS	4'd0
+`define	ALU_MINUS	4'd1
+`define	ALU_BIS		4'd2
+`define	ALU_BIC		4'd3
