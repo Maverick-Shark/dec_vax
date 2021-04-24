@@ -23,7 +23,7 @@ module alu(
 	always @(op, left, right)
 		case (op)
 		`ALU_PLUS: { Ctmp, res } = { 1'b0, left } + { 1'b0, right };
-		`ALU_MINUS: { Ctmp, res } = { 1'b0, left } + { 1'b0, right };
+		`ALU_MINUS: { Ctmp, res } = { 1'b0, left } - { 1'b0, right };
 		`ALU_BIS: res = left | right;
 		`ALU_BIC: res = ~left & right;
 		default: res = 0;

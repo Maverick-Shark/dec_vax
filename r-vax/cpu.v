@@ -788,6 +788,9 @@ if (debug) $fdisplay(32'h80000002, "ARGEND: a_rargno %d a_wargno %d arg_aR %d ar
 			else begin
 				state <= `EXECUTE;
 				if (i_useadd) alu_op <= `ALU_PLUS;
+				if (i_usesub) alu_op <= `ALU_MINUS;
+				if (i_usebis) alu_op <= `ALU_BIS;
+				if (i_usebic) alu_op <= `ALU_BIC;
 			end
 			OA_isreg <= 0;
 			IA <= 0;
@@ -799,24 +802,14 @@ if (debug) $fdisplay(32'h80000002, "EXECUTE: pc %x arg1 %x arg2 %x useadd %d wba
 if (debug) $fdisplay(32'h80000002, "EXECUTE2: isspsw %d iscpsw %d pswbits %x bis %d bic %d\r", i_isspsw, i_iscpsw, i_pswbits, i_usebis, i_usebic);
 			writeback <= i_wback;
 			writeback2 <= i_wback2;
-	//		if (i_useadd)
-	//			{ Ctmp, argd[0] } <=
-	//			    { 1'b0, arg[0] } + { 1'b0, arg[1] };
-			if (i_useadd) begin
+			if (i_useadd | i_usesub | i_usebis | i_usebic) begin
 				argd[0] <= alu_res;
 				Ctmp <= alu_cry;
 			end
-			if (i_usesub)
-				{ Ctmp, argd[0] } <=
-				    { 1'b0, arg[0] } - { 1'b0, arg[1] };
 			if (i_useand)
 				argd[0] <= arg[0] & arg[1];
 			if (i_usexor)
 				argd[0] <= arg[0] ^ arg[1];
-			if (i_usebis)
-				argd[0] <= arg[0] | arg[1];
-			if (i_usebic)
-				argd[0] <= ~arg[0] & arg[1];
 			if (i_isspsw && (|(psw[3:0] & i_pswbits)) == 0)
 				writeback <= 0;
 			if (i_iscpsw && (|(psw[3:0] & i_pswbits)))
