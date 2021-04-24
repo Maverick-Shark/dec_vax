@@ -6,7 +6,7 @@ LD=vaxld
 OBJCOPY=vaxobjcopy
 INFIL=mcode
 
-cpp ${INFIL}.s | ${AS} -o ${INFIL}.o
+/usr/local/bin/pcpp -x assembler-with-cpp ${INFIL}.s | ${AS} -o ${INFIL}.o
 if [ $? -ne 0 ]; then
 	exit 1;
 fi

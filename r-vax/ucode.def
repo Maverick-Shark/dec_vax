@@ -22,6 +22,8 @@
 #
 # wback		- write result to destination
 #
+REI	rl#(sp)+,rl#0,rl#(sp)+,wl#pc,wl#pc	useadd wback2	# 02
+#
 RSB	rl#(sp)+,rl#0,wl#pc	useadd wback 			# 05
 #
 BSBB	ab#b^d(pc),rl#0,rl#pc,wl#pc,wl#-(sp)	useadd move2 wback wback2
@@ -68,7 +70,7 @@ TSTW	rw,rw#0		useadd setnz clv clc			# b5
 BISPSW	rw		bispsw					# b8
 BICPSW	rw		bicpsw					# b9
 POPR	rw		popr					# ba
-PUSHR	rw		pushr					# bb
+PUSHR	rw		iemul					# bb
 # 
 ADDL2	rl,ml		useadd setnz setaddv setc wback 	# c0
 ADDL3	rl,rl,wl	useadd setnz setaddv setc wback 	# c1
