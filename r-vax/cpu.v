@@ -2,6 +2,7 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+`include "aluops.vh"
 `include "opcodes.vh"
 `include "ipr.vh"
 `include "scb.vh"
@@ -512,6 +513,13 @@ initial debug = 0;
 	assign ipr_greg_read = CON_STB_I & (CON_WE_I == 0) &con_ipr;
 	assign ipr_greg_write = CON_STB_I & CON_WE_I & con_ipr;
 
+	wire		alu_cry;
+	wire [31:0]	alu_res;
+	reg [3:0]	alu_op;
+
+
+	alu alu(clk, alu_op, arg[0], arg[1], alu_cry, alu_res);
+
 	always @(posedge clk) begin
 		if (rst)
 			state <= `S_HALT;
@@ -777,8 +785,10 @@ if (debug) $fdisplay(32'h80000002, "ARGEND: a_rargno %d a_wargno %d arg_aR %d ar
 				state <= `ACBINST;
 			else if (i_popr|i_pushr)
 				state <= `POPPUSHR;
-			else
+			else begin
 				state <= `EXECUTE;
+				if (i_useadd) alu_op <= `ALU_PLUS;
+			end
 			OA_isreg <= 0;
 			IA <= 0;
 		end
@@ -789,9 +799,13 @@ if (debug) $fdisplay(32'h80000002, "EXECUTE: pc %x arg1 %x arg2 %x useadd %d wba
 if (debug) $fdisplay(32'h80000002, "EXECUTE2: isspsw %d iscpsw %d pswbits %x bis %d bic %d\r", i_isspsw, i_iscpsw, i_pswbits, i_usebis, i_usebic);
 			writeback <= i_wback;
 			writeback2 <= i_wback2;
-			if (i_useadd)
-				{ Ctmp, argd[0] } <=
-				    { 1'b0, arg[0] } + { 1'b0, arg[1] };
+	//		if (i_useadd)
+	//			{ Ctmp, argd[0] } <=
+	//			    { 1'b0, arg[0] } + { 1'b0, arg[1] };
+			if (i_useadd) begin
+				argd[0] <= alu_res;
+				Ctmp <= alu_cry;
+			end
 			if (i_usesub)
 				{ Ctmp, argd[0] } <=
 				    { 1'b0, arg[0] } - { 1'b0, arg[1] };
