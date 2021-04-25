@@ -22,6 +22,128 @@
 #
 # wback		- write result to destination
 #
+!OPCODES
+#
+02	REI
+#
+05	RSB
+#
+10	BSBB
+11	BRB
+12	BNEQ
+13	BEQL
+14	BGTR
+15	BLEQ
+16	JSB
+17	JMP
+18	BGEQ
+19	BLSS
+1A	BGTRU
+1B	BLEQU
+1C	BVC
+1D	BVS
+1E	BGEQU
+1F	BLSSU
+#
+30	BSBW
+31	BRW
+#
+3C	MOVZWL
+#
+7C	CLRQ
+7D	MOVQ
+#
+82	SUBB2
+83	SUBB3
+#
+88	BISB2
+89	BISB3
+8A	BICB2
+8B	BICB3
+#
+90	MOVB
+91	CMPB
+#
+93	BITB
+94	CLRB
+95	TSTB
+#
+97	DECB
+#
+9A	MOVZBL
+9B	MOVZBW
+9C	ROTL
+#
+A2	SUBW2
+A3	SUBW3
+#
+A8	BISW2
+A9	BISW3
+AA	BICW2
+AB	BICW3
+#
+B0	MOVW
+B1	CMPW
+#
+B3	BITW
+#
+B5	TSTW
+#
+B7	DECW
+B8	BISPSW
+B9	BICPSW
+BA	POPR
+BB	PUSHR
+#
+C0	ADDL2
+C1	ADDL3
+C2	SUBL2
+C3	SUBL3
+#
+C8	BISL2
+C9	BISL3
+CA	BICL2
+CB	BICL3
+#
+CD	XORL3
+#
+D0	MOVL
+D1	CMPL
+#
+D3	BITL
+D4	CLRL
+D5	TSTL
+D6	INCL
+D7	DECL
+#
+DA	MTPR
+DB	MFPR
+DC	MOVPSL
+#
+DE	MOVAL
+#
+E0	BBS
+E1	BBC
+E2	BBSS
+E3	BBCS
+E4	BBSC
+E5	BBCC
+E6	BBSSI
+E7	BBCCI
+E8	BLBS
+E9	BLBC
+#
+F0	INSV
+#
+F3	AOBLEQ
+#
+!MICROCODE
+#
+# [label:] op left right
+#
+add:	plus	arg0	arg1
+#
+!INSTRUCTIONS
 REI	rl#(sp)+,rl#0,rl#(sp)+,wl#pc,wl#pc	useadd wback2	# 02
 #
 RSB	rl#(sp)+,rl#0,wl#pc	useadd wback 			# 05
@@ -72,7 +194,7 @@ BICPSW	rw		bicpsw					# b9
 POPR	rw		popr					# ba
 PUSHR	rw		iemul					# bb
 # 
-ADDL2	rl,ml		useadd setnz setaddv setc wback 	# c0
+ADDL2	rl,ml		lbl=add setnz setaddv setc wback 	# c0
 ADDL3	rl,rl,wl	useadd setnz setaddv setc wback 	# c1
 SUBL2	1rl,0ml		usesub setnz wback			# c2
 #

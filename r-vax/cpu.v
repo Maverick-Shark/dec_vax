@@ -197,8 +197,6 @@ module cpu(
 	assign arg2and = (arg[1] & arg1mask);
 	assign arg2any = |arg2and;
 
-
-
 	assign ipr_regraddr = halted ? CON_ADR_I[3:0] : arg[0][3:0];
 	assign ipr_regwaddr = halted ? CON_ADR_I[3:0] : arg[1][3:0];
 	assign ipr_wdata = halted ? CON_DAT_I : arg[0];
@@ -352,9 +350,12 @@ initial psl_ipl = 5'h1f;
 	wire [2:0]	a_rargno;
 	wire		a_wargno;
 	wire [3:0]	i_pswbits;
-	wire [5:0]	i_emuoff;
 	reg [7:0]	acounter, curarg;
 	reg		arg_quad_u;
+
+	reg		s_enable;
+	reg [8:0]	s_stepoff, i_stepoff;
+	reg [3:0]	s_op, s_left, s_right;
 
 	assign i_enable = (state == `S_FETCH) && isvalid;
 	assign a_enable = (state == `S_DECODE) || (state == `ARGEND);
@@ -373,7 +374,6 @@ initial psl_ipl = 5'h1f;
 		.i_argoff(i_argoff),
 		.i_hasargs(i_hasargs),
 		.i_emul(i_emul),
-		.i_emuoff(i_emuoff),
 
 		.i_useadd(i_useadd),
 		.i_usexor(i_usexor),
@@ -408,10 +408,19 @@ initial psl_ipl = 5'h1f;
 		.i_popr(i_popr),
 		.i_pushr(i_pushr),
 
+		.i_stepoff(i_stepoff),
+
 		.i_move2(i_move2),
 		.i_wback2(i_wback2),
 
 		.i_dohalt(i_dohalt),
+
+		.s_enable(s_enable),
+		.s_stepoff(s_stepoff),
+
+		.s_left(s_left),
+		.s_right(s_right),
+		.s_op(s_op),
 
 		.a_enable(a_enable),
 		.a_argoff(a_argoff),
@@ -513,10 +522,16 @@ initial debug = 0;
 	assign ipr_greg_read = CON_STB_I & (CON_WE_I == 0) &con_ipr;
 	assign ipr_greg_write = CON_STB_I & CON_WE_I & con_ipr;
 
+	/*
+	 * ALU code.
+	 */
+`ifdef notyet
+	
+
+`endif
 	wire		alu_cry;
 	wire [31:0]	alu_res;
 	reg [3:0]	alu_op;
-
 
 	alu alu(clk, alu_op, arg[0], arg[1], alu_cry, alu_res);
 

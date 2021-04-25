@@ -81,6 +81,19 @@ function line2hex(ln, lst,   i, n, rv) {
 	return rv;
 }
 
+function line2hex32(ln, lst,   i, n, rv) {
+	if (length(lst) != 32)
+		err("bad len32 " length(lst) " line " ln ": " lst);
+	for (i = 1; i < 32; i+= 4) {
+		n = substr(lst, i, 1) * 8 + \
+		    substr(lst, i+1, 1) * 4 + \
+		    substr(lst, i+2, 1) * 2 + \
+		    substr(lst, i+3, 1);
+		rv = rv sprintf("%X", n);
+	}
+	return rv;
+}
+
 function num2bit(num, sz,    shsz, i, rv) {
 	for (i = shsz = 1; i < sz; i++)
 		shsz *= 2;
@@ -98,17 +111,36 @@ function num2bit(num, sz,    shsz, i, rv) {
 	return rv;
 }
 
+function aluops(op) {
+	if (op in aluop)
+		return aluop[op];
+	err(op " aluop not found");
+}
+
+function leftops(op) {
+	if (op in leftop)
+		return leftop[op];
+	err(op " leftop not found");
+}
+
+function rightops(op) {
+	if (op in rightop)
+		return rightop[op];
+	err(op " rightop not found");
+}
+
+
+
+
 BEGIN {
 	# Get instruction name<->opcode mapping
-	HFN="ofdef.h"
-	system("rm -f " HFN);
-	FN="opcode.def";
-	while ((getline < FN) > 0) {
-		if (substr($1,1,1) == "#")
-			continue;
-		opmap[$2] = hex2dec($1)+0;
-	}
-	close(FN);
+#	FN="opcode.def";
+#	while ((getline < FN) > 0) {
+#		if (substr($1,1,1) == "#")
+#			continue;
+#		opmap[$2] = hex2dec($1)+0;
+#	}
+#	close(FN);
 
 	# get legal microcode bit names and numbers
 	FN="ucode.v";
@@ -119,11 +151,16 @@ BEGIN {
 	}
 	close(FN);
 
+	# get ALU opcode names and numbers
+	FN="aluops.vh";
+	while ((getline < FN) > 0) {
+		if ($1 != "`define")
+			continue;
+		aluop[tolower(substr($2,5))] = substr($3,4);
+	}
+	close(FN);
+
 	# hidden bits
-#	hiddenbits["zero"] = "100";
-#	hiddenbits["one"] = "101";
-#	hiddenbits["-(sp)"] = "110";
-#	hiddenbits["(sp)+"] = "111";
 	fakearg["0"] = "00000000";
 	fakearg["1"] = "00000001";
 	fakearg["pc"] = "01011111";
@@ -133,8 +170,14 @@ BEGIN {
 	fakearg["b^d(pc)"] = "10101111";
 	fakearg["w^d(pc)"] = "11001111";
 
+	# used for ALU MUX
+	leftop["arg0"] = 0;
+
+	rightop["arg1"] = 0;
+
 	curargoff=0;
 	emuloff = 1;
+	stepoff = 0;
 
 	# arglist contains the argument specifications.
 	# inslist contains the instructions
@@ -148,6 +191,29 @@ BEGIN {
 			continue;
 		if (NF == 0)
 			continue;
+		if ($1 == "!OPCODES") { state = 1; continue; }
+		if ($1 == "!MICROCODE") { state = 2; continue; }
+		if ($1 == "!INSTRUCTIONS") { state = 3; continue; }
+
+		if (state == 1) {
+			opmap[$2] = hex2dec($1)+0;
+			continue;
+		}
+
+		if (state == 2) {
+			shiftoff = 1;
+			if ($1 ~ /.*:/) {
+				steplbl[substr($1,1,length($1)-1)] = stepoff;
+				shiftoff++;
+			}
+			ucstep[stepoff] = "00000000000000000000" \
+			    num2bit(leftops($(shiftoff+1)), 4) \
+			    num2bit(rightops($(shiftoff+2)), 4) \
+			    num2bit(aluops($shiftoff), 4);
+			stepoff++;
+			continue;
+		}
+
 		if (!($1 in opmap))
 			err($1 " not found");
 		insnr = opmap[$1];	# insnr is instruction number
@@ -225,21 +291,23 @@ BEGIN {
 		for (i = 3; i <= NF; i++) {
 			if ($i == "#")
 				break;
-			nn = substr($i,1,1);
-			no = substr($i,2);
-			if ((nn == "0" || nn == "1") && no in hiddenbits) {
-				bitset3(insnr, nn*3+30, hiddenbits[no]);
+			if (substr($i,1,4) == "lbl=") {
+				lbl = substr($i,5);
+				if (lbl in steplbl) {
+#printf "lbl %s step %s insl1 %s\n", lbl, steplbl[lbl], inslist[insnr];
+					lbbits = num2bit(steplbl[lbl], 9);
+#printf "1: %s %s %s\n", substr(inslist[insnr], 1, 64-56), num2bit(steplbl[lbl], 9), substr(inslist[insnr], 1, 64-46);
+					inslist[insnr] = \
+					    substr(inslist[insnr], 1, 64-56) \
+					    num2bit(steplbl[lbl], 9) \
+					    substr(inslist[insnr], 64-46);
+#printf "lbl2 %s step %s insl1 %s\n", lbl, steplbl[lbl], inslist[insnr];
+				} else
+					err("bad label " lbl);
+
 			} else if ($i in legalbits) {
 				inslist[insnr] = \
 				    bitset(inslist[insnr], legalbits[$i]);
-				if ($i == "iemul") {
-					inslist[insnr] = \
-					    substr(inslist[insnr], 1, 64-46) \
-					    num2bit(emuloff, 6) \
-					    substr(inslist[insnr], 25);
-					print "#define LB" 4*emuloff++ \
-					    " I_" $1 >> "ofdef.h";
-				}
 			} else
 				err("bad bit " $i " line " lineno);
 		}
@@ -273,5 +341,18 @@ BEGIN {
 	}
 	close(FN);
 	print "arguments " numargs;
+
+	# print out microcode steps
+	FN="uc-step.hex";
+	system("rm -f " FN);
+	for (i = 0; i < 512; i++) {
+		if (i in ucstep) {
+			print line2hex32(i, ucstep[i]) >> FN;
+			numstep++;
+		} else
+			print "00000000" >> FN;
+	}
+	close(FN);
+	print "microcode steps " numstep;
 
 }

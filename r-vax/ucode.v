@@ -44,8 +44,7 @@
 `define	USEACB		44
 `define	POPR		45
 `define	PUSHR		46
-
-/* 40-45 are emulate offset */
+/* 47-55 is step offset */
 
 `define	DOHALT		63
 
@@ -59,8 +58,6 @@ module ucode(
 	output [7:0]		i_argoff,
 	output			i_hasargs,
 	output			i_emul,
-
-	output [5:0]		i_emuoff,
 
 	output			i_dohalt,
 
@@ -99,6 +96,16 @@ module ucode(
 	output			i_popr,
 	output			i_pushr,
 
+	output [8:0]		i_stepoff,
+
+	/* Microcode step ROM */
+	input			s_enable,
+	input [8:0]		s_stepoff,
+
+	output [3:0]		s_left,
+	output [3:0]		s_right,
+	output [3:0]		s_op,
+
 	/* Argument ROM */
 	input			a_enable,
 	input [7:0]		a_argoff,
@@ -117,6 +124,8 @@ parameter	I_ROM_WIDTH = 64;
 parameter	I_ROM_ADDRS = 256;
 parameter	A_ROM_WIDTH = 64;
 parameter	A_ROM_ADDRS = 256;
+parameter	S_ROM_WIDTH = 32;
+parameter	S_ROM_ADDRS = 512;
 
 	reg [I_ROM_WIDTH-1:0] ucinsn_rom [I_ROM_ADDRS-1:0];
 	reg [I_ROM_WIDTH-1:0] ucinsn_data;
@@ -126,6 +135,10 @@ parameter	A_ROM_ADDRS = 256;
 	reg [A_ROM_WIDTH-1:0] ucargs_data;
 	initial $readmemh("uc-args.hex", ucargs_rom, 0, A_ROM_ADDRS-1);
 
+	reg [S_ROM_WIDTH-1:0] ucstep_rom [S_ROM_ADDRS-1:0];
+	reg [S_ROM_WIDTH-1:0] ucstep_data;
+	initial $readmemh("uc-step.hex", ucstep_rom, 0, S_ROM_ADDRS-1);
+
 	always @(posedge clk)
 		if (i_enable)
 			ucinsn_data <= ucinsn_rom[i_opcode];
@@ -134,10 +147,18 @@ parameter	A_ROM_ADDRS = 256;
 		if (a_enable)
 			ucargs_data <= ucargs_rom[a_argoff];
 
+	always @(posedge clk)
+		if (s_enable)
+			ucstep_data <= ucstep_rom[s_stepoff];
+
+	assign s_op = ucstep_data[3:0];
+	assign s_right = ucstep_data[7:4];
+	assign s_left = ucstep_data[11:8];
+
+
 	assign i_argoff = ucinsn_data[7:0];
 	assign i_hasargs = ucinsn_data[`IHASARGS];
 	assign i_emul = ucinsn_data[`IEMUL];
-	assign i_emuoff = ucinsn_data[45:40];
 	assign i_dohalt = ucinsn_data[`DOHALT];
 	assign i_useadd = ucinsn_data[`USEADD];
 	assign i_usesub = ucinsn_data[`USESUB];
@@ -174,6 +195,8 @@ parameter	A_ROM_ADDRS = 256;
 	assign i_usemtpr = ucinsn_data[`USEMTPR];
 	assign i_usemfpr = ucinsn_data[`USEMFPR];
 
+	assign i_stepoff = ucinsn_data[55:47];
+
 	assign a_argcode = ucargs_data[2:0];
 	assign a_argsz = ucargs_data[4:3];
 	assign a_emul = ucargs_data[5];
@@ -182,19 +205,4 @@ parameter	A_ROM_ADDRS = 256;
 	assign a_rargno = ucargs_data[18:16];
 	assign a_wargno = ucargs_data[19];
 
-`ifdef notdef
-	always @(argno, ucode_data[32:30], ucode_data[35:33])
-		case (argno)
-		3'b000: hidden_arg = ucode_data[32:30];
-		3'b001: hidden_arg = ucode_data[35:33];
-		default: hidden_arg = 0;
-		endcase
-
-	assign usebr = ucode_data[`USEBR];
-
-	assign dohalt = ucode_data[`DOHALT];
-
-	assign setaddc = ucode_data[`SETADDC];
-	assign setaddv = ucode_data[`SETADDV];
-`endif
 endmodule
