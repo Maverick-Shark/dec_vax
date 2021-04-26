@@ -173,7 +173,7 @@ BEGIN {
 	# used for ALU MUX
 	leftop["arg0"] = 0;
 
-	rightop["arg1"] = 0;
+	rightop["arg1"] = 1;
 
 	curargoff=0;
 	emuloff = 1;

@@ -353,9 +353,9 @@ initial psl_ipl = 5'h1f;
 	reg [7:0]	acounter, curarg;
 	reg		arg_quad_u;
 
-	reg		s_enable;
-	reg [8:0]	s_stepoff, i_stepoff;
-	reg [3:0]	s_op, s_left, s_right;
+	wire		s_enable;
+	wire [8:0]	s_stepoff, i_stepoff;
+	wire [3:0]	s_op, s_left, s_right;
 
 	assign i_enable = (state == `S_FETCH) && isvalid;
 	assign a_enable = (state == `S_DECODE) || (state == `ARGEND);
@@ -525,15 +525,19 @@ initial debug = 0;
 	/*
 	 * ALU code.
 	 */
-`ifdef notyet
 	
-
-`endif
 	wire		alu_cry;
 	wire [31:0]	alu_res;
+	reg [31:0]	alu_right, alu_left;
 	reg [3:0]	alu_op;
 
-	alu alu(clk, alu_op, arg[0], arg[1], alu_cry, alu_res);
+	always @(s_left)
+		casez (s_left)
+		4'b00??: alu_left = arg[s_left[1:0]];
+		default: alu_left = 0;
+		endcase
+
+	alu alu(clk, alu_op, alu_left, arg[1], alu_cry, alu_res);
 
 	always @(posedge clk) begin
 		if (rst)
@@ -619,6 +623,7 @@ if (debug) $fdisplay(32'h80000002, "FETCH: pc %x curbyte %x inslword %x\r", curp
 		`S_DECODE: begin
 if (debug) $fdisplay(32'h80000002, "S_DECODE: i_hasargs %d i_emul %d\r", i_hasargs, i_emul);
 			acounter <= i_argoff;
+//			scounter <= s_stepoff;
 			if (i_dohalt) begin
 				state <= `S_HALT;
 				haltpos <= `HALT_INSN;
