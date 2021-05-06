@@ -35,6 +35,8 @@
 `define ENDINST		20
 `define ACBINST		21
 `define POPPUSHR	22
+`define PREEXEC		23
+`define EXEC		24
 
 /* WREG return states */
 `define	WREG_HALT	0
@@ -353,13 +355,18 @@ initial psl_ipl = 5'h1f;
 	reg [7:0]	acounter, curarg;
 	reg		arg_quad_u;
 
-	wire		s_enable;
-	wire [8:0]	s_stepoff, i_stepoff;
+	wire		s_enable, s_argd0, s_argd1, s_psl, s_eoi;
+	wire [7:0]	s_stepoff, i_stepoff;
 	wire [3:0]	s_op, s_left, s_right;
+	wire [31:0]	s_const;
+	reg [7:0]	scounter;
+	
 
 	assign i_enable = (state == `S_FETCH) && isvalid;
 	assign a_enable = (state == `S_DECODE) || (state == `ARGEND);
 	assign a_argoff = (state == `S_DECODE) ? i_argoff : acounter;
+	assign s_enable = (state == `S_DECODE) || (state == `EXEC);
+	assign s_stepoff = (state == `S_DECODE) ? i_stepoff : scounter;
 	assign arg_aR = a_argcode[2];
 	assign arg_aW = a_argcode[1];
 	assign arg_aA = a_argcode[0];
@@ -421,6 +428,11 @@ initial psl_ipl = 5'h1f;
 		.s_left(s_left),
 		.s_right(s_right),
 		.s_op(s_op),
+		.s_argd0(s_argd0),
+		.s_argd1(s_argd1),
+		.s_psl(s_psl),
+		.s_eoi(s_eoi),
+		.s_const(s_const),
 
 		.a_enable(a_enable),
 		.a_argoff(a_argoff),
@@ -531,13 +543,7 @@ initial debug = 0;
 	reg [31:0]	alu_right, alu_left;
 	reg [3:0]	alu_op;
 
-	always @(s_left)
-		casez (s_left)
-		4'b00??: alu_left = arg[s_left[1:0]];
-		default: alu_left = 0;
-		endcase
-
-	alu alu(clk, alu_op, alu_left, arg[1], alu_cry, alu_res);
+	alu alu(clk, s_op, alu_left, alu_right, alu_cry, alu_res);
 
 	always @(posedge clk) begin
 		if (rst)
@@ -623,7 +629,7 @@ if (debug) $fdisplay(32'h80000002, "FETCH: pc %x curbyte %x inslword %x\r", curp
 		`S_DECODE: begin
 if (debug) $fdisplay(32'h80000002, "S_DECODE: i_hasargs %d i_emul %d\r", i_hasargs, i_emul);
 			acounter <= i_argoff;
-//			scounter <= s_stepoff;
+			scounter <= i_stepoff;
 			if (i_dohalt) begin
 				state <= `S_HALT;
 				haltpos <= `HALT_INSN;
@@ -801,19 +807,53 @@ if (debug) $fdisplay(32'h80000002, "ARGEND: a_rargno %d a_wargno %d arg_aR %d ar
 				state <= `MCODE;
 				mcodectr <= 13;
 				cur_reg_num_save <= `REG_SP;
+			end else if (|scounter) begin
+				state <= `PREEXEC;
 			end else if (i_useacb)
 				state <= `ACBINST;
 			else if (i_popr|i_pushr)
 				state <= `POPPUSHR;
 			else begin
 				state <= `EXECUTE;
-				if (i_useadd) alu_op <= `ALU_PLUS;
-				if (i_usesub) alu_op <= `ALU_MINUS;
-				if (i_usebis) alu_op <= `ALU_BIS;
-				if (i_usebic) alu_op <= `ALU_BIC;
+//				if (i_useadd) alu_op <= `ALU_PLUS;
+//				if (i_usesub) alu_op <= `ALU_MINUS;
+//				if (i_usebis) alu_op <= `ALU_BIS;
+//				if (i_usebic) alu_op <= `ALU_BIC;
 			end
 			OA_isreg <= 0;
 			IA <= 0;
+		end
+
+		`PREEXEC: begin
+if (debug) $fdisplay(32'h80000002, "PREEXEC: sleft %d sright %d scounter %d\r", s_left, s_right, scounter);
+			casez (s_left)
+			4'b00??: alu_left <= arg[s_left[1:0]];
+			4'b1000: alu_left <= psl;
+			4'b1001: alu_left <= s_const;
+			default: alu_left <= 0;
+			endcase
+
+			casez (s_right)
+			4'b00??: alu_right <= arg[s_left[1:0]];
+			4'b1000: alu_right <= psl;
+			4'b1001: alu_right <= s_const;
+			default: alu_right <= 0;
+			endcase
+			state <= `EXEC;
+		end
+
+		`EXEC: begin
+if (debug) $fdisplay(32'h80000002, "EXEC: left %x right %x eoi %d\r", alu_left, alu_right, s_eoi);
+			if (s_argd0)
+				argd[0] <= alu_res;
+			if (s_argd1)
+				argd[1] <= alu_res;
+			if (s_eoi)
+				state <= `ENDINST;
+			else
+				state <= `PREEXEC;
+			writeback <= i_wback;
+			scounter <= scounter + 1;
 		end
 
 		`EXECUTE: begin
@@ -822,14 +862,26 @@ if (debug) $fdisplay(32'h80000002, "EXECUTE: pc %x arg1 %x arg2 %x useadd %d wba
 if (debug) $fdisplay(32'h80000002, "EXECUTE2: isspsw %d iscpsw %d pswbits %x bis %d bic %d\r", i_isspsw, i_iscpsw, i_pswbits, i_usebis, i_usebic);
 			writeback <= i_wback;
 			writeback2 <= i_wback2;
-			if (i_useadd | i_usesub | i_usebis | i_usebic) begin
-				argd[0] <= alu_res;
-				Ctmp <= alu_cry;
-			end
+//			if (i_useadd | i_usesub | i_usebis | i_usebic) begin
+//				argd[0] <= alu_res;
+//				Ctmp <= alu_cry;
+//			end
+                       if (i_useadd)
+                               { Ctmp, argd[0] } <=
+                                   { 1'b0, arg[0] } + { 1'b0, arg[1] };
+                       if (i_usesub)
+                               { Ctmp, argd[0] } <=
+                                   { 1'b0, arg[0] } - { 1'b0, arg[1] };
+
 			if (i_useand)
 				argd[0] <= arg[0] & arg[1];
 			if (i_usexor)
 				argd[0] <= arg[0] ^ arg[1];
+                       if (i_usebis)
+                               argd[0] <= arg[0] | arg[1];
+                       if (i_usebic)
+                               argd[0] <= ~arg[0] & arg[1];
+
 			if (i_isspsw && (|(psw[3:0] & i_pswbits)) == 0)
 				writeback <= 0;
 			if (i_iscpsw && (|(psw[3:0] & i_pswbits)))

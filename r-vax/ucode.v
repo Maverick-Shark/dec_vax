@@ -96,15 +96,22 @@ module ucode(
 	output			i_popr,
 	output			i_pushr,
 
-	output [8:0]		i_stepoff,
+	output [7:0]		i_stepoff,
 
 	/* Microcode step ROM */
 	input			s_enable,
-	input [8:0]		s_stepoff,
+	input [7:0]		s_stepoff,
 
 	output [3:0]		s_left,
 	output [3:0]		s_right,
 	output [3:0]		s_op,
+
+	output			s_argd0,
+	output			s_argd1,
+	output			s_psl,
+	output			s_eoi,
+
+	output [31:0]		s_const,
 
 	/* Argument ROM */
 	input			a_enable,
@@ -124,8 +131,8 @@ parameter	I_ROM_WIDTH = 64;
 parameter	I_ROM_ADDRS = 256;
 parameter	A_ROM_WIDTH = 64;
 parameter	A_ROM_ADDRS = 256;
-parameter	S_ROM_WIDTH = 32;
-parameter	S_ROM_ADDRS = 512;
+parameter	S_ROM_WIDTH = 64;
+parameter	S_ROM_ADDRS = 256;
 
 	reg [I_ROM_WIDTH-1:0] ucinsn_rom [I_ROM_ADDRS-1:0];
 	reg [I_ROM_WIDTH-1:0] ucinsn_data;
@@ -154,7 +161,11 @@ parameter	S_ROM_ADDRS = 512;
 	assign s_op = ucstep_data[3:0];
 	assign s_right = ucstep_data[7:4];
 	assign s_left = ucstep_data[11:8];
-
+	assign s_argd0 = ucstep_data[12];
+	assign s_argd1 = ucstep_data[13];
+	assign s_psl = ucstep_data[14];
+	assign s_eoi = ucstep_data[15];
+	assign s_const = ucstep_data[63:32];
 
 	assign i_argoff = ucinsn_data[7:0];
 	assign i_hasargs = ucinsn_data[`IHASARGS];
@@ -195,7 +206,7 @@ parameter	S_ROM_ADDRS = 512;
 	assign i_usemtpr = ucinsn_data[`USEMTPR];
 	assign i_usemfpr = ucinsn_data[`USEMFPR];
 
-	assign i_stepoff = ucinsn_data[55:47];
+	assign i_stepoff = ucinsn_data[54:47]; //ucinsn_data[55:47];
 
 	assign a_argcode = ucargs_data[2:0];
 	assign a_argsz = ucargs_data[4:3];

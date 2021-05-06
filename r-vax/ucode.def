@@ -141,7 +141,7 @@ F3	AOBLEQ
 #
 # [label:] op left right
 #
-add:	plus	arg0	arg1
+brw:	plus	arg1	0	argd0 eoi
 #
 !INSTRUCTIONS
 REI	rl#(sp)+,rl#0,rl#(sp)+,wl#pc,wl#pc	useadd wback2	# 02
@@ -166,7 +166,7 @@ BGEQU	ab#b^d(pc),rl#0,wl#pc	useadd wback ccc iscpsw		# 1e
 BLSSU	ab#b^d(pc),rl#0,wl#pc	useadd wback ccc isspsw		# 1f
 #
 BSBW	aw#w^d(pc),rl#0,rl#pc,wl#pc,wl#-(sp)	useadd move2 wback wback2 
-BRW	aw#w^d(pc),rl#0,wl#pc	useadd wback			# 31
+BRW	aw#w^d(pc),wl#pc	lbl=brw wback			# 31
 #
 MOVZWL	rw,wl		usezex setnz clv wback			# 3c
 #
@@ -194,7 +194,7 @@ BICPSW	rw		bicpsw					# b9
 POPR	rw		popr					# ba
 PUSHR	rw		iemul					# bb
 # 
-ADDL2	rl,ml		lbl=add setnz setaddv setc wback 	# c0
+#ADDL2	rl,ml		lbl=add setnz setaddv setc wback 	# c0
 ADDL3	rl,rl,wl	useadd setnz setaddv setc wback 	# c1
 SUBL2	1rl,0ml		usesub setnz wback			# c2
 #

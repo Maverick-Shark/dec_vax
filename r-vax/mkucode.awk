@@ -3,6 +3,7 @@
 # Two microcode files are output;
 #	uc-insn.hex - per-instruction defines and offset for next file.
 #	uc-args.hex - the arg steps executed for each instruction.
+#	uc-step.hex - the microcode steps taken for this instruction.
 #
 # uc-insn.hex is 256 rows of 64 (72) bits each.
 # Bit definition (right to left)
@@ -63,6 +64,10 @@ function bitset3(line, bit, val) {
 #printf "bitset3: eargl: %s\n", arglist[line];
 }
 
+#
+# set bit bit in string lst
+# lst is expected to be 64 digits.
+#
 function bitset(lst, bit) {
 	bit = 64 - bit;
 	return substr(lst, 1, bit-1) "1" substr(lst, bit+1);
@@ -129,8 +134,31 @@ function rightops(op) {
 	err(op " rightop not found");
 }
 
+#
+# Check if s is a hex string.
+#
+function ishex(s,    i, c) {
+	for (i = 1; i <= length(s); i++) {
+		c = substr(s,i,1);
+		if (c !~ /[a-f]|[A-F]|[0-9]/) {
+			return 0;
+		}
+	}
+	return 1;
+}
 
-
+#
+# Convert a hex string to binary
+#
+function hexcvt(s,    i, o) {
+	o = "00000000000000000000000000000000";
+	for (i = 1; i < length(s); i++) {
+		r = h1tod1(substr(s, i, 1));
+		b = num2bit(r, 4);
+		o = substr(o, 5) b;
+	}
+	return o;
+}
 
 BEGIN {
 	# Get instruction name<->opcode mapping
@@ -171,13 +199,23 @@ BEGIN {
 	fakearg["w^d(pc)"] = "11001111";
 
 	# used for ALU MUX
-	leftop["arg0"] = 0;
+	leftop["arg1"] = rightop["arg1"] = 0;
+	leftop["arg2"] = rightop["arg2"] = 1;
+	leftop["arg3"] = rightop["arg3"] = 2;
+	leftop["arg4"] = rightop["arg4"] = 3;
+	leftop["psl"] = rightop["psl"] = 8;
+	leftop["const"] = rightop["const"] = 9;
 
-	rightop["arg1"] = 1;
+	# args to microcode instructions
+	stepargs["argd0"] = 12;	# save result in argd0
+	stepargs["argd1"] = 13;	# save result in argd1
+	stepargs["psl"] = 14;	# save result in psl
+	stepargs["eoi"] = 15;	# last instruction
+
 
 	curargoff=0;
 	emuloff = 1;
-	stepoff = 0;
+	stepoff = 1;
 
 	# arglist contains the argument specifications.
 	# inslist contains the instructions
@@ -206,10 +244,37 @@ BEGIN {
 				steplbl[substr($1,1,length($1)-1)] = stepoff;
 				shiftoff++;
 			}
-			ucstep[stepoff] = "00000000000000000000" \
-			    num2bit(leftops($(shiftoff+1)), 4) \
-			    num2bit(rightops($(shiftoff+2)), 4) \
-			    num2bit(aluops($shiftoff), 4);
+
+
+			aop = aluops($shiftoff);
+			shiftoff++;
+			hval = "00000000000000000000000000000000";
+			if (ishex($shiftoff)) {
+				lop = leftops("const");
+				hval = hexcvt($shiftoff);
+			} else
+				lop = leftops($(shiftoff));
+			shiftoff++;
+			if (ishex($shiftoff)) {
+				rop = rightops("const");
+				hval = hexcvt($shiftoff);
+			} else
+				rop = rightops($shiftoff);
+			shiftoff++;
+
+			ucstep[stepoff] = hval "00000000000000000000" \
+			    num2bit(lop, 4) \
+			    num2bit(rop, 4) \
+			    num2bit(aop, 4);
+
+			# bit 0-11 are input and op of the ALU.
+			# 
+			for (i = shiftoff; i <= NF; i++) {
+				if (!($i in stepargs))
+					err($i " not in stepargs");
+				ucstep[stepoff] = \
+				    bitset(ucstep[stepoff], stepargs[$i]);
+			}
 			stepoff++;
 			continue;
 		}
@@ -345,12 +410,12 @@ BEGIN {
 	# print out microcode steps
 	FN="uc-step.hex";
 	system("rm -f " FN);
-	for (i = 0; i < 512; i++) {
+	for (i = 0; i < 256; i++) {
 		if (i in ucstep) {
-			print line2hex32(i, ucstep[i]) >> FN;
+			print line2hex(i, ucstep[i]) >> FN;
 			numstep++;
 		} else
-			print "00000000" >> FN;
+			print "0000000000000000" >> FN;
 	}
 	close(FN);
 	print "microcode steps " numstep;
