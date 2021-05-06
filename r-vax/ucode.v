@@ -19,8 +19,6 @@
 
 `define	MOVE2		20
 `define	WBACK2		21
-`define	BISPSW		22
-`define	BICPSW		23
 `define	MOVPSL		24
 `define	USEXOR		25
 `define	SETNZ		26
@@ -90,8 +88,6 @@ module ucode(
 
 	output			i_move2,
 	output			i_wback2,
-	output			i_bispsw,
-	output			i_bicpsw,
 	output			i_movpsl,
 	output			i_popr,
 	output			i_pushr,
@@ -199,8 +195,6 @@ parameter	S_ROM_ADDRS = 256;
 
 	assign i_move2 = ucinsn_data[`MOVE2];
 	assign i_wback2 = ucinsn_data[`WBACK2];
-	assign i_bispsw = ucinsn_data[`BISPSW];
-	assign i_bicpsw = ucinsn_data[`BICPSW];
 	assign i_movpsl = ucinsn_data[`MOVPSL];
 	assign i_usexor = ucinsn_data[`USEXOR];
 	assign i_usemtpr = ucinsn_data[`USEMTPR];

@@ -342,7 +342,7 @@ initial psl_ipl = 5'h1f;
 	wire		a_enable, a_emul, a_last, i_move2, i_wback2;
 	wire		i_useadd, i_wback, i_usexor, i_usemtpr, i_usemfpr;
 	wire		i_isspsw, i_iscpsw, i_setnz, i_clv, i_clc, i_setc;
-	wire		i_bispsw, i_bicpsw, i_movpsl, i_usesub, i_useand;
+	wire		i_movpsl, i_usesub, i_useand;
 	wire		i_usebis, i_usebic, i_bbs, i_bbc, i_userot, i_usezex;
 	wire		i_setbit, i_clrbit, i_insv, i_quad, i_useacb;
 	wire		i_popr, i_pushr;
@@ -399,8 +399,6 @@ initial psl_ipl = 5'h1f;
 		.i_pswbits(i_pswbits),
 		.i_isspsw(i_isspsw),
 		.i_iscpsw(i_iscpsw),
-		.i_bispsw(i_bispsw),
-		.i_bicpsw(i_bicpsw),
 		.i_setnz(i_setnz),
 		.i_clv(i_clv),
 		.i_clc(i_clc),
@@ -541,7 +539,6 @@ initial debug = 0;
 	wire		alu_cry;
 	wire [31:0]	alu_res;
 	reg [31:0]	alu_right, alu_left;
-	reg [3:0]	alu_op;
 
 	alu alu(clk, s_op, alu_left, alu_right, alu_cry, alu_res);
 
@@ -848,6 +845,11 @@ if (debug) $fdisplay(32'h80000002, "EXEC: left %x right %x eoi %d\r", alu_left, 
 				argd[0] <= alu_res;
 			if (s_argd1)
 				argd[1] <= alu_res;
+			if (s_psl)
+				{ psl_is, cur_mod, prv_mod, psl_ipl, psw } <=
+				    { alu_res[26], alu_res[25:24], 
+				      alu_res[23:22], alu_res[20:16],
+				      alu_res[7:0] };
 			if (s_eoi)
 				state <= `ENDINST;
 			else
@@ -905,10 +907,6 @@ if (debug) $fdisplay(32'h80000002, "EXECUTE2: isspsw %d iscpsw %d pswbits %x bis
 				else
 					argd[0] <= arg[0];
 			end
-			if (i_bicpsw)
-				psw <= psw & ~arg[0][7:0];
-			if (i_bispsw)
-				psw <= psw | arg[0][7:0];
 			if (i_movpsl)
 				argd[0] <= psl;
 			if (i_move2)
