@@ -141,11 +141,15 @@ F3	AOBLEQ
 #
 # [label:] op left right
 #
-brw:	plus arg1 0		argd0 eoi
+mov:	plus arg1 0		argd0 wback eoi
 bicpsw:	bic arg1 psl		psl eoi
 bispsw:	bis arg1 psl		psl eoi
-bset:	plus arg1 0		argd0		# move new pc to dest
-	and arg2 psl		nzcond wback eoi	# if result Z writeback
+#
+# Check if a given bit in psl is set
+bset:	plus arg1 0	argd0			# move new pc to dest
+	and arg2 psl	nzcond wback eoi	# if result Z writeback
+clr:	plus 0 0	argd0 wback eoi		# write d0
+#
 #
 !INSTRUCTIONS
 REI	rl#(sp)+,rl#0,rl#(sp)+,wl#pc,wl#pc	useadd wback2	# 02
@@ -173,7 +177,7 @@ BGEQU	ab#b^d(pc),rl#0,wl#pc	useadd wback ccc iscpsw		# 1e
 BLSSU	ab#b^d(pc),rl#0,wl#pc	useadd wback ccc isspsw		# 1f
 #
 BSBW	aw#w^d(pc),rl#0,rl#pc,wl#pc,wl#-(sp)	useadd move2 wback wback2 
-BRW	aw#w^d(pc),wl#pc	lbl=brw wback			# 31
+BRW	aw#w^d(pc),wl#pc	lbl=mov 			# 31
 #
 MOVZWL	rw,wl		usezex setnz clv wback			# 3c
 #
@@ -184,7 +188,9 @@ MOVB	rb,rb#0,wb	useadd setnz clv wback			# 90
 CMPB	rb,rb		usesub setnz clv setc			# 91
 #
 BITB	rb,rb		useand setnz clv			# 93
-CLRB	rl#0,rl#0,wb	useadd setnz clv wback			# 94
+
+CLRB	wb		lbl=clr setnz clv 			# 94
+
 TSTB	rb,rl#0		useadd setnz clv clc			# 95
 #
 MOVZBL	rb,wl		usezex setnz clv wback			# 9a
@@ -214,7 +220,7 @@ MOVL	rl,rl#0,wl	useadd setnz clv wback			# d0
 CMPL	rl,rl		usesub setnz clv setc			# d1
 #
 BITL	rl,rl		useand setnz clv 			# d3
-CLRL	rl#0,rl#0,wl	useadd setnz clv wback 			# d4
+CLRL	wl		lbl=clr setnz clv 			# d4
 TSTL	rl,rl#0		useadd setnz clv clc 			# d5
 INCL	rl#1,ml		useadd setnz setaddv setc wback 	# d6
 DECL	ml,rl#1		usesub setnz wback 			# d7
@@ -223,7 +229,7 @@ MTPR	rl,rl		usemtpr 				# da
 MFPR	rl,wl		usemfpr wback				# db
 MOVPSL	wl		movpsl wback				# dc
 #
-MOVAL	al,rl#0,wl	useadd setnz clv wback			# de
+MOVAL	al,wl		lbl=mov setnz clv			# de
 #
 BBS	rl,rl,ab#b^d(pc),wl#pc,wl#pc bbs move2 wback2		# e0
 BBC	rl,rl,ab#b^d(pc),wl#pc,wl#pc bbc move2 wback2		# e1
