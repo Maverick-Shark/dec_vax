@@ -151,6 +151,8 @@ movpsl:	plus psl 0		argd0 eoi
 bic:	bic arg1 arg2		argd0 eoi
 bis:	bis arg1 arg2		argd0 eoi
 and:	and arg1 arg2		argd0 eoi
+zwl:	and arg1 FFFF		argd0 eoi
+zbl:	and arg1 FF		argd0 eoi
 #
 # Check if a given bit in psl is set
 bset:	plus arg1 0	argd0			# move new pc to dest
@@ -185,7 +187,7 @@ BLSSU	ab#b^d(pc),rl#1,wl#pc	lbl=bset			# 1f
 BSBW	0aw#w^d(pc),2rl#pc,wl#pc,wl#-(sp)	lbl=mov move2 wback wback2 
 BRW	aw#w^d(pc),wl#pc	lbl=mov wback 			# 31
 #
-MOVZWL	rw,wl		usezex setnz clv wback			# 3c
+MOVZWL	rw,wl		lbl=zwl setnz clv wback			# 3c
 #
 CLRQ	rq#0,wq		lbl=mov setnz clv quad wback wback2	# 7c
 #MOVQ	rq,rl#0,wq	useadd setnz clv quad wback wback2	# 7d
@@ -197,8 +199,8 @@ CMPB	rb,rb		lbl=sub setnz clv setc			# 91
 CLRB	wb		lbl=clr setnz clv 			# 94
 TSTB	rb		lbl=tst setnz clv clc			# 95
 #
-MOVZBL	rb,wl		usezex setnz clv wback			# 9a
-MOVZBW	rb,ww		usezex setnz clv wback			# 9b
+MOVZBL	rb,wl		lbl=zbl setnz clv wback			# 9a
+MOVZBW	rb,ww		lbl=zbl setnz clv wback			# 9b
 ROTL	rb,rl,wl	userot setnz clv wback			# 9c
 #
 MOVW	rw,ww		lbl=mov setnz clv wback			# b0

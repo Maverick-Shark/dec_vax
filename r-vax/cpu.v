@@ -341,8 +341,8 @@ initial psl_ipl = 5'h1f;
 	wire		i_enable, i_hasargs, i_emul, i_dohalt;
 	wire		a_enable, a_emul, a_last, i_move2, i_wback2;
 	wire		i_wback, i_usemtpr, i_usemfpr;
-	wire		i_isspsw, i_iscpsw, i_setnz, i_clv, i_clc, i_setc;
-	wire		i_bbs, i_bbc, i_userot, i_usezex;
+	wire		i_setnz, i_clv, i_clc, i_setc;
+	wire		i_bbs, i_bbc, i_userot;
 	wire		i_setbit, i_clrbit, i_insv, i_quad, i_useacb;
 	wire		i_popr, i_pushr;
 	wire		arg_aR, arg_aW, arg_aA;
@@ -350,7 +350,6 @@ initial psl_ipl = 5'h1f;
 	wire [1:0]	a_argsz;
 	wire [2:0]	a_rargno;
 	wire		a_wargno;
-	wire [3:0]	i_pswbits;
 	reg [7:0]	acounter, curarg;
 	reg		arg_quad_u;
 
@@ -385,14 +384,10 @@ initial psl_ipl = 5'h1f;
 		.i_usemtpr(i_usemtpr),
 		.i_usemfpr(i_usemfpr),
 		.i_userot(i_userot),
-		.i_usezex(i_usezex),
 		.i_insv(i_insv),
 		.i_useacb(i_useacb),
 		.i_wback(i_wback),
 
-		.i_pswbits(i_pswbits),
-		.i_isspsw(i_isspsw),
-		.i_iscpsw(i_iscpsw),
 		.i_setnz(i_setnz),
 		.i_clv(i_clv),
 		.i_clc(i_clc),
@@ -875,19 +870,17 @@ if (debug) $fdisplay(32'h80000002, "EXEC: s_wb %d i_wb %d wrok %d aluz %d\r", s_
 			/* copy third arg XXX */
 			if (i_move2)
 				argd[1] <= arg[2];
+			/* XXX quad is a hack */
+			if (i_quad)
+				argd[1] <= OPu;
 		end
 
 		`EXECUTE: begin
 			state <= `ENDINST;
 if (debug) $fdisplay(32'h80000002, "EXECUTE: pc %x arg1 %x arg2 %x wback %d\r", curpc, arg[0], arg[1], i_wback);
-if (debug) $fdisplay(32'h80000002, "EXECUTE2: isspsw %d iscpsw %d pswbits %x \r", i_isspsw, i_iscpsw, i_pswbits );
 			writeback <= i_wback;
 			writeback2 <= i_wback2;
 
-			if (i_isspsw && (|(psw[3:0] & i_pswbits)) == 0)
-				writeback <= 0;
-			if (i_iscpsw && (|(psw[3:0] & i_pswbits)))
-				writeback <= 0;
 			if (i_bbs && ~arg2any)
 				writeback2 <= 0;
 			if (i_bbc && arg2any)
@@ -899,14 +892,6 @@ if (debug) $fdisplay(32'h80000002, "EXECUTE2: isspsw %d iscpsw %d pswbits %x \r"
 			if (i_userot)
 				argd[0] <= (arg[1] << arg[0][4:0]) |
 					    (arg[1] >> a1neg);
-			if (i_usezex) begin
-				if (a1sz == `O_BYTE)
-					argd[0] <= { 24'b0, arg[0][7:0] };
-				else if (a1sz == `O_WORD)
-					argd[0] <= { 16'b0, arg[0][15:0] };
-				else
-					argd[0] <= arg[0];
-			end
 			if (i_move2)
 				argd[1] <= arg[2];
 			if (i_quad)

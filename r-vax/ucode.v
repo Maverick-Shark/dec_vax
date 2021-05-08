@@ -7,8 +7,6 @@
 `define	IEMUL		9
 `define	SETADDV		10
 `define	WBACK		12
-`define	ISSPSW		13
-`define	ISCPSW		14
 
 /* 16/19 nmatches psw bits */
 `define	CCC		16
@@ -27,7 +25,6 @@
 `define	BBS		36
 `define	BBC		37
 `define	USEROT		38
-`define	USEZEX		39
 `define	SETBIT		40
 `define	CLRBIT		41
 `define	INSV		42
@@ -55,14 +52,10 @@ module ucode(
 	output			i_usemtpr,
 	output			i_usemfpr,
 	output			i_userot,
-	output			i_usezex,
 	output			i_insv,
 	output			i_useacb,
 	output			i_wback,
 
-	output [3:0]		i_pswbits,
-	output			i_isspsw,
-	output			i_iscpsw,
 	output			i_setnz,
 	output			i_clv,
 	output			i_clc,
@@ -162,14 +155,10 @@ parameter	S_ROM_ADDRS = 256;
 	assign i_emul = ucinsn_data[`IEMUL];
 	assign i_dohalt = ucinsn_data[`DOHALT];
 	assign i_userot = ucinsn_data[`USEROT];
-	assign i_usezex = ucinsn_data[`USEZEX];
 	assign i_insv = ucinsn_data[`INSV];
 	assign i_useacb = ucinsn_data[`USEACB];
 	assign i_wback = ucinsn_data[`WBACK];
 
-	assign i_pswbits = ucinsn_data[19:16];
-	assign i_isspsw = ucinsn_data[`ISSPSW];
-	assign i_iscpsw = ucinsn_data[`ISCPSW];
 	assign i_setnz = ucinsn_data[`SETNZ];
 	assign i_clv = ucinsn_data[`CLV];
 	assign i_clc = ucinsn_data[`CLC];
