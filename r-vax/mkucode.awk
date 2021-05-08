@@ -217,6 +217,7 @@ BEGIN {
 	stepargs["zcond"] = 16;	# only if result zero
 	stepargs["nzcond"] = 17;# only if result !zero
 	stepargs["wback"] = 18;	# write back results
+	stepargs["savc"] = 19;	# save carry from op
 
 
 	curargoff=0;

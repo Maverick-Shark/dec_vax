@@ -147,9 +147,11 @@ add:	plus arg1 arg2		argd0 wback eoi
 add1:	plus arg1 1		argd0 wback eoi
 clr:	plus 0 0		argd0 wback eoi
 xor:	xor arg1 arg2		argd0 wback eoi
+cmp:	minus arg1 arg2		argd0 savc eoi
 bicpsw:	bic arg1 psl		psl eoi
 bispsw:	bis arg1 psl		psl eoi
 bic:	bic arg1 arg2		argd0 wback eoi
+and:	and arg1 arg2		argd0 eoi
 #
 # Check if a given bit in psl is set
 bset:	plus arg1 0	argd0			# move new pc to dest
@@ -162,7 +164,8 @@ REI	rl#(sp)+,rl#0,rl#(sp)+,wl#pc,wl#pc	useadd wback2	# 02
 RSB	rl#(sp)+,rl#0,wl#pc	useadd wback 			# 05
 #
 BSBB	ab#b^d(pc),rl#0,rl#pc,wl#pc,wl#-(sp)	useadd move2 wback wback2
-BRB	aw#b^d(pc),rl#0,wl#pc	useadd wback			# 11
+BRB	aw#b^d(pc),wl#pc	lbl=mov				# 11
+#BRB	aw#b^d(pc),rl#0,wl#pc	useadd wback			# 11
 BNEQ	ab#b^d(pc),rl#0,wl#pc	useadd wback ccz iscpsw		# 12
 
 #BEQL	ab#b^d(pc),rl#0,wl#pc	useadd wback ccz isspsw		# 13
@@ -171,7 +174,8 @@ BEQL	ab#b^d(pc),rl#4,wl#pc	lbl=bset			# 13
 BGTR	ab#b^d(pc),rl#0,wl#pc	useadd wback ccz ccn iscpsw	# 14
 BLEQ	ab#b^d(pc),rl#0,wl#pc	useadd wback ccz ccn isspsw	# 15
 JSB	ab,rl#0,rl#pc,wl#pc,wl#-(sp)	useadd move2 wback wback2 # 16
-JMP	ab,rl#0,wl#pc	useadd wback				# 17
+#JMP	ab,rl#0,wl#pc	useadd wback				# 17
+JMP	ab,wl#pc	lbl=mov					# 17
 BGEQ	ab#b^d(pc),rl#0,wl#pc	useadd wback ccn iscpsw		# 18
 BLSS	ab#b^d(pc),rl#0,wl#pc	useadd wback ccn isspsw		# 19
 BGTRU	ab#b^d(pc),rl#0,wl#pc	useadd wback ccc ccz iscpsw	# 1a
@@ -182,17 +186,17 @@ BGEQU	ab#b^d(pc),rl#0,wl#pc	useadd wback ccc iscpsw		# 1e
 BLSSU	ab#b^d(pc),rl#0,wl#pc	useadd wback ccc isspsw		# 1f
 #
 BSBW	aw#w^d(pc),rl#0,rl#pc,wl#pc,wl#-(sp)	useadd move2 wback wback2 
-BRW	aw#w^d(pc),wl#pc	lbl=mov 			# 31
+BRW	aw#w^d(pc),wl#pc	lbl=mov wback 			# 31
 #
 MOVZWL	rw,wl		usezex setnz clv wback			# 3c
 #
 CLRQ	rq#0,wq		useadd setnz clv quad wback wback2	# 7c
 #MOVQ	rq,rl#0,wq	useadd setnz clv quad wback wback2	# 7d
 #
-MOVB	rb,rb#0,wb	useadd setnz clv wback			# 90
-CMPB	rb,rb		usesub setnz clv setc			# 91
+MOVB	rb,wb		lbl=mov setnz clv			# 90
+CMPB	rb,rb		lbl=cmp setnz clv setc			# 91
 #
-BITB	rb,rb		useand setnz clv			# 93
+#BITB	rb,rb		useand setnz clv			# 93
 CLRB	wb		lbl=clr setnz clv 			# 94
 TSTB	rb		lbl=tst setnz clv clc			# 95
 #
@@ -201,7 +205,7 @@ MOVZBW	rb,ww		usezex setnz clv wback			# 9b
 ROTL	rb,rl,wl	userot setnz clv wback			# 9c
 #
 MOVW	rw,rw#0,ww	useadd setnz clv wback			# b0
-CMPW	rw,rw		usesub setnz clv setc			# b1
+CMPW	rw,rw		lbl=cmp setnz clv setc			# b1
 #
 TSTW	rw		lbl=tst setnz clv clc			# b5
 #

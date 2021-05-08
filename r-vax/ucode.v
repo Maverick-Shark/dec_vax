@@ -59,7 +59,6 @@ module ucode(
 	output			i_dohalt,
 
 	output			i_useadd,
-	output			i_usexor,
 	output			i_usemtpr,
 	output			i_usemfpr,
 	output			i_usesub,
@@ -108,6 +107,7 @@ module ucode(
 	output			s_zcond,
 	output			s_nzcond,
 	output			s_wback,
+	output			s_savc,
 
 	output [31:0]		s_const,
 
@@ -166,6 +166,7 @@ parameter	S_ROM_ADDRS = 256;
 	assign s_zcond = ucstep_data[16];
 	assign s_nzcond = ucstep_data[17];
 	assign s_wback = ucstep_data[18];
+	assign s_savc = ucstep_data[19];
 	assign s_const = ucstep_data[63:32];
 
 	assign i_argoff = ucinsn_data[7:0];

@@ -356,7 +356,7 @@ initial psl_ipl = 5'h1f;
 	reg		arg_quad_u;
 
 	wire		s_enable, s_argd0, s_argd1, s_psl, s_eoi;
-	wire		s_nzcond, s_zcond, s_wback;
+	wire		s_nzcond, s_zcond, s_wback, s_savc;
 	wire [7:0]	s_stepoff, i_stepoff;
 	wire [3:0]	s_op, s_left, s_right;
 	wire [31:0]	s_const;
@@ -433,6 +433,7 @@ initial psl_ipl = 5'h1f;
 		.s_zcond(s_zcond),
 		.s_nzcond(s_nzcond),
 		.s_wback(s_wback),
+		.s_savc(s_savc),
 		.s_const(s_const),
 
 		.a_enable(a_enable),
@@ -868,10 +869,11 @@ if (debug) $fdisplay(32'h80000002, "EXEC: s_wb %d i_wb %d wrok %d aluz %d\r", s_
 				    { alu_res[26], alu_res[25:24], 
 				      alu_res[23:22], alu_res[20:16],
 				      alu_res[7:0] };
-			if (wr_cond_ok) begin
-				if (s_wback | i_wback)
-					writeback <= 1;
+			if ((wr_cond_ok && s_wback) || i_wback) begin
+				writeback <= 1;
 			end
+			if (s_savc)
+				Ctmp <= alu_cry;
 			if (s_eoi)
 				state <= `ENDINST;
 			else
