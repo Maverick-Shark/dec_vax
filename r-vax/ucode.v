@@ -6,7 +6,6 @@
 `define	IHASARGS	8
 `define	IEMUL		9
 `define	SETADDV		10
-`define	USEADD		11
 `define	WBACK		12
 `define	ISSPSW		13
 `define	ISCPSW		14
@@ -24,7 +23,6 @@
 `define	CLC		28
 `define	USEMTPR		29
 `define	USEMFPR		30
-`define	USEBIS		33
 `define	SETC		35
 `define	BBS		36
 `define	BBC		37
@@ -54,10 +52,8 @@ module ucode(
 
 	output			i_dohalt,
 
-	output			i_useadd,
 	output			i_usemtpr,
 	output			i_usemfpr,
-	output			i_usebis,
 	output			i_userot,
 	output			i_usezex,
 	output			i_insv,
@@ -165,8 +161,6 @@ parameter	S_ROM_ADDRS = 256;
 	assign i_hasargs = ucinsn_data[`IHASARGS];
 	assign i_emul = ucinsn_data[`IEMUL];
 	assign i_dohalt = ucinsn_data[`DOHALT];
-	assign i_useadd = ucinsn_data[`USEADD];
-	assign i_usebis = ucinsn_data[`USEBIS];
 	assign i_userot = ucinsn_data[`USEROT];
 	assign i_usezex = ucinsn_data[`USEZEX];
 	assign i_insv = ucinsn_data[`INSV];

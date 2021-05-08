@@ -6,8 +6,6 @@
 # a saves the ptr as final value
 # b just fetches the the next byte/word
 #
-# useadd	- use add path
-# usebr		- use branch path
 # usemfpr	- move from processor register
 # usemtpr	- move to processor register
 #
@@ -157,40 +155,39 @@ and:	and arg1 arg2		argd0 eoi
 # Check if a given bit in psl is set
 bset:	plus arg1 0	argd0			# move new pc to dest
 	and arg2 psl	nzcond wback eoi	# if result Z writeback
+# Check if given bit(s) in psl are clear
+bclr:	plus arg1 0	argd0			# move new pc to dest
+	and arg2 psl	zcond wback eoi		# if result Z writeback
 #
 #
 !INSTRUCTIONS
-REI	rl#(sp)+,rl#0,rl#(sp)+,wl#pc,wl#pc	useadd wback2	# 02
+#REI	rl#(sp)+,rl#0,rl#(sp)+,wl#pc,wl#pc	useadd wback2	# 02
 #
-RSB	rl#(sp)+,rl#0,wl#pc	useadd wback 			# 05
+RSB	rl#(sp)+,wl#pc	lbl=mov wback 				# 05
 #
-BSBB	ab#b^d(pc),rl#0,rl#pc,wl#pc,wl#-(sp)	useadd move2 wback wback2
+BSBB	0ab#b^d(pc),2rl#pc,wl#pc,wl#-(sp)	lbl=mov move2 wback wback2
 BRB	aw#b^d(pc),wl#pc	lbl=mov wback			# 11
-#BRB	aw#b^d(pc),rl#0,wl#pc	useadd wback			# 11
-BNEQ	ab#b^d(pc),rl#0,wl#pc	useadd wback ccz iscpsw		# 12
-
-#BEQL	ab#b^d(pc),rl#0,wl#pc	useadd wback ccz isspsw		# 13
+BNEQ	ab#b^d(pc),rl#4,wl#pc	lbl=bclr 			# 12
 BEQL	ab#b^d(pc),rl#4,wl#pc	lbl=bset			# 13
-
-BGTR	ab#b^d(pc),rl#0,wl#pc	useadd wback ccz ccn iscpsw	# 14
-BLEQ	ab#b^d(pc),rl#0,wl#pc	useadd wback ccz ccn isspsw	# 15
-JSB	ab,rl#0,rl#pc,wl#pc,wl#-(sp)	useadd move2 wback wback2 # 16
+BGTR	ab#b^d(pc),rl#C,wl#pc	lbl=bclr 			# 14
+BLEQ	ab#b^d(pc),rl#C,wl#pc	lbl=bset 			# 15
+JSB	0ab,2rl#pc,wl#pc,wl#-(sp)	lbl=mov move2 wback wback2 # 16
 JMP	ab,wl#pc	lbl=mov wback				# 17
-BGEQ	ab#b^d(pc),rl#0,wl#pc	useadd wback ccn iscpsw		# 18
-BLSS	ab#b^d(pc),rl#0,wl#pc	useadd wback ccn isspsw		# 19
-BGTRU	ab#b^d(pc),rl#0,wl#pc	useadd wback ccc ccz iscpsw	# 1a
-BLEQU	ab#b^d(pc),rl#0,wl#pc	useadd wback ccc ccz isspsw	# 1b
-BVC	ab#b^d(pc),rl#0,wl#pc	useadd wback ccv iscpsw		# 1c
-BVS	ab#b^d(pc),rl#0,wl#pc	useadd wback ccv isspsw		# 1d
-BGEQU	ab#b^d(pc),rl#0,wl#pc	useadd wback ccc iscpsw		# 1e
-BLSSU	ab#b^d(pc),rl#0,wl#pc	useadd wback ccc isspsw		# 1f
+BGEQ	ab#b^d(pc),rl#8,wl#pc	lbl=bclr 			# 18
+BLSS	ab#b^d(pc),rl#8,wl#pc	lbl=bset 			# 19
+BGTRU	ab#b^d(pc),rl#5,wl#pc	lbl=bclr 			# 1a
+BLEQU	ab#b^d(pc),rl#5,wl#pc	lbl=bset 			# 1b
+BVC	ab#b^d(pc),rl#2,wl#pc	lbl=bclr			# 1c
+BVS	ab#b^d(pc),rl#2,wl#pc	lbl=bset 			# 1d
+BGEQU	ab#b^d(pc),rl#1,wl#pc	lbl=bclr			# 1e
+BLSSU	ab#b^d(pc),rl#1,wl#pc	lbl=bset			# 1f
 #
-BSBW	aw#w^d(pc),rl#0,rl#pc,wl#pc,wl#-(sp)	useadd move2 wback wback2 
+BSBW	0aw#w^d(pc),2rl#pc,wl#pc,wl#-(sp)	lbl=mov move2 wback wback2 
 BRW	aw#w^d(pc),wl#pc	lbl=mov wback 			# 31
 #
 MOVZWL	rw,wl		usezex setnz clv wback			# 3c
 #
-CLRQ	rq#0,wq		useadd setnz clv quad wback wback2	# 7c
+CLRQ	rq#0,wq		lbl=mov setnz clv quad wback wback2	# 7c
 #MOVQ	rq,rl#0,wq	useadd setnz clv quad wback wback2	# 7d
 #
 MOVB	rb,wb		lbl=mov setnz clv wback			# 90

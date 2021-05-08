@@ -193,7 +193,11 @@ BEGIN {
 	# hidden bits
 	fakearg["0"] = "00000000";
 	fakearg["1"] = "00000001";
+	fakearg["2"] = "00000010";
 	fakearg["4"] = "00000100";
+	fakearg["5"] = "00000101";
+	fakearg["8"] = "00001000";
+	fakearg["C"] = "00001100";
 	fakearg["pc"] = "01011111";
 	fakearg["(sp)+"] = "10001110";
 	fakearg["-(sp)"] = "01111110";

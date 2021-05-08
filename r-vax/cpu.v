@@ -340,9 +340,9 @@ initial psl_ipl = 5'h1f;
 	wire [7:0]	i_argoff, a_argoff, a_arg, cur_mux;
 	wire		i_enable, i_hasargs, i_emul, i_dohalt;
 	wire		a_enable, a_emul, a_last, i_move2, i_wback2;
-	wire		i_useadd, i_wback, i_usemtpr, i_usemfpr;
+	wire		i_wback, i_usemtpr, i_usemfpr;
 	wire		i_isspsw, i_iscpsw, i_setnz, i_clv, i_clc, i_setc;
-	wire		i_usebis, i_bbs, i_bbc, i_userot, i_usezex;
+	wire		i_bbs, i_bbc, i_userot, i_usezex;
 	wire		i_setbit, i_clrbit, i_insv, i_quad, i_useacb;
 	wire		i_popr, i_pushr;
 	wire		arg_aR, arg_aW, arg_aA;
@@ -382,10 +382,8 @@ initial psl_ipl = 5'h1f;
 		.i_hasargs(i_hasargs),
 		.i_emul(i_emul),
 
-		.i_useadd(i_useadd),
 		.i_usemtpr(i_usemtpr),
 		.i_usemfpr(i_usemfpr),
-		.i_usebis(i_usebis),
 		.i_userot(i_userot),
 		.i_usezex(i_usezex),
 		.i_insv(i_insv),
@@ -825,8 +823,6 @@ if (debug) $fdisplay(32'h80000002, "ARGEND: a_rargno %d a_wargno %d arg_aR %d ar
 				state <= `POPPUSHR;
 			else begin
 				state <= `EXECUTE;
-//				if (i_useadd) alu_op <= `ALU_PLUS;
-//				if (i_usebis) alu_op <= `ALU_BIS;
 			end
 			OA_isreg <= 0;
 			IA <= 0;
@@ -865,6 +861,7 @@ if (debug) $fdisplay(32'h80000002, "EXEC: s_wb %d i_wb %d wrok %d aluz %d\r", s_
 			if ((wr_cond_ok && s_wback) || i_wback) begin
 				writeback <= 1;
 			end
+			writeback2 <= i_wback2;
 			if (s_savc)
 				Ctmp <= alu_cry;
 			if (s_eoi)
@@ -872,26 +869,20 @@ if (debug) $fdisplay(32'h80000002, "EXEC: s_wb %d i_wb %d wrok %d aluz %d\r", s_
 			else
 				state <= `PREEXEC;
 			scounter <= scounter + 1;
-			/* regval for sizes less than long XX */
+
+			/* regval for sizes less than long XXX */
 			cur_reg_num_save <= argp_regnum[0];
+			/* copy third arg XXX */
+			if (i_move2)
+				argd[1] <= arg[2];
 		end
 
 		`EXECUTE: begin
 			state <= `ENDINST;
-if (debug) $fdisplay(32'h80000002, "EXECUTE: pc %x arg1 %x arg2 %x useadd %d wback %d\r", curpc, arg[0], arg[1], i_useadd, i_wback);
-if (debug) $fdisplay(32'h80000002, "EXECUTE2: isspsw %d iscpsw %d pswbits %x bis %d \r", i_isspsw, i_iscpsw, i_pswbits, i_usebis);
+if (debug) $fdisplay(32'h80000002, "EXECUTE: pc %x arg1 %x arg2 %x wback %d\r", curpc, arg[0], arg[1], i_wback);
+if (debug) $fdisplay(32'h80000002, "EXECUTE2: isspsw %d iscpsw %d pswbits %x \r", i_isspsw, i_iscpsw, i_pswbits );
 			writeback <= i_wback;
 			writeback2 <= i_wback2;
-//			if (i_useadd | i_usebis) begin
-//				argd[0] <= alu_res;
-//				Ctmp <= alu_cry;
-//			end
-                       if (i_useadd)
-                               { Ctmp, argd[0] } <=
-                                   { 1'b0, arg[0] } + { 1'b0, arg[1] };
-
-                       if (i_usebis)
-                               argd[0] <= arg[0] | arg[1];
 
 			if (i_isspsw && (|(psw[3:0] & i_pswbits)) == 0)
 				writeback <= 0;
