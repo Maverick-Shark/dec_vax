@@ -849,7 +849,7 @@ if (debug) $fdisplay(32'h80000002, "PREEXEC: sleft %d sright %d scounter %d\r", 
 			endcase
 
 			casez (s_right)
-			4'b00??: alu_right <= arg[s_left[1:0]];
+			4'b00??: alu_right <= arg[s_right[1:0]];
 			4'b1000: alu_right <= psl;
 			4'b1001: alu_right <= s_const;
 			default: alu_right <= 0;

@@ -139,16 +139,19 @@ F3	AOBLEQ
 #
 !MICROCODE
 #
-# [label:] op left right
+# [label:] op left right	[args...]
 #
 mov:	plus arg1 0		argd0 wback eoi
+tst:	plus arg1 0		argd0 eoi
+add:	plus arg1 arg2		argd0 wback eoi
+add1:	plus arg1 1		argd0 wback eoi
+clr:	plus 0 0		argd0 wback eoi		# write d0
 bicpsw:	bic arg1 psl		psl eoi
 bispsw:	bis arg1 psl		psl eoi
 #
 # Check if a given bit in psl is set
 bset:	plus arg1 0	argd0			# move new pc to dest
 	and arg2 psl	nzcond wback eoi	# if result Z writeback
-clr:	plus 0 0	argd0 wback eoi		# write d0
 #
 #
 !INSTRUCTIONS
@@ -188,10 +191,8 @@ MOVB	rb,rb#0,wb	useadd setnz clv wback			# 90
 CMPB	rb,rb		usesub setnz clv setc			# 91
 #
 BITB	rb,rb		useand setnz clv			# 93
-
 CLRB	wb		lbl=clr setnz clv 			# 94
-
-TSTB	rb,rl#0		useadd setnz clv clc			# 95
+TSTB	rb		lbl=tst setnz clv clc			# 95
 #
 MOVZBL	rb,wl		usezex setnz clv wback			# 9a
 MOVZBW	rb,ww		usezex setnz clv wback			# 9b
@@ -200,7 +201,7 @@ ROTL	rb,rl,wl	userot setnz clv wback			# 9c
 MOVW	rw,rw#0,ww	useadd setnz clv wback			# b0
 CMPW	rw,rw		usesub setnz clv setc			# b1
 #
-TSTW	rw,rw#0		useadd setnz clv clc			# b5
+TSTW	rw		lbl=tst setnz clv clc			# b5
 #
 BISPSW	rw		lbl=bispsw				# b8
 BICPSW	rw		lbl=bicpsw				# b9
@@ -221,8 +222,8 @@ CMPL	rl,rl		usesub setnz clv setc			# d1
 #
 BITL	rl,rl		useand setnz clv 			# d3
 CLRL	wl		lbl=clr setnz clv 			# d4
-TSTL	rl,rl#0		useadd setnz clv clc 			# d5
-INCL	rl#1,ml		useadd setnz setaddv setc wback 	# d6
+TSTL	rl		lbl=tst setnz clv clc 			# d5
+INCL	ml		lbl=add1 setnz				# d6
 DECL	ml,rl#1		usesub setnz wback 			# d7
 #
 MTPR	rl,rl		usemtpr 				# da

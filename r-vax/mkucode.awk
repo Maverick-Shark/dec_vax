@@ -152,10 +152,12 @@ function ishex(s,    i, c) {
 #
 function hexcvt(s,    i, o) {
 	o = "00000000000000000000000000000000";
-	for (i = 1; i < length(s); i++) {
+# print "hexcvt len " length(s);
+	for (i = 1; i <= length(s); i++) {
 		r = h1tod1(substr(s, i, 1));
 		b = num2bit(r, 4);
 		o = substr(o, 5) b;
+# printf "hexcvt r %s b %s o %s\n", r,b,s;
 	}
 	return o;
 }
@@ -253,15 +255,18 @@ BEGIN {
 			aop = aluops($shiftoff);
 			shiftoff++;
 			hval = "00000000000000000000000000000000";
+# print " LOP " $shiftoff;
 			if (ishex($shiftoff)) {
 				lop = leftops("const");
 				hval = hexcvt($shiftoff);
 			} else
 				lop = leftops($(shiftoff));
 			shiftoff++;
+# print " ROP " $shiftoff;
 			if (ishex($shiftoff)) {
 				rop = rightops("const");
 				hval = hexcvt($shiftoff);
+# print " ROP2 hval " hval;
 			} else
 				rop = rightops($shiftoff);
 			shiftoff++;
