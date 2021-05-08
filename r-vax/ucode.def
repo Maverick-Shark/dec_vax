@@ -142,13 +142,14 @@ F3	AOBLEQ
 #
 mov:	plus arg1 0		argd0 eoi
 tst:	plus arg1 0		argd0 eoi
-add:	plus arg1 arg2		argd0 wback eoi
+add:	plus arg1 arg2		argd0 eoi
 add1:	plus arg1 1		argd0 wback eoi
 clr:	plus 0 0		argd0 wback eoi
 xor:	xor arg1 arg2		argd0 wback eoi
-cmp:	minus arg1 arg2		argd0 savc eoi
+sub:	minus arg1 arg2		argd0 savc eoi
 bicpsw:	bic arg1 psl		psl eoi
 bispsw:	bis arg1 psl		psl eoi
+movpsl:	plus psl 0		argd0 eoi
 bic:	bic arg1 arg2		argd0 eoi
 bis:	bis arg1 arg2		argd0 eoi
 and:	and arg1 arg2		argd0 eoi
@@ -193,7 +194,7 @@ CLRQ	rq#0,wq		useadd setnz clv quad wback wback2	# 7c
 #MOVQ	rq,rl#0,wq	useadd setnz clv quad wback wback2	# 7d
 #
 MOVB	rb,wb		lbl=mov setnz clv wback			# 90
-CMPB	rb,rb		lbl=cmp setnz clv setc			# 91
+CMPB	rb,rb		lbl=sub setnz clv setc			# 91
 #
 #BITB	rb,rb		lbl=andb setnz clv			# 93
 CLRB	wb		lbl=clr setnz clv 			# 94
@@ -203,19 +204,17 @@ MOVZBL	rb,wl		usezex setnz clv wback			# 9a
 MOVZBW	rb,ww		usezex setnz clv wback			# 9b
 ROTL	rb,rl,wl	userot setnz clv wback			# 9c
 #
-MOVW	rw,rw#0,ww	useadd setnz clv wback			# b0
-CMPW	rw,rw		lbl=cmp setnz clv setc			# b1
+MOVW	rw,ww		lbl=mov setnz clv wback			# b0
+CMPW	rw,rw		lbl=sub setnz clv setc			# b1
 #
 TSTW	rw		lbl=tst setnz clv clc			# b5
 #
 BISPSW	rw		lbl=bispsw				# b8
 BICPSW	rw		lbl=bicpsw				# b9
-#POPR	rw		popr					# ba
-#PUSHR	rw		iemul					# bb
 # 
 #ADDL2	rl,ml		lbl=add setnz setaddv setc wback 	# c0
-ADDL3	rl,rl,wl	useadd setnz setaddv setc wback 	# c1
-SUBL2	1rl,0ml		usesub setnz wback			# c2
+ADDL3	rl,rl,wl	lbl=add setnz setc wback 		# c1
+SUBL2	1rl,0ml		lbl=sub setnz wback			# c2
 #
 BISL2	rl,ml		lbl=bis setnz clv wback			# c8
 BICL2	rl,ml		lbl=bic setnz clv wback			# ca
@@ -223,17 +222,17 @@ BICL2	rl,ml		lbl=bic setnz clv wback			# ca
 XORL3	rl,rl,wl	lbl=xor setnz clv			# cd
 #
 MOVL	rl,wl		lbl=mov setnz clv wback			# d0
-CMPL	rl,rl		usesub setnz clv setc			# d1
+CMPL	rl,rl		lbl=sub setnz clv setc			# d1
 #
 BITL	rl,rl		lbl=and setnz clv 			# d3
 CLRL	wl		lbl=clr setnz clv 			# d4
 TSTL	rl		lbl=tst setnz clv clc 			# d5
 INCL	ml		lbl=add1 setnz				# d6
-DECL	ml,rl#1		usesub setnz wback 			# d7
+DECL	ml,rl#1		lbl=sub setnz wback 			# d7
 #
 MTPR	rl,rl		usemtpr 				# da
 MFPR	rl,wl		usemfpr wback				# db
-MOVPSL	wl		movpsl wback				# dc
+MOVPSL	wl		lbl=movpsl wback			# dc
 #
 MOVAL	al,wl		lbl=mov setnz clv wback			# de
 #

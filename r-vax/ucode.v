@@ -19,13 +19,11 @@
 
 `define	MOVE2		20
 `define	WBACK2		21
-`define	MOVPSL		24
 `define	SETNZ		26
 `define	CLV		27
 `define	CLC		28
 `define	USEMTPR		29
 `define	USEMFPR		30
-`define	USESUB		31
 `define	USEBIS		33
 `define	SETC		35
 `define	BBS		36
@@ -59,8 +57,6 @@ module ucode(
 	output			i_useadd,
 	output			i_usemtpr,
 	output			i_usemfpr,
-	output			i_usesub,
-	output			i_useand,
 	output			i_usebis,
 	output			i_userot,
 	output			i_usezex,
@@ -83,7 +79,6 @@ module ucode(
 
 	output			i_move2,
 	output			i_wback2,
-	output			i_movpsl,
 	output			i_popr,
 	output			i_pushr,
 
@@ -171,7 +166,6 @@ parameter	S_ROM_ADDRS = 256;
 	assign i_emul = ucinsn_data[`IEMUL];
 	assign i_dohalt = ucinsn_data[`DOHALT];
 	assign i_useadd = ucinsn_data[`USEADD];
-	assign i_usesub = ucinsn_data[`USESUB];
 	assign i_usebis = ucinsn_data[`USEBIS];
 	assign i_userot = ucinsn_data[`USEROT];
 	assign i_usezex = ucinsn_data[`USEZEX];
@@ -196,7 +190,6 @@ parameter	S_ROM_ADDRS = 256;
 
 	assign i_move2 = ucinsn_data[`MOVE2];
 	assign i_wback2 = ucinsn_data[`WBACK2];
-	assign i_movpsl = ucinsn_data[`MOVPSL];
 	assign i_usemtpr = ucinsn_data[`USEMTPR];
 	assign i_usemfpr = ucinsn_data[`USEMFPR];
 

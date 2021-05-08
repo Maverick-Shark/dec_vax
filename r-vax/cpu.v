@@ -342,7 +342,6 @@ initial psl_ipl = 5'h1f;
 	wire		a_enable, a_emul, a_last, i_move2, i_wback2;
 	wire		i_useadd, i_wback, i_usemtpr, i_usemfpr;
 	wire		i_isspsw, i_iscpsw, i_setnz, i_clv, i_clc, i_setc;
-	wire		i_movpsl, i_usesub;
 	wire		i_usebis, i_bbs, i_bbc, i_userot, i_usezex;
 	wire		i_setbit, i_clrbit, i_insv, i_quad, i_useacb;
 	wire		i_popr, i_pushr;
@@ -386,7 +385,6 @@ initial psl_ipl = 5'h1f;
 		.i_useadd(i_useadd),
 		.i_usemtpr(i_usemtpr),
 		.i_usemfpr(i_usemfpr),
-		.i_usesub(i_usesub),
 		.i_usebis(i_usebis),
 		.i_userot(i_userot),
 		.i_usezex(i_usezex),
@@ -407,7 +405,6 @@ initial psl_ipl = 5'h1f;
 		.i_clrbit(i_clrbit),
 		.i_quad(i_quad),
 
-		.i_movpsl(i_movpsl),
 		.i_popr(i_popr),
 		.i_pushr(i_pushr),
 
@@ -829,7 +826,6 @@ if (debug) $fdisplay(32'h80000002, "ARGEND: a_rargno %d a_wargno %d arg_aR %d ar
 			else begin
 				state <= `EXECUTE;
 //				if (i_useadd) alu_op <= `ALU_PLUS;
-//				if (i_usesub) alu_op <= `ALU_MINUS;
 //				if (i_usebis) alu_op <= `ALU_BIS;
 			end
 			OA_isreg <= 0;
@@ -876,6 +872,8 @@ if (debug) $fdisplay(32'h80000002, "EXEC: s_wb %d i_wb %d wrok %d aluz %d\r", s_
 			else
 				state <= `PREEXEC;
 			scounter <= scounter + 1;
+			/* regval for sizes less than long XX */
+			cur_reg_num_save <= argp_regnum[0];
 		end
 
 		`EXECUTE: begin
@@ -884,16 +882,13 @@ if (debug) $fdisplay(32'h80000002, "EXECUTE: pc %x arg1 %x arg2 %x useadd %d wba
 if (debug) $fdisplay(32'h80000002, "EXECUTE2: isspsw %d iscpsw %d pswbits %x bis %d \r", i_isspsw, i_iscpsw, i_pswbits, i_usebis);
 			writeback <= i_wback;
 			writeback2 <= i_wback2;
-//			if (i_useadd | i_usesub | i_usebis) begin
+//			if (i_useadd | i_usebis) begin
 //				argd[0] <= alu_res;
 //				Ctmp <= alu_cry;
 //			end
                        if (i_useadd)
                                { Ctmp, argd[0] } <=
                                    { 1'b0, arg[0] } + { 1'b0, arg[1] };
-                       if (i_usesub)
-                               { Ctmp, argd[0] } <=
-                                   { 1'b0, arg[0] } - { 1'b0, arg[1] };
 
                        if (i_usebis)
                                argd[0] <= arg[0] | arg[1];
@@ -921,8 +916,6 @@ if (debug) $fdisplay(32'h80000002, "EXECUTE2: isspsw %d iscpsw %d pswbits %x bis
 				else
 					argd[0] <= arg[0];
 			end
-			if (i_movpsl)
-				argd[0] <= psl;
 			if (i_move2)
 				argd[1] <= arg[2];
 			if (i_quad)
