@@ -340,7 +340,7 @@ initial psl_ipl = 5'h1f;
 	wire [7:0]	i_argoff, a_argoff, a_arg, cur_mux;
 	wire		i_enable, i_hasargs, i_emul, i_dohalt;
 	wire		a_enable, a_emul, a_last, i_move2, i_wback2;
-	wire		i_useadd, i_wback, i_usexor, i_usemtpr, i_usemfpr;
+	wire		i_useadd, i_wback, i_usemtpr, i_usemfpr;
 	wire		i_isspsw, i_iscpsw, i_setnz, i_clv, i_clc, i_setc;
 	wire		i_movpsl, i_usesub, i_useand;
 	wire		i_usebis, i_usebic, i_bbs, i_bbc, i_userot, i_usezex;
@@ -384,7 +384,6 @@ initial psl_ipl = 5'h1f;
 		.i_emul(i_emul),
 
 		.i_useadd(i_useadd),
-		.i_usexor(i_usexor),
 		.i_usemtpr(i_usemtpr),
 		.i_usemfpr(i_usemfpr),
 		.i_usesub(i_usesub),
@@ -899,8 +898,6 @@ if (debug) $fdisplay(32'h80000002, "EXECUTE2: isspsw %d iscpsw %d pswbits %x bis
 
 			if (i_useand)
 				argd[0] <= arg[0] & arg[1];
-			if (i_usexor)
-				argd[0] <= arg[0] ^ arg[1];
                        if (i_usebis)
                                argd[0] <= arg[0] | arg[1];
                        if (i_usebic)

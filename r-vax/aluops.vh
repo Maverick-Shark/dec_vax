@@ -5,3 +5,4 @@
 `define	ALU_BIS		4'd2
 `define	ALU_BIC		4'd3
 `define	ALU_AND		4'd4
+`define	ALU_XOR		4'd5

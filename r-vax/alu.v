@@ -28,6 +28,7 @@ module alu(
 		`ALU_BIS: res = left | right;
 		`ALU_BIC: res = ~left & right;
 		`ALU_AND: res = left & right;
+		`ALU_XOR: res = left ^ right;
 		default: res = 0;
 		endcase
 

@@ -20,7 +20,6 @@
 `define	MOVE2		20
 `define	WBACK2		21
 `define	MOVPSL		24
-`define	USEXOR		25
 `define	SETNZ		26
 `define	CLV		27
 `define	CLC		28
@@ -202,7 +201,6 @@ parameter	S_ROM_ADDRS = 256;
 	assign i_move2 = ucinsn_data[`MOVE2];
 	assign i_wback2 = ucinsn_data[`WBACK2];
 	assign i_movpsl = ucinsn_data[`MOVPSL];
-	assign i_usexor = ucinsn_data[`USEXOR];
 	assign i_usemtpr = ucinsn_data[`USEMTPR];
 	assign i_usemfpr = ucinsn_data[`USEMFPR];
 

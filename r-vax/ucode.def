@@ -145,9 +145,11 @@ mov:	plus arg1 0		argd0 wback eoi
 tst:	plus arg1 0		argd0 eoi
 add:	plus arg1 arg2		argd0 wback eoi
 add1:	plus arg1 1		argd0 wback eoi
-clr:	plus 0 0		argd0 wback eoi		# write d0
+clr:	plus 0 0		argd0 wback eoi
+xor:	xor arg1 arg2		argd0 wback eoi
 bicpsw:	bic arg1 psl		psl eoi
 bispsw:	bis arg1 psl		psl eoi
+bic:	bic arg1 arg2		argd0 wback eoi
 #
 # Check if a given bit in psl is set
 bset:	plus arg1 0	argd0			# move new pc to dest
@@ -213,11 +215,11 @@ ADDL3	rl,rl,wl	useadd setnz setaddv setc wback 	# c1
 SUBL2	1rl,0ml		usesub setnz wback			# c2
 #
 BISL2	rl,ml		usebis setnz clv wback			# c8
-BICL2	rl,ml		usebic setnz clv wback			# ca
+BICL2	rl,ml		lbl=bic setnz clv			# ca
 #
-XORL3	rl,rl,wl	usexor setnz clv wback			# cd
+XORL3	rl,rl,wl	lbl=xor setnz clv			# cd
 #
-MOVL	rl,rl#0,wl	useadd setnz clv wback			# d0
+MOVL	rl,wl		lbl=mov setnz clv			# d0
 CMPL	rl,rl		usesub setnz clv setc			# d1
 #
 BITL	rl,rl		useand setnz clv 			# d3
