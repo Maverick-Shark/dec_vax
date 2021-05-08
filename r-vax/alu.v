@@ -14,6 +14,7 @@ module alu(
 	input [31:0]	right,
 
 	output		cry,
+	output		zero,
 	output [31:0]	result
 );
 
@@ -26,12 +27,14 @@ module alu(
 		`ALU_MINUS: { Ctmp, res } = { 1'b0, left } - { 1'b0, right };
 		`ALU_BIS: res = left | right;
 		`ALU_BIC: res = ~left & right;
+		`ALU_AND: res = left & right;
 		default: res = 0;
 		endcase
 
 
 	assign result = res;
 	assign cry = Ctmp;
+	assign zero = ~|res;
 
 
 endmodule

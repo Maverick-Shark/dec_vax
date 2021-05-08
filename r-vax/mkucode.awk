@@ -191,6 +191,7 @@ BEGIN {
 	# hidden bits
 	fakearg["0"] = "00000000";
 	fakearg["1"] = "00000001";
+	fakearg["4"] = "00000100";
 	fakearg["pc"] = "01011111";
 	fakearg["(sp)+"] = "10001110";
 	fakearg["-(sp)"] = "01111110";
@@ -211,6 +212,9 @@ BEGIN {
 	stepargs["argd1"] = 13;	# save result in argd1
 	stepargs["psl"] = 14;	# save result in psl
 	stepargs["eoi"] = 15;	# last instruction
+	stepargs["zcond"] = 16;	# only if result zero
+	stepargs["nzcond"] = 17;# only if result !zero
+	stepargs["wback"] = 18;	# write back results
 
 
 	curargoff=0;
@@ -270,6 +274,8 @@ BEGIN {
 			# bit 0-11 are input and op of the ALU.
 			# 
 			for (i = shiftoff; i <= NF; i++) {
+				if ($i == "#")
+					break;
 				if (!($i in stepargs))
 					err($i " not in stepargs");
 				ucstep[stepoff] = \

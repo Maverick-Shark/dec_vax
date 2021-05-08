@@ -144,6 +144,8 @@ F3	AOBLEQ
 brw:	plus arg1 0		argd0 eoi
 bicpsw:	bic arg1 psl		psl eoi
 bispsw:	bis arg1 psl		psl eoi
+bset:	plus arg1 0		argd0		# move new pc to dest
+	and arg2 psl		nzcond wback eoi	# if result Z writeback
 #
 !INSTRUCTIONS
 REI	rl#(sp)+,rl#0,rl#(sp)+,wl#pc,wl#pc	useadd wback2	# 02
@@ -153,7 +155,10 @@ RSB	rl#(sp)+,rl#0,wl#pc	useadd wback 			# 05
 BSBB	ab#b^d(pc),rl#0,rl#pc,wl#pc,wl#-(sp)	useadd move2 wback wback2
 BRB	aw#b^d(pc),rl#0,wl#pc	useadd wback			# 11
 BNEQ	ab#b^d(pc),rl#0,wl#pc	useadd wback ccz iscpsw		# 12
-BEQL	ab#b^d(pc),rl#0,wl#pc	useadd wback ccz isspsw		# 13
+
+#BEQL	ab#b^d(pc),rl#0,wl#pc	useadd wback ccz isspsw		# 13
+BEQL	ab#b^d(pc),rl#4,wl#pc	lbl=bset			# 13
+
 BGTR	ab#b^d(pc),rl#0,wl#pc	useadd wback ccz ccn iscpsw	# 14
 BLEQ	ab#b^d(pc),rl#0,wl#pc	useadd wback ccz ccn isspsw	# 15
 JSB	ab,rl#0,rl#pc,wl#pc,wl#-(sp)	useadd move2 wback wback2 # 16

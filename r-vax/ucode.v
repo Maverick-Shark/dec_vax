@@ -106,6 +106,9 @@ module ucode(
 	output			s_argd1,
 	output			s_psl,
 	output			s_eoi,
+	output			s_zcond,
+	output			s_nzcond,
+	output			s_wback,
 
 	output [31:0]		s_const,
 
@@ -161,6 +164,9 @@ parameter	S_ROM_ADDRS = 256;
 	assign s_argd1 = ucstep_data[13];
 	assign s_psl = ucstep_data[14];
 	assign s_eoi = ucstep_data[15];
+	assign s_zcond = ucstep_data[16];
+	assign s_nzcond = ucstep_data[17];
+	assign s_wback = ucstep_data[18];
 	assign s_const = ucstep_data[63:32];
 
 	assign i_argoff = ucinsn_data[7:0];

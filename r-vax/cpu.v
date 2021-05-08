@@ -356,6 +356,7 @@ initial psl_ipl = 5'h1f;
 	reg		arg_quad_u;
 
 	wire		s_enable, s_argd0, s_argd1, s_psl, s_eoi;
+	wire		s_nzcond, s_zcond, s_wback;
 	wire [7:0]	s_stepoff, i_stepoff;
 	wire [3:0]	s_op, s_left, s_right;
 	wire [31:0]	s_const;
@@ -430,6 +431,9 @@ initial psl_ipl = 5'h1f;
 		.s_argd1(s_argd1),
 		.s_psl(s_psl),
 		.s_eoi(s_eoi),
+		.s_zcond(s_zcond),
+		.s_nzcond(s_nzcond),
+		.s_wback(s_wback),
 		.s_const(s_const),
 
 		.a_enable(a_enable),
@@ -536,11 +540,25 @@ initial debug = 0;
 	 * ALU code.
 	 */
 	
-	wire		alu_cry;
+	wire		alu_cry, alu_zero;
 	wire [31:0]	alu_res;
 	reg [31:0]	alu_right, alu_left;
 
-	alu alu(clk, s_op, alu_left, alu_right, alu_cry, alu_res);
+	alu alu(
+		.clk(clk),
+
+		.op(s_op),
+		.left(alu_left),
+		.right(alu_right),
+		.cry(alu_cry),
+		.zero(alu_zero),
+		.result(alu_res)
+	);
+
+	/* OK to do conditional in microcode? */
+	wire		wr_cond_ok;
+	assign wr_cond_ok = (s_nzcond == 0 && s_zcond == 0) ||
+	    (s_zcond && alu_zero) || (s_nzcond && alu_zero == 0);
 
 	always @(posedge clk) begin
 		if (rst)
@@ -841,6 +859,7 @@ if (debug) $fdisplay(32'h80000002, "PREEXEC: sleft %d sright %d scounter %d\r", 
 
 		`EXEC: begin
 if (debug) $fdisplay(32'h80000002, "EXEC: left %x right %x eoi %d\r", alu_left, alu_right, s_eoi);
+if (debug) $fdisplay(32'h80000002, "EXEC: s_wb %d i_wb %d wrok %d aluz %d\r", s_wback, i_wback, wr_cond_ok, alu_zero);
 			if (s_argd0)
 				argd[0] <= alu_res;
 			if (s_argd1)
@@ -850,11 +869,14 @@ if (debug) $fdisplay(32'h80000002, "EXEC: left %x right %x eoi %d\r", alu_left, 
 				    { alu_res[26], alu_res[25:24], 
 				      alu_res[23:22], alu_res[20:16],
 				      alu_res[7:0] };
+			if (wr_cond_ok) begin
+				if (s_wback | i_wback)
+					writeback <= 1;
+			end
 			if (s_eoi)
 				state <= `ENDINST;
 			else
 				state <= `PREEXEC;
-			writeback <= i_wback;
 			scounter <= scounter + 1;
 		end
 
