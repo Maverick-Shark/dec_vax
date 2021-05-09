@@ -34,7 +34,6 @@
 `define EXECUTE		19
 `define ENDINST		20
 `define ACBINST		21
-`define POPPUSHR	22
 `define PREEXEC		23
 `define EXEC		24
 
@@ -343,8 +342,7 @@ initial psl_ipl = 5'h1f;
 	wire		i_wback, i_usemtpr, i_usemfpr;
 	wire		i_setnz, i_clv, i_clc, i_setc;
 	wire		i_bbs, i_bbc, i_userot;
-	wire		i_setbit, i_clrbit, i_insv, i_quad, i_useacb;
-	wire		i_popr, i_pushr;
+	wire		i_setbit, i_clrbit, i_quad, i_useacb;
 	wire		arg_aR, arg_aW, arg_aA;
 	wire [2:0]	a_argcode;
 	wire [1:0]	a_argsz;
@@ -384,7 +382,6 @@ initial psl_ipl = 5'h1f;
 		.i_usemtpr(i_usemtpr),
 		.i_usemfpr(i_usemfpr),
 		.i_userot(i_userot),
-		.i_insv(i_insv),
 		.i_useacb(i_useacb),
 		.i_wback(i_wback),
 
@@ -398,8 +395,6 @@ initial psl_ipl = 5'h1f;
 		.i_clrbit(i_clrbit),
 		.i_quad(i_quad),
 
-		.i_popr(i_popr),
-		.i_pushr(i_pushr),
 
 		.i_stepoff(i_stepoff),
 
@@ -495,8 +490,8 @@ initial psl_ipl = 5'h1f;
 		endcase
 
 
-	wire [31:0]	bm_pos, bm_neg;
-	bitmasks bitmasks(arg[1][4:0], arg[2][4:0], bm_pos, bm_neg);
+//	wire [31:0]	bm_pos, bm_neg;
+//	bitmasks bitmasks(arg[1][4:0], arg[2][4:0], bm_pos, bm_neg);
 
 	/*
 	 * Program counter mgmt. curpc is the "live" version. greg[15] is
@@ -814,8 +809,6 @@ if (debug) $fdisplay(32'h80000002, "ARGEND: a_rargno %d a_wargno %d arg_aR %d ar
 				state <= `PREEXEC;
 			end else if (i_useacb)
 				state <= `ACBINST;
-			else if (i_popr|i_pushr)
-				state <= `POPPUSHR;
 			else begin
 				state <= `EXECUTE;
 			end
@@ -859,11 +852,13 @@ if (debug) $fdisplay(32'h80000002, "EXEC: s_wb %d i_wb %d wrok %d aluz %d\r", s_
 			writeback2 <= i_wback2;
 			if (s_savc)
 				Ctmp <= alu_cry;
+//if (alu_pleasewait == 0) begin
 			if (s_eoi)
 				state <= `ENDINST;
 			else
 				state <= `PREEXEC;
 			scounter <= scounter + 1;
+//end
 
 			/* regval for sizes less than long XXX */
 			cur_reg_num_save <= argp_regnum[0];
@@ -894,12 +889,6 @@ if (debug) $fdisplay(32'h80000002, "EXECUTE: pc %x arg1 %x arg2 %x wback %d\r", 
 					    (arg[1] >> a1neg);
 			if (i_move2)
 				argd[1] <= arg[2];
-			if (i_quad)
-				argd[1] <= OPu;
-			if (i_insv)
-				argd[0] <= (arg[3] & bm_neg) |
-				    ((arg[0] << arg[1][4:0]) & bm_pos);
-if (i_insv) $fdisplay(32'h80000002, "INSV: pc %x arg[0] %x arg[1] %x arg[2] %x\r", oldpc, arg[0], arg[1], arg[2]);
 			cur_reg_num_save <= argp_regnum[0];
 		end
 
@@ -1011,29 +1000,6 @@ $fdisplay(32'h80000002, "MCODE: ctr %d mc_rv %x\r", mcodectr, mc_rv);
 				state <= `S_FETCH;
 			end
 		end
-
-`ifdef notdef
-		/*
-		 * Popr/pushr
-		 * Entry:
-		 *	cur_reg_num_save == REG_SP;
-		 * 	greg_wregnum == 15
-		 */
-		`POPPUSHR: begin
-			if (&greg_wregnum) begin
-				cpu_addr <= cur_reg_val - 4;
-			end else begin
-				greg_wregnum <= `REG_SP;
-				popushcnt <= popushcnt - 1;
-				greg_wbdata <= cur_reg_val - 4;
-				cpu_addr <= cur_reg_val - 4;
-				wregstate <= `WREG_WRITEMEM;
-				wmemstate <= `WMEM_POPPUSHR;
-				state <= `S_WREG;
-				cpu_wdata <= 
-			end
-		end
-`endif
 
 		`MTPR: begin
 if (debug) $fdisplay(32'h80000002, "MTPR: arg[0] %x arg[1] %x\r", arg[0], arg[1]);

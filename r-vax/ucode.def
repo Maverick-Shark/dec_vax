@@ -160,6 +160,7 @@ bset:	plus arg1 0	argd0			# move new pc to dest
 # Check if given bit(s) in psl are clear
 bclr:	plus arg1 0	argd0			# move new pc to dest
 	and arg2 psl	zcond wback eoi		# if result Z writeback
+#bbs:	
 #
 #
 !INSTRUCTIONS

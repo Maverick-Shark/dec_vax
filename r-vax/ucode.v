@@ -27,11 +27,8 @@
 `define	USEROT		38
 `define	SETBIT		40
 `define	CLRBIT		41
-`define	INSV		42
 `define	QUAD		43
 `define	USEACB		44
-`define	POPR		45
-`define	PUSHR		46
 /* 47-55 is step offset */
 
 `define	DOHALT		63
@@ -52,7 +49,6 @@ module ucode(
 	output			i_usemtpr,
 	output			i_usemfpr,
 	output			i_userot,
-	output			i_insv,
 	output			i_useacb,
 	output			i_wback,
 
@@ -68,8 +64,6 @@ module ucode(
 
 	output			i_move2,
 	output			i_wback2,
-	output			i_popr,
-	output			i_pushr,
 
 	output [7:0]		i_stepoff,
 
@@ -155,7 +149,6 @@ parameter	S_ROM_ADDRS = 256;
 	assign i_emul = ucinsn_data[`IEMUL];
 	assign i_dohalt = ucinsn_data[`DOHALT];
 	assign i_userot = ucinsn_data[`USEROT];
-	assign i_insv = ucinsn_data[`INSV];
 	assign i_useacb = ucinsn_data[`USEACB];
 	assign i_wback = ucinsn_data[`WBACK];
 
@@ -168,8 +161,6 @@ parameter	S_ROM_ADDRS = 256;
 	assign i_setbit = ucinsn_data[`SETBIT];
 	assign i_clrbit = ucinsn_data[`CLRBIT];
 	assign i_quad = ucinsn_data[`QUAD];
-	assign i_popr = ucinsn_data[`POPR];
-	assign i_pushr = ucinsn_data[`PUSHR];
 
 	assign i_move2 = ucinsn_data[`MOVE2];
 	assign i_wback2 = ucinsn_data[`WBACK2];
