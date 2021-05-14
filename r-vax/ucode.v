@@ -24,7 +24,6 @@
 `define	SETC		35
 `define	BBS		36
 `define	BBC		37
-`define	USEROT		38
 `define	SETBIT		40
 `define	CLRBIT		41
 `define	QUAD		43
@@ -48,7 +47,6 @@ module ucode(
 
 	output			i_usemtpr,
 	output			i_usemfpr,
-	output			i_userot,
 	output			i_useacb,
 	output			i_wback,
 
@@ -148,7 +146,6 @@ parameter	S_ROM_ADDRS = 256;
 	assign i_hasargs = ucinsn_data[`IHASARGS];
 	assign i_emul = ucinsn_data[`IEMUL];
 	assign i_dohalt = ucinsn_data[`DOHALT];
-	assign i_userot = ucinsn_data[`USEROT];
 	assign i_useacb = ucinsn_data[`USEACB];
 	assign i_wback = ucinsn_data[`WBACK];
 

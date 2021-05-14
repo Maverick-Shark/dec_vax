@@ -186,11 +186,6 @@ module cpu(
 /* verilator lint_on UNDRIVEN */
 /* verilator lint_on UNUSED */
 
-	wire [4:0]	a1neg;
-	negate negate(
-		.val(arg[0][4:0]),
-		.neg(a1neg)
-	);
 
 	wire [31:0]	arg1mask, arg2and;
 	wire		arg2any;
@@ -341,7 +336,7 @@ initial psl_ipl = 5'h1f;
 	wire		a_enable, a_emul, a_last, i_move2, i_wback2;
 	wire		i_wback, i_usemtpr, i_usemfpr;
 	wire		i_setnz, i_clv, i_clc, i_setc;
-	wire		i_bbs, i_bbc, i_userot;
+	wire		i_bbs, i_bbc;
 	wire		i_setbit, i_clrbit, i_quad, i_useacb;
 	wire		arg_aR, arg_aW, arg_aA;
 	wire [2:0]	a_argcode;
@@ -362,12 +357,13 @@ initial psl_ipl = 5'h1f;
 	assign i_enable = (state == `S_FETCH) && isvalid;
 	assign a_enable = (state == `S_DECODE) || (state == `ARGEND);
 	assign a_argoff = (state == `S_DECODE) ? i_argoff : acounter;
-	assign s_enable = (state == `S_DECODE) || (state == `EXEC);
-	assign s_stepoff = (state == `S_DECODE) ? i_stepoff : scounter;
+//	assign s_enable = (state == `S_DECODE) || (state == `EXEC);
+//	assign s_stepoff = (state == `S_DECODE) ? i_stepoff : scounter;
 	assign arg_aR = a_argcode[2];
 	assign arg_aW = a_argcode[1];
 	assign arg_aA = a_argcode[0];
 	assign cur_mux = a_emul ? a_arg : cur_byte;
+
 
 	ucode ucode(
 		.clk(clk),
@@ -381,7 +377,6 @@ initial psl_ipl = 5'h1f;
 
 		.i_usemtpr(i_usemtpr),
 		.i_usemfpr(i_usemfpr),
-		.i_userot(i_userot),
 		.i_useacb(i_useacb),
 		.i_wback(i_wback),
 
@@ -523,9 +518,10 @@ initial debug = 0;
 	 * ALU code.
 	 */
 	
-	wire		alu_cry, alu_zero;
+	wire		alu_cry, alu_zero, alu_stb, alu_ack;
 	wire [31:0]	alu_res;
 	reg [31:0]	alu_right, alu_left;
+	assign alu_stb = (state == `EXEC);
 
 	alu alu(
 		.clk(clk),
@@ -533,6 +529,9 @@ initial debug = 0;
 		.op(s_op),
 		.left(alu_left),
 		.right(alu_right),
+		.stb(alu_stb),
+		.ack(alu_ack),
+
 		.cry(alu_cry),
 		.zero(alu_zero),
 		.result(alu_res)
@@ -542,6 +541,10 @@ initial debug = 0;
 	wire		wr_cond_ok;
 	assign wr_cond_ok = (s_nzcond == 0 && s_zcond == 0) ||
 	    (s_zcond && alu_zero) || (s_nzcond && alu_zero == 0);
+	assign s_stepoff = (state == `S_DECODE) ? i_stepoff : 
+	    /* wr_cond_ok && s_goto ? s_const[7:0] : */ scounter;
+	assign s_enable = (state == `S_DECODE) || 
+	    ((state == `EXEC) && alu_ack);
 
 	always @(posedge clk) begin
 		if (rst)
@@ -817,9 +820,10 @@ if (debug) $fdisplay(32'h80000002, "ARGEND: a_rargno %d a_wargno %d arg_aR %d ar
 		end
 
 		`PREEXEC: begin
-if (debug) $fdisplay(32'h80000002, "PREEXEC: sleft %d sright %d scounter %d\r", s_left, s_right, scounter);
+if (debug) $fdisplay(32'h80000002, "PREEXEC: op %d sleft %d sright %d scounter %d\r", s_op, s_left, s_right, scounter);
 			casez (s_left)
 			4'b00??: alu_left <= arg[s_left[1:0]];
+			4'b010?: alu_left <= argd[s_left[0]];
 			4'b1000: alu_left <= psl;
 			4'b1001: alu_left <= s_const;
 			default: alu_left <= 0;
@@ -827,16 +831,20 @@ if (debug) $fdisplay(32'h80000002, "PREEXEC: sleft %d sright %d scounter %d\r", 
 
 			casez (s_right)
 			4'b00??: alu_right <= arg[s_right[1:0]];
+			4'b010?: alu_right <= argd[s_right[0]];
 			4'b1000: alu_right <= psl;
 			4'b1001: alu_right <= s_const;
 			default: alu_right <= 0;
 			endcase
+
+			scounter <= scounter + 1;
 			state <= `EXEC;
 		end
 
 		`EXEC: begin
-if (debug) $fdisplay(32'h80000002, "EXEC: left %x right %x eoi %d\r", alu_left, alu_right, s_eoi);
-if (debug) $fdisplay(32'h80000002, "EXEC: s_wb %d i_wb %d wrok %d aluz %d\r", s_wback, i_wback, wr_cond_ok, alu_zero);
+if (debug) $fdisplay(32'h80000002, "EXEC: left %x right %x eoi %d ", alu_left, alu_right, s_eoi);
+if (debug) $fdisplay(32'h80000002, "s_wb %d i_wb %d wrok %d aluz %d\r", s_wback, i_wback, wr_cond_ok, alu_zero);
+if (debug) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d stepoff %d\r", alu_stb, alu_ack, s_enable, s_stepoff);
 			if (s_argd0)
 				argd[0] <= alu_res;
 			if (s_argd1)
@@ -852,13 +860,19 @@ if (debug) $fdisplay(32'h80000002, "EXEC: s_wb %d i_wb %d wrok %d aluz %d\r", s_
 			writeback2 <= i_wback2;
 			if (s_savc)
 				Ctmp <= alu_cry;
-//if (alu_pleasewait == 0) begin
-			if (s_eoi)
-				state <= `ENDINST;
-			else
-				state <= `PREEXEC;
-			scounter <= scounter + 1;
-//end
+			if (alu_ack) begin
+`ifdef notyet
+				if (wrmem)
+					state <= `WRITEMEM;
+				else if (rdmem)
+					state <= `READMEM;
+				else
+`endif
+				if (s_eoi)
+					state <= `ENDINST;
+				else
+					state <= `PREEXEC;
+			end
 
 			/* regval for sizes less than long XXX */
 			cur_reg_num_save <= argp_regnum[0];
@@ -884,9 +898,6 @@ if (debug) $fdisplay(32'h80000002, "EXECUTE: pc %x arg1 %x arg2 %x wback %d\r", 
 				argd[0] <= arg[1] | arg1mask;
 			if (i_clrbit)
 				argd[0] <= arg[1] & ~arg1mask;
-			if (i_userot)
-				argd[0] <= (arg[1] << arg[0][4:0]) |
-					    (arg[1] >> a1neg);
 			if (i_move2)
 				argd[1] <= arg[2];
 			cur_reg_num_save <= argp_regnum[0];

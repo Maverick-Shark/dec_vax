@@ -210,6 +210,8 @@ BEGIN {
 	leftop["arg2"] = rightop["arg2"] = 1;
 	leftop["arg3"] = rightop["arg3"] = 2;
 	leftop["arg4"] = rightop["arg4"] = 3;
+	leftop["argd0"] = rightop["argd0"] = 4;
+	leftop["argd1"] = rightop["argd1"] = 5;
 	leftop["psl"] = rightop["psl"] = 8;
 	leftop["const"] = rightop["const"] = 9;
 

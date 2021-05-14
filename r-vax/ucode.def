@@ -160,7 +160,13 @@ bset:	plus arg1 0	argd0			# move new pc to dest
 # Check if given bit(s) in psl are clear
 bclr:	plus arg1 0	argd0			# move new pc to dest
 	and arg2 psl	zcond wback eoi		# if result Z writeback
-#bbs:	
+#
+# arg1 == shift count, arg2 = val
+rot:	shl arg2 arg1	argd0
+	and arg1 1F	argd1
+	minus 20 argd1	argd1
+	shr arg2 argd1 	argd1
+	bis argd1 argd0	argd0 eoi
 #
 #
 !INSTRUCTIONS
@@ -202,7 +208,7 @@ TSTB	rb		lbl=tst setnz clv clc			# 95
 #
 MOVZBL	rb,wl		lbl=zbl setnz clv wback			# 9a
 MOVZBW	rb,ww		lbl=zbl setnz clv wback			# 9b
-ROTL	rb,rl,wl	userot setnz clv wback			# 9c
+ROTL	rb,rl,wl	lbl=rot setnz clv wback			# 9c
 #
 MOVW	rw,ww		lbl=mov setnz clv wback			# b0
 CMPW	rw,rw		lbl=sub setnz clv setc			# b1
