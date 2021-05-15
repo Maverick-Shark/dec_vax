@@ -224,6 +224,9 @@ BEGIN {
 	stepargs["nzcond"] = 17;# only if result !zero
 	stepargs["wback"] = 18;	# write back results
 	stepargs["savc"] = 19;	# save carry from op
+	stepargs["ncond"] = 20;	# only if result negative
+	stepargs["nncond"] = 21;# only if result !negative
+	stepargs["wback2"] = 22;# write back results 2
 
 
 	curargoff=0;

@@ -27,7 +27,6 @@
 `define	SETBIT		40
 `define	CLRBIT		41
 `define	QUAD		43
-`define	USEACB		44
 /* 47-55 is step offset */
 
 `define	DOHALT		63
@@ -47,7 +46,6 @@ module ucode(
 
 	output			i_usemtpr,
 	output			i_usemfpr,
-	output			i_useacb,
 	output			i_wback,
 
 	output			i_setnz,
@@ -81,6 +79,9 @@ module ucode(
 	output			s_nzcond,
 	output			s_wback,
 	output			s_savc,
+	output			s_ncond,
+	output			s_nncond,
+	output			s_wback2,
 
 	output [31:0]		s_const,
 
@@ -140,13 +141,15 @@ parameter	S_ROM_ADDRS = 256;
 	assign s_nzcond = ucstep_data[17];
 	assign s_wback = ucstep_data[18];
 	assign s_savc = ucstep_data[19];
+	assign s_ncond = ucstep_data[20];
+	assign s_nncond = ucstep_data[21];
+	assign s_wback2 = ucstep_data[22];
 	assign s_const = ucstep_data[63:32];
 
 	assign i_argoff = ucinsn_data[7:0];
 	assign i_hasargs = ucinsn_data[`IHASARGS];
 	assign i_emul = ucinsn_data[`IEMUL];
 	assign i_dohalt = ucinsn_data[`DOHALT];
-	assign i_useacb = ucinsn_data[`USEACB];
 	assign i_wback = ucinsn_data[`WBACK];
 
 	assign i_setnz = ucinsn_data[`SETNZ];

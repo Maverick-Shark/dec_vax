@@ -16,6 +16,7 @@ module alu(
 	input		stb,
 	output		ack,
 
+	output		neg,
 	output		cry,
 	output		zero,
 	output [31:0]	result
@@ -83,6 +84,7 @@ parameter SHIFT=1;
 
 	assign result = res;
 	assign cry = Ctmp;
+	assign neg = res[31];
 	assign zero = ~|res;
 
 

@@ -141,7 +141,7 @@ F3	AOBLEQ
 mov:	plus arg1 0		argd0 eoi
 tst:	plus arg1 0		argd0 eoi
 add:	plus arg1 arg2		argd0 eoi
-add1:	plus arg1 1		argd0 wback eoi
+add1:	plus arg1 1		argd0 savc eoi
 clr:	plus 0 0		argd0 wback eoi
 xor:	xor arg1 arg2		argd0 wback eoi
 sub:	minus arg1 arg2		argd0 savc eoi
@@ -161,16 +161,20 @@ bset:	plus arg1 0	argd0			# move new pc to dest
 bclr:	plus arg1 0	argd0			# move new pc to dest
 	and arg2 psl	zcond wback eoi		# if result Z writeback
 #
-# arg1 == shift count, arg2 = val
+# ROTL: arg1 == shift count, arg2 = val
 rot:	shl arg2 arg1	argd0
 	and arg1 1F	argd1
 	minus 20 argd1	argd1
 	shr arg2 argd1 	argd1
 	bis argd1 argd0	argd0 eoi
 #
+# Normalize 
+#
+aobleq:	plus 1 arg2		argd0 savc		# inc index
+	plus arg3 0		argd1			# save branch addr
+	minus arg1 argd0 	nncond wback2 eoi	# br if (ix > l)
 #
 !INSTRUCTIONS
-#REI	rl#(sp)+,rl#0,rl#(sp)+,wl#pc,wl#pc	useadd wback2	# 02
 #
 RSB	rl#(sp)+,wl#pc	lbl=mov wback 				# 05
 #
@@ -218,7 +222,7 @@ TSTW	rw		lbl=tst setnz clv clc			# b5
 BISPSW	rw		lbl=bispsw				# b8
 BICPSW	rw		lbl=bicpsw				# b9
 # 
-#ADDL2	rl,ml		lbl=add setnz setaddv setc wback 	# c0
+ADDL2	rl,ml		lbl=add setnz setc wback 		# c0
 ADDL3	rl,rl,wl	lbl=add setnz setc wback 		# c1
 SUBL2	1rl,0ml		lbl=sub setnz wback			# c2
 #
@@ -233,7 +237,7 @@ CMPL	rl,rl		lbl=sub setnz clv setc			# d1
 BITL	rl,rl		lbl=and setnz clv 			# d3
 CLRL	wl		lbl=clr setnz clv 			# d4
 TSTL	rl		lbl=tst setnz clv clc 			# d5
-INCL	ml		lbl=add1 setnz				# d6
+INCL	ml		lbl=add1 setnz setc wback		# d6
 DECL	ml,rl#1		lbl=sub setnz wback 			# d7
 #
 MTPR	rl,rl		usemtpr 				# da
@@ -256,4 +260,4 @@ BLBC	rl#0,rl,ab#b^d(pc),wl#pc,wl#pc bbc move2 wback2		# e9
 #INSV	rl,rl,rb,ml	insv wback				# f0
 #INSV	rl,rl,rb,wb	iemul					# f0
 #
-AOBLEQ	rl,ml,ab#b^d(pc),wl#pc setnz useacb move2 wback		# f3
+AOBLEQ	rl,ml,ab#b^d(pc),wl#pc lbl=aobleq setnz wback		# f3

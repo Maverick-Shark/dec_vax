@@ -33,7 +33,6 @@
 `define ARGEND		18
 `define EXECUTE		19
 `define ENDINST		20
-`define ACBINST		21
 `define PREEXEC		23
 `define EXEC		24
 
@@ -337,7 +336,7 @@ initial psl_ipl = 5'h1f;
 	wire		i_wback, i_usemtpr, i_usemfpr;
 	wire		i_setnz, i_clv, i_clc, i_setc;
 	wire		i_bbs, i_bbc;
-	wire		i_setbit, i_clrbit, i_quad, i_useacb;
+	wire		i_setbit, i_clrbit, i_quad;
 	wire		arg_aR, arg_aW, arg_aA;
 	wire [2:0]	a_argcode;
 	wire [1:0]	a_argsz;
@@ -348,6 +347,7 @@ initial psl_ipl = 5'h1f;
 
 	wire		s_enable, s_argd0, s_argd1, s_psl, s_eoi;
 	wire		s_nzcond, s_zcond, s_wback, s_savc;
+	wire		s_nncond, s_ncond, s_wback2;
 	wire [7:0]	s_stepoff, i_stepoff;
 	wire [3:0]	s_op, s_left, s_right;
 	wire [31:0]	s_const;
@@ -357,8 +357,6 @@ initial psl_ipl = 5'h1f;
 	assign i_enable = (state == `S_FETCH) && isvalid;
 	assign a_enable = (state == `S_DECODE) || (state == `ARGEND);
 	assign a_argoff = (state == `S_DECODE) ? i_argoff : acounter;
-//	assign s_enable = (state == `S_DECODE) || (state == `EXEC);
-//	assign s_stepoff = (state == `S_DECODE) ? i_stepoff : scounter;
 	assign arg_aR = a_argcode[2];
 	assign arg_aW = a_argcode[1];
 	assign arg_aA = a_argcode[0];
@@ -377,7 +375,6 @@ initial psl_ipl = 5'h1f;
 
 		.i_usemtpr(i_usemtpr),
 		.i_usemfpr(i_usemfpr),
-		.i_useacb(i_useacb),
 		.i_wback(i_wback),
 
 		.i_setnz(i_setnz),
@@ -412,6 +409,9 @@ initial psl_ipl = 5'h1f;
 		.s_nzcond(s_nzcond),
 		.s_wback(s_wback),
 		.s_savc(s_savc),
+		.s_ncond(s_ncond),
+		.s_nncond(s_nncond),
+		.s_wback2(s_wback2),
 		.s_const(s_const),
 
 		.a_enable(a_enable),
@@ -518,7 +518,7 @@ initial debug = 0;
 	 * ALU code.
 	 */
 	
-	wire		alu_cry, alu_zero, alu_stb, alu_ack;
+	wire		alu_cry, alu_zero, alu_stb, alu_ack, alu_neg;
 	wire [31:0]	alu_res;
 	reg [31:0]	alu_right, alu_left;
 	assign alu_stb = (state == `EXEC);
@@ -532,6 +532,7 @@ initial debug = 0;
 		.stb(alu_stb),
 		.ack(alu_ack),
 
+		.neg(alu_neg),
 		.cry(alu_cry),
 		.zero(alu_zero),
 		.result(alu_res)
@@ -539,8 +540,10 @@ initial debug = 0;
 
 	/* OK to do conditional in microcode? */
 	wire		wr_cond_ok;
-	assign wr_cond_ok = (s_nzcond == 0 && s_zcond == 0) ||
-	    (s_zcond && alu_zero) || (s_nzcond && alu_zero == 0);
+	assign wr_cond_ok =
+	    (s_nzcond == 0 && s_zcond == 0 && s_ncond == 0 && s_nncond == 0) ||
+	    (s_zcond && alu_zero) || (s_nzcond && alu_zero == 0) ||
+	    (s_ncond && alu_neg) || (s_nncond && alu_neg == 0);
 	assign s_stepoff = (state == `S_DECODE) ? i_stepoff : 
 	    /* wr_cond_ok && s_goto ? s_const[7:0] : */ scounter;
 	assign s_enable = (state == `S_DECODE) || 
@@ -808,10 +811,8 @@ if (debug) $fdisplay(32'h80000002, "ARGEND: a_rargno %d a_wargno %d arg_aR %d ar
 				state <= `MCODE;
 				mcodectr <= 13;
 				cur_reg_num_save <= `REG_SP;
-			end else if (|scounter) begin
+			end else if (|scounter)
 				state <= `PREEXEC;
-			end else if (i_useacb)
-				state <= `ACBINST;
 			else begin
 				state <= `EXECUTE;
 			end
@@ -843,8 +844,8 @@ if (debug) $fdisplay(32'h80000002, "PREEXEC: op %d sleft %d sright %d scounter %
 
 		`EXEC: begin
 if (debug) $fdisplay(32'h80000002, "EXEC: left %x right %x eoi %d ", alu_left, alu_right, s_eoi);
-if (debug) $fdisplay(32'h80000002, "s_wb %d i_wb %d wrok %d aluz %d\r", s_wback, i_wback, wr_cond_ok, alu_zero);
-if (debug) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d stepoff %d\r", alu_stb, alu_ack, s_enable, s_stepoff);
+if (debug) $fdisplay(32'h80000002, "wb %d iwb %d wb2 %d iwb2 %d wrok %d aluz %d\r", s_wback, i_wback, s_wback2, i_wback2, wr_cond_ok, alu_zero);
+if (debug) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d stepoff %d wrcond %d\r", alu_stb, alu_ack, s_enable, s_stepoff, wr_cond_ok);
 			if (s_argd0)
 				argd[0] <= alu_res;
 			if (s_argd1)
@@ -857,7 +858,9 @@ if (debug) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d stepoff %d\r"
 			if ((wr_cond_ok && s_wback) || i_wback) begin
 				writeback <= 1;
 			end
-			writeback2 <= i_wback2;
+			if ((wr_cond_ok && s_wback2) || i_wback2) begin
+				writeback2 <= 1;
+			end
 			if (s_savc)
 				Ctmp <= alu_cry;
 			if (alu_ack) begin
@@ -901,16 +904,6 @@ if (debug) $fdisplay(32'h80000002, "EXECUTE: pc %x arg1 %x arg2 %x wback %d\r", 
 			if (i_move2)
 				argd[1] <= arg[2];
 			cur_reg_num_save <= argp_regnum[0];
-		end
-
-		`ACBINST: begin
-if (debug) $fdisplay(32'h80000002, "ACBINST: pc %x arg[0] %x arg[1] %x arg[2] %x\r", oldpc, arg[0], arg[1], arg[2]);
-			argd[0] <= arg[1] + 32'b1;
-			writeback <= 1;
-			if (arg[1] + 32'b1 <= arg[0])
-				writeback2 <= 1;
-			argd[1] <= arg[2];
-			state <= `ENDINST;
 		end
 
 		/*
