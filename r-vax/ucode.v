@@ -22,10 +22,6 @@
 `define	USEMTPR		29
 `define	USEMFPR		30
 `define	SETC		35
-`define	BBS		36
-`define	BBC		37
-`define	SETBIT		40
-`define	CLRBIT		41
 `define	QUAD		43
 /* 47-55 is step offset */
 
@@ -52,10 +48,6 @@ module ucode(
 	output			i_clv,
 	output			i_clc,
 	output			i_setc,
-	output			i_bbs,
-	output			i_bbc,
-	output			i_setbit,
-	output			i_clrbit,
 	output			i_quad,
 
 	output			i_move2,
@@ -156,10 +148,6 @@ parameter	S_ROM_ADDRS = 256;
 	assign i_clv = ucinsn_data[`CLV];
 	assign i_clc = ucinsn_data[`CLC];
 	assign i_setc = ucinsn_data[`SETC];
-	assign i_bbs = ucinsn_data[`BBS];
-	assign i_bbc = ucinsn_data[`BBC];
-	assign i_setbit = ucinsn_data[`SETBIT];
-	assign i_clrbit = ucinsn_data[`CLRBIT];
 	assign i_quad = ucinsn_data[`QUAD];
 
 	assign i_move2 = ucinsn_data[`MOVE2];

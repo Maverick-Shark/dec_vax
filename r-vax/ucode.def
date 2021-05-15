@@ -168,11 +168,37 @@ rot:	shl arg2 arg1	argd0
 	shr arg2 argd1 	argd1
 	bis argd1 argd0	argd0 eoi
 #
-# Normalize 
 #
 aobleq:	plus 1 arg2		argd0 savc		# inc index
 	plus arg3 0		argd1			# save branch addr
-	minus arg1 argd0 	nncond wback2 eoi	# br if (ix > l)
+	minus arg1 argd0 	nncond wback2 eoi	# br if !(ix > l)
+#
+# arg1=pos, arg2=base, arg3=displ
+bbc:	shr arg2 arg1	argd0
+	plus arg3 0	argd1
+	and argd0 1	zcond wback2 eoi
+bbs:	shr arg2 arg1	argd0
+	plus arg3 0	argd1
+	and argd0 1	nzcond wback2 eoi
+#
+# pos, base, displ
+# BBSS	rl,ml,ab#b^d(pc),wl#pc
+bbss:	shl 1 arg1	argd0		# position bit
+	plus 0 arg3	argd1		# save br addr
+	and argd0 arg2	nzcond wback2	# br if set
+	bis argd0 arg2	argd0 eoi	# set bit
+bbsc:	shl 1 arg1	argd0		# position bit
+	plus 0 arg3	argd1		# save br addr
+	and argd0 arg2	nzcond wback2	# br if set
+	bic argd0 arg2	argd0 eoi	# clear bit
+bbcs:	shl 1 arg1	argd0		# position bit
+	plus 0 arg3	argd1		# save br addr
+	and argd0 arg2	zcond wback2	# br if set
+	bis argd0 arg2	argd0 eoi	# set bit
+bbcc:	shl 1 arg1	argd0		# position bit
+	plus 0 arg3	argd1		# save br addr
+	and argd0 arg2	zcond wback2	# br if set
+	bic argd0 arg2	argd0 eoi	# clear bit
 #
 !INSTRUCTIONS
 #
@@ -246,16 +272,16 @@ MOVPSL	wl		lbl=movpsl wback			# dc
 #
 MOVAL	al,wl		lbl=mov setnz clv wback			# de
 #
-BBS	rl,rl,ab#b^d(pc),wl#pc,wl#pc bbs move2 wback2		# e0
-BBC	rl,rl,ab#b^d(pc),wl#pc,wl#pc bbc move2 wback2		# e1
-BBSS	rl,ml,ab#b^d(pc),wl#pc bbs setbit move2 wback wback2	# e2
-BBCS	rl,ml,ab#b^d(pc),wl#pc bbc setbit move2 wback wback2	# e3
-BBSC	rl,ml,ab#b^d(pc),wl#pc bbs clrbit move2 wback wback2	# e4
-BBCC	rl,ml,ab#b^d(pc),wl#pc bbc clrbit move2 wback wback2	# e5
-BBSSI	rl,ml,ab#b^d(pc),wl#pc bbs setbit move2 wback wback2	# e6
-BBCCI	rl,ml,ab#b^d(pc),wl#pc bbc clrbit move2 wback wback2	# e7
-BLBS	rl#0,rl,ab#b^d(pc),wl#pc,wl#pc bbs move2 wback2		# e8
-BLBC	rl#0,rl,ab#b^d(pc),wl#pc,wl#pc bbc move2 wback2		# e9
+BBS	rl,rl,ab#b^d(pc),wl#pc,wl#pc lbl=bbs 			# e0
+BBC	rl,rl,ab#b^d(pc),wl#pc,wl#pc lbl=bbc 			# e1
+BBSS	rl,ml,ab#b^d(pc),wl#pc lbl=bbss wback			# e2
+BBCS	rl,ml,ab#b^d(pc),wl#pc lbl=bbcs wback			# e3
+BBSC	rl,ml,ab#b^d(pc),wl#pc lbl=bbsc wback			# e4
+BBCC	rl,ml,ab#b^d(pc),wl#pc lbl=bbcc wback			# e5
+BBSSI	rl,ml,ab#b^d(pc),wl#pc lbl=bbss wback			# e6
+BBCCI	rl,ml,ab#b^d(pc),wl#pc lbl=bbcc wback			# e7
+BLBS	rl#0,rl,ab#b^d(pc),wl#pc,wl#pc lbl=bbs 			# e8
+BLBC	rl#0,rl,ab#b^d(pc),wl#pc,wl#pc lbl=bbc 			# e9
 #
 #INSV	rl,rl,rb,ml	insv wback				# f0
 #INSV	rl,rl,rb,wb	iemul					# f0

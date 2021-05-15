@@ -185,13 +185,6 @@ module cpu(
 /* verilator lint_on UNDRIVEN */
 /* verilator lint_on UNUSED */
 
-
-	wire [31:0]	arg1mask, arg2and;
-	wire		arg2any;
-	assign arg1mask = (1 << arg[0][4:0]);
-	assign arg2and = (arg[1] & arg1mask);
-	assign arg2any = |arg2and;
-
 	assign ipr_regraddr = halted ? CON_ADR_I[3:0] : arg[0][3:0];
 	assign ipr_regwaddr = halted ? CON_ADR_I[3:0] : arg[1][3:0];
 	assign ipr_wdata = halted ? CON_DAT_I : arg[0];
@@ -335,8 +328,7 @@ initial psl_ipl = 5'h1f;
 	wire		a_enable, a_emul, a_last, i_move2, i_wback2;
 	wire		i_wback, i_usemtpr, i_usemfpr;
 	wire		i_setnz, i_clv, i_clc, i_setc;
-	wire		i_bbs, i_bbc;
-	wire		i_setbit, i_clrbit, i_quad;
+	wire		i_quad;
 	wire		arg_aR, arg_aW, arg_aA;
 	wire [2:0]	a_argcode;
 	wire [1:0]	a_argsz;
@@ -381,10 +373,6 @@ initial psl_ipl = 5'h1f;
 		.i_clv(i_clv),
 		.i_clc(i_clc),
 		.i_setc(i_setc),
-		.i_bbs(i_bbs),
-		.i_bbc(i_bbc),
-		.i_setbit(i_setbit),
-		.i_clrbit(i_clrbit),
 		.i_quad(i_quad),
 
 
@@ -893,14 +881,6 @@ if (debug) $fdisplay(32'h80000002, "EXECUTE: pc %x arg1 %x arg2 %x wback %d\r", 
 			writeback <= i_wback;
 			writeback2 <= i_wback2;
 
-			if (i_bbs && ~arg2any)
-				writeback2 <= 0;
-			if (i_bbc && arg2any)
-				writeback2 <= 0;
-			if (i_setbit)
-				argd[0] <= arg[1] | arg1mask;
-			if (i_clrbit)
-				argd[0] <= arg[1] & ~arg1mask;
 			if (i_move2)
 				argd[1] <= arg[2];
 			cur_reg_num_save <= argp_regnum[0];
