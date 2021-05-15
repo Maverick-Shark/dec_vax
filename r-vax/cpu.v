@@ -31,10 +31,9 @@
 `define ARG_INDIR	16
 `define ARG_READ	17
 `define ARGEND		18
-`define EXECUTE		19
-`define ENDINST		20
-`define PREEXEC		23
-`define EXEC		24
+`define ENDINST		19
+`define PREEXEC		20
+`define EXEC		21
 
 /* WREG return states */
 `define	WREG_HALT	0
@@ -626,7 +625,7 @@ if (debug) $fdisplay(32'h80000002, "S_DECODE: i_hasargs %d i_emul %d\r", i_hasar
 				state <= `S_HALT;
 				haltpos <= `HALT_INSN;
 			end else if (i_hasargs == 0) // XXX emul
-				state <= `EXECUTE;
+				state <= `S_HALT;
 			else
 				state <= `ASETUP;
 		end
@@ -802,7 +801,7 @@ if (debug) $fdisplay(32'h80000002, "ARGEND: a_rargno %d a_wargno %d arg_aR %d ar
 			end else if (|scounter)
 				state <= `PREEXEC;
 			else begin
-				state <= `EXECUTE;
+				state <= `S_HALT;
 			end
 			OA_isreg <= 0;
 			IA <= 0;
@@ -873,17 +872,6 @@ if (debug) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d stepoff %d wr
 			/* XXX quad is a hack */
 			if (i_quad)
 				argd[1] <= OPu;
-		end
-
-		`EXECUTE: begin
-			state <= `ENDINST;
-if (debug) $fdisplay(32'h80000002, "EXECUTE: pc %x arg1 %x arg2 %x wback %d\r", curpc, arg[0], arg[1], i_wback);
-			writeback <= i_wback;
-			writeback2 <= i_wback2;
-
-			if (i_move2)
-				argd[1] <= arg[2];
-			cur_reg_num_save <= argp_regnum[0];
 		end
 
 		/*
