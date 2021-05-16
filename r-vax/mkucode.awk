@@ -216,6 +216,7 @@ BEGIN {
 #	leftop["argp1"] = rightop["argp1"] = 7;
 	leftop["psl"] = rightop["psl"] = 8;
 	leftop["const"] = rightop["const"] = 9;
+	leftop["OPu"] = rightop["OPu"] = 10;
 
 	# args to microcode instructions
 	stepargs["argd0"] = 12;	# save result in argd0
@@ -412,7 +413,7 @@ BEGIN {
 
 	for (i in resolve) {
 		if (!(i in steplbl))
-			error(i " not defined");
+			err(i " not defined");
 		s = ucstep[resolve[i]];
 		ucstep[resolve[i]] = substr(s,1,24) num2bit(resolve[i], 8) \
 		    substr(s,33);

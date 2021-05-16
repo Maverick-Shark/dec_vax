@@ -327,7 +327,6 @@ initial psl_ipl = 5'h1f;
 	wire		a_enable, a_emul, a_last, i_move2, i_wback2;
 	wire		i_wback, i_usemtpr, i_usemfpr;
 	wire		i_setnz, i_clv, i_clc, i_setc;
-	wire		i_quad;
 	wire		arg_aR, arg_aW, arg_aA;
 	wire [2:0]	a_argcode;
 	wire [1:0]	a_argsz;
@@ -372,7 +371,6 @@ initial psl_ipl = 5'h1f;
 		.i_clv(i_clv),
 		.i_clc(i_clc),
 		.i_setc(i_setc),
-		.i_quad(i_quad),
 
 
 		.i_stepoff(i_stepoff),
@@ -831,6 +829,7 @@ if (debug) $fdisplay(32'h80000002, "PREEXEC: op %d sleft %d sright %d scounter %
 //				argp[s_left[0]];
 			4'b1000: alu_left <= psl;
 			4'b1001: alu_left <= s_const;
+			4'b1010: alu_left <= OPu;
 			default: alu_left <= 0;
 			endcase
 
@@ -842,6 +841,7 @@ if (debug) $fdisplay(32'h80000002, "PREEXEC: op %d sleft %d sright %d scounter %
 //				argp[s_right[0]];
 			4'b1000: alu_right <= psl;
 			4'b1001: alu_right <= s_const;
+			4'b1010: alu_right <= OPu;
 			default: alu_right <= 0;
 			endcase
 
@@ -911,9 +911,6 @@ if (debug) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d stepoff %d wr
 			/* copy third arg XXX */
 			if (i_move2)
 				argd[1] <= arg[2];
-			/* XXX quad is a hack */
-			if (i_quad)
-				argd[1] <= OPu;
 		end
 
 		/*
@@ -980,8 +977,6 @@ if (debug) $fdisplay(32'h80000002, "WB0: argd0 %x size %d curreg %x curval %x\r"
 				writeback2 <= 0;
 			end
 			if (i_setnz) begin
-			//	psw[`PSL_N] <= argd[0][31];
-			//	psw[`PSL_Z] <= ~|argd[0];
 				psw[`PSL_N] <= Ntmp;
 				psw[`PSL_Z] <= Ztmp;
 			end

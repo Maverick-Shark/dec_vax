@@ -22,7 +22,6 @@
 `define	USEMTPR		29
 `define	USEMFPR		30
 `define	SETC		35
-`define	QUAD		43
 /* 47-55 is step offset */
 
 `define	DOHALT		63
@@ -48,7 +47,6 @@ module ucode(
 	output			i_clv,
 	output			i_clc,
 	output			i_setc,
-	output			i_quad,
 
 	output			i_move2,
 	output			i_wback2,
@@ -152,7 +150,6 @@ parameter	S_ROM_ADDRS = 256;
 	assign i_clv = ucinsn_data[`CLV];
 	assign i_clc = ucinsn_data[`CLC];
 	assign i_setc = ucinsn_data[`SETC];
-	assign i_quad = ucinsn_data[`QUAD];
 
 	assign i_move2 = ucinsn_data[`MOVE2];
 	assign i_wback2 = ucinsn_data[`WBACK2];
