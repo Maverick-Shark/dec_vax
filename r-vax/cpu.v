@@ -259,9 +259,9 @@ initial psl_ipl = 5'h1f;
 	 * Argument stuff.
 	 * evaluation.
 	 */
-	reg notrash;		// don't trash OA if reading from mem
+	reg notrash, in_argd2;	// Control readmem trashing
 
-	reg Ctmp;
+	reg Ctmp, Ntmp, Ztmp;
 
 	/*
 	 * Faults.
@@ -337,8 +337,8 @@ initial psl_ipl = 5'h1f;
 	reg		arg_quad_u;
 
 	wire		s_enable, s_argd0, s_argd1, s_psl, s_eoi;
-	wire		s_nzcond, s_zcond, s_wback, s_savc;
-	wire		s_nncond, s_ncond, s_wback2;
+	wire		s_nzcond, s_zcond, s_wback, s_savc, s_savnz;
+	wire		s_nncond, s_ncond, s_wback2, s_goto;
 	wire [7:0]	s_stepoff, i_stepoff;
 	wire [3:0]	s_op, s_left, s_right;
 	wire [31:0]	s_const;
@@ -399,6 +399,9 @@ initial psl_ipl = 5'h1f;
 		.s_ncond(s_ncond),
 		.s_nncond(s_nncond),
 		.s_wback2(s_wback2),
+		.s_goto(s_goto),
+		.s_savnz(s_savnz),
+
 		.s_const(s_const),
 
 		.a_enable(a_enable),
@@ -532,7 +535,7 @@ initial debug = 0;
 	    (s_zcond && alu_zero) || (s_nzcond && alu_zero == 0) ||
 	    (s_ncond && alu_neg) || (s_nncond && alu_neg == 0);
 	assign s_stepoff = (state == `S_DECODE) ? i_stepoff : 
-	    /* wr_cond_ok && s_goto ? s_const[7:0] : */ scounter;
+	    wr_cond_ok && s_goto ? s_const[7:0] : scounter;
 	assign s_enable = (state == `S_DECODE) || 
 	    ((state == `EXEC) && alu_ack);
 
@@ -724,7 +727,6 @@ if (debug)$fdisplay(32'h80000002, "ARG_INDIR\r");
 			rmemstate <= `RMEM_ARG_INDIR;
 			cpu_addr <= addto_OA;
 			cpu_size <= `O_LONG;
-			notrash <= 0;
 			state <= `ARG_READ;
 			if (arg_indir && arg_indir_loop == 0)
 				state <= `S_READMEM;
@@ -737,10 +739,11 @@ if (debug)$fdisplay(32'h80000002, "ARG_READ: OA %x IA %x cur_byte %x curarg %x\r
 			state <= `ARGEND;
 			arg_quad_u <= 1;
 			OA <= indir_OA + IA;
-			if (arg_lit) begin
+			if (arg_lit && arg_aR) begin
 				OP <= { 24'b0, curarg};
 				OPu <= 32'b0;
-			end else if (arg_reg) begin
+//$fdisplay(32'h80000002, "CLEAR OPu1\r");
+			end else if (arg_reg && arg_aR) begin
 				if (arg_quad_u == 0) begin
 					OP <= cur_reg_val;
 					cur_reg_num_save <= cur_reg_num_save +1;
@@ -748,12 +751,23 @@ if (debug)$fdisplay(32'h80000002, "ARG_READ: OA %x IA %x cur_byte %x curarg %x\r
 						state <= `ARG_READ;
 				end else
 					OPu <= cur_reg_val;
+//$fdisplay(32'h80000002, "CLEAR OPu3\r");
 			end else if (arg_aR) begin
-				cpu_addr <= indir_OA + IA;
-				cpu_size <= a_argsz;
-				notrash <= 1;
-				state <= `S_READMEM;
-				rmemstate <= `RMEM_xARGEND;
+				if (arg_quad_u == 0) begin
+					cpu_addr <= indir_OA + IA;
+					cpu_size <= a_argsz;
+					notrash <= 1;
+					state <= `S_READMEM;
+					rmemstate <= `RMEM_xARGEND;
+					if (a_argsz == `O_QUAD)
+						rmemstate <= `RMEM_ARG_READ;
+				end else begin
+					cpu_addr <= cpu_addr + 4;
+					notrash <= 1;
+					in_argd2 <= 1;
+					state <= `S_READMEM;
+					rmemstate <= `RMEM_xARGEND;
+				end
 			end else
 				OP <= indir_OA + IA;
 		end
@@ -812,6 +826,9 @@ if (debug) $fdisplay(32'h80000002, "PREEXEC: op %d sleft %d sright %d scounter %
 			casez (s_left)
 			4'b00??: alu_left <= arg[s_left[1:0]];
 			4'b010?: alu_left <= argd[s_left[0]];
+//			4'b011?: alu_left <= argp_isreg[s_left[0]] ?
+//	    { 2'b11, 25'b0, argp_size[s_left[0]], argp_regnum[s_left[0]] } :
+//				argp[s_left[0]];
 			4'b1000: alu_left <= psl;
 			4'b1001: alu_left <= s_const;
 			default: alu_left <= 0;
@@ -820,6 +837,9 @@ if (debug) $fdisplay(32'h80000002, "PREEXEC: op %d sleft %d sright %d scounter %
 			casez (s_right)
 			4'b00??: alu_right <= arg[s_right[1:0]];
 			4'b010?: alu_right <= argd[s_right[0]];
+//			4'b011?: alu_lright<= argp_isreg[s_right[0]] ?
+//	    { 2'b11, 25'b0, argp_size[s_right[0]], argp_regnum[s_right[0]] } :
+//				argp[s_right[0]];
 			4'b1000: alu_right <= psl;
 			4'b1001: alu_right <= s_const;
 			default: alu_right <= 0;
@@ -837,6 +857,24 @@ if (debug) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d stepoff %d wr
 				argd[0] <= alu_res;
 			if (s_argd1)
 				argd[1] <= alu_res;
+`ifdef notdef
+			if (s_argp0) begin
+				if (&alu_res[31:30]) begin
+					argp_isreg[0] <= 1;
+					argp_size[0] <= alu_res[4:3];
+					argp_regnum[0] <= alu_res[2:0];
+				end else
+					argp[0] <= alu_res;
+			end
+			if (s_argp1) begin
+				if (&alu_res[31:30]) begin
+					argp_isreg[1] <= 1;
+					argp_size[1] <= alu_res[4:3];
+					argp_regnum[1] <= alu_res[2:0];
+				end else
+					argp[1] <= alu_res;
+			end
+`endif
 			if (s_psl)
 				{ psl_is, cur_mod, prv_mod, psl_ipl, psw } <=
 				    { alu_res[26], alu_res[25:24], 
@@ -850,6 +888,10 @@ if (debug) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d stepoff %d wr
 			end
 			if (s_savc)
 				Ctmp <= alu_cry;
+			if (s_savnz) begin
+				Ntmp <= alu_neg;
+				Ztmp <= alu_zero;
+			end
 			if (alu_ack) begin
 `ifdef notyet
 				if (wrmem)
@@ -938,8 +980,10 @@ if (debug) $fdisplay(32'h80000002, "WB0: argd0 %x size %d curreg %x curval %x\r"
 				writeback2 <= 0;
 			end
 			if (i_setnz) begin
-				psw[`PSL_N] <= argd[0][31];
-				psw[`PSL_Z] <= ~|argd[0];
+			//	psw[`PSL_N] <= argd[0][31];
+			//	psw[`PSL_Z] <= ~|argd[0];
+				psw[`PSL_N] <= Ntmp;
+				psw[`PSL_Z] <= Ztmp;
 			end
 			if (i_clv)
 				psw[`PSL_V] <= 0;
@@ -1125,10 +1169,18 @@ if (debug) $fdisplay(32'h80000002, "IPR_TXCS: pmem %d \r\n", cpu_pmem);
 
 		`S_READMEM2: if (cpu_acki) begin
 			notrash <= 0;
+			in_argd2 <= 0;
+//$fdisplay(32'h80000002, "S_READMEM2: dat %x in_argd2 %d\r", CPU_DAT_I, in_argd2);
 			if (notrash == 0)
 				OA <= CPU_DAT_I;
-			OP <= CPU_DAT_I;
-			argd[0] <= CPU_DAT_I;
+			if (in_argd2) begin
+				OPu <= CPU_DAT_I;
+//$fdisplay(32'h80000002, "CLEAR OPu2\r");
+				argd[1] <= CPU_DAT_I;
+			end else begin
+				OP <= CPU_DAT_I;
+				argd[0] <= CPU_DAT_I;
+			end
 			rmem_dat <= CPU_DAT_I;
 			cpu_stb <= 0;
 			case (rmemstate)

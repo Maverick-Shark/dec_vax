@@ -32,7 +32,7 @@ module alu(
 parameter BEGIN=0;
 parameter SHIFT=1;
 
-	always @(op, left, right)
+	always @(op, left, right, shldata)
 		case (op)
 		`ALU_PLUS: { Ctmp, res } = { 1'b0, left } + { 1'b0, right };
 		`ALU_MINUS: { Ctmp, res } = { 1'b0, left } - { 1'b0, right };

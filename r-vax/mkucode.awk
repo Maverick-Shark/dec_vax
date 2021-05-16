@@ -212,6 +212,8 @@ BEGIN {
 	leftop["arg4"] = rightop["arg4"] = 3;
 	leftop["argd0"] = rightop["argd0"] = 4;
 	leftop["argd1"] = rightop["argd1"] = 5;
+#	leftop["argp0"] = rightop["argp0"] = 6;
+#	leftop["argp1"] = rightop["argp1"] = 7;
 	leftop["psl"] = rightop["psl"] = 8;
 	leftop["const"] = rightop["const"] = 9;
 
@@ -227,6 +229,8 @@ BEGIN {
 	stepargs["ncond"] = 20;	# only if result negative
 	stepargs["nncond"] = 21;# only if result !negative
 	stepargs["wback2"] = 22;# write back results 2
+	stepargs["goto"] = 23;	# goto somewhere
+	stepargs["savnz"] = 24;	# save NZ flags from op
 
 
 	curargoff=0;
@@ -295,6 +299,10 @@ BEGIN {
 					err($i " not in stepargs");
 				ucstep[stepoff] = \
 				    bitset(ucstep[stepoff], stepargs[$i]);
+				if ($i == "goto") {
+					i++;
+					resolve[$i] = stepoff;
+				}
 			}
 			stepoff++;
 			continue;
@@ -401,6 +409,14 @@ BEGIN {
 
 	}
 	close(FN);
+
+	for (i in resolve) {
+		if (!(i in steplbl))
+			error(i " not defined");
+		s = ucstep[resolve[i]];
+		ucstep[resolve[i]] = substr(s,1,24) num2bit(resolve[i], 8) \
+		    substr(s,33);
+	}
 
 	# print out instructions
 	FN="uc-insn.hex";

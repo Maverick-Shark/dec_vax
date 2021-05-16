@@ -74,6 +74,8 @@ module ucode(
 	output			s_ncond,
 	output			s_nncond,
 	output			s_wback2,
+	output			s_goto,
+	output			s_savnz,
 
 	output [31:0]		s_const,
 
@@ -136,6 +138,8 @@ parameter	S_ROM_ADDRS = 256;
 	assign s_ncond = ucstep_data[20];
 	assign s_nncond = ucstep_data[21];
 	assign s_wback2 = ucstep_data[22];
+	assign s_goto = ucstep_data[23];
+	assign s_savnz = ucstep_data[24];
 	assign s_const = ucstep_data[63:32];
 
 	assign i_argoff = ucinsn_data[7:0];

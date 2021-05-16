@@ -138,21 +138,21 @@ F3	AOBLEQ
 #
 # [label:] op left right	[args...]
 #
-mov:	plus arg1 0		argd0 eoi
-tst:	plus arg1 0		argd0 eoi
-add:	plus arg1 arg2		argd0 eoi
-add1:	plus arg1 1		argd0 savc eoi
-clr:	plus 0 0		argd0 wback eoi
-xor:	xor arg1 arg2		argd0 wback eoi
-sub:	minus arg1 arg2		argd0 savc eoi
+mov:	plus arg1 0		argd0 savnz eoi
+tst:	plus arg1 0		argd0 savnz eoi
+add:	plus arg1 arg2		argd0 savnz eoi
+add1:	plus arg1 1		argd0 savc savnz eoi
+clr:	plus 0 0		argd0 savnz eoi
+xor:	xor arg1 arg2		argd0 savnz eoi
+sub:	minus arg1 arg2		argd0 savc savnz eoi
 bicpsw:	bic arg1 psl		psl eoi
 bispsw:	bis arg1 psl		psl eoi
-movpsl:	plus psl 0		argd0 eoi
-bic:	bic arg1 arg2		argd0 eoi
-bis:	bis arg1 arg2		argd0 eoi
-and:	and arg1 arg2		argd0 eoi
-zwl:	and arg1 FFFF		argd0 eoi
-zbl:	and arg1 FF		argd0 eoi
+movpsl:	plus psl 0		argd0 savnz eoi
+bic:	bic arg1 arg2		argd0 savnz eoi
+bis:	bis arg1 arg2		argd0 savnz eoi
+and:	and arg1 arg2		argd0 savnz eoi
+zwl:	and arg1 FFFF		argd0 savnz eoi
+zbl:	and arg1 FF		argd0 savnz eoi
 #
 # Check if a given bit in psl is set
 bset:	plus arg1 0	argd0			# move new pc to dest
@@ -166,7 +166,7 @@ rot:	shl arg2 arg1	argd0
 	and arg1 1F	argd1
 	minus 20 argd1	argd1
 	shr arg2 argd1 	argd1
-	bis argd1 argd0	argd0 eoi
+	bis argd1 argd0	argd0 savnz eoi
 #
 #
 aobleq:	plus 1 arg2		argd0 savc		# inc index
@@ -200,6 +200,17 @@ bbcc:	shl 1 arg1	argd0		# position bit
 	and argd0 arg2	zcond wback2	# br if set
 	bic argd0 arg2	argd0 eoi	# clear bit
 #
+# INSV src,pos,size,base
+insv:	shl 1 arg3	argd0
+	minus argd0 1	argd0
+	and argd0 arg1	argd1
+	shl argd0 arg2	argd0
+	bic argd0 arg4	argd0
+	shl argd1 arg2	argd1
+	bis argd1 argd0	argd0 eoi
+#
+#
+#
 !INSTRUCTIONS
 #
 RSB	rl#(sp)+,wl#pc	lbl=mov wback 				# 05
@@ -227,13 +238,13 @@ BRW	aw#w^d(pc),wl#pc	lbl=mov wback 			# 31
 MOVZWL	rw,wl		lbl=zwl setnz clv wback			# 3c
 #
 CLRQ	rq#0,wq		lbl=mov setnz clv quad wback wback2	# 7c
-#MOVQ	rq,rl#0,wq	useadd setnz clv quad wback wback2	# 7d
+MOVQ	rq,wq		lbl=mov setnz quad clv wback wback2	# 7d
 #
 MOVB	rb,wb		lbl=mov setnz clv wback			# 90
 CMPB	rb,rb		lbl=sub setnz clv setc			# 91
 #
 #BITB	rb,rb		lbl=andb setnz clv			# 93
-CLRB	wb		lbl=clr setnz clv 			# 94
+CLRB	wb		lbl=clr setnz clv wback			# 94
 TSTB	rb		lbl=tst setnz clv clc			# 95
 #
 MOVZBL	rb,wl		lbl=zbl setnz clv wback			# 9a
@@ -255,13 +266,13 @@ SUBL2	1rl,0ml		lbl=sub setnz wback			# c2
 BISL2	rl,ml		lbl=bis setnz clv wback			# c8
 BICL2	rl,ml		lbl=bic setnz clv wback			# ca
 #
-XORL3	rl,rl,wl	lbl=xor setnz clv			# cd
+XORL3	rl,rl,wl	lbl=xor setnz clv wback			# cd
 #
 MOVL	rl,wl		lbl=mov setnz clv wback			# d0
 CMPL	rl,rl		lbl=sub setnz clv setc			# d1
 #
 BITL	rl,rl		lbl=and setnz clv 			# d3
-CLRL	wl		lbl=clr setnz clv 			# d4
+CLRL	wl		lbl=clr setnz clv wback 		# d4
 TSTL	rl		lbl=tst setnz clv clc 			# d5
 INCL	ml		lbl=add1 setnz setc wback		# d6
 DECL	ml,rl#1		lbl=sub setnz wback 			# d7
@@ -283,7 +294,6 @@ BBCCI	rl,ml,ab#b^d(pc),wl#pc lbl=bbcc wback			# e7
 BLBS	rl#0,rl,ab#b^d(pc),wl#pc,wl#pc lbl=bbs 			# e8
 BLBC	rl#0,rl,ab#b^d(pc),wl#pc,wl#pc lbl=bbc 			# e9
 #
-#INSV	rl,rl,rb,ml	insv wback				# f0
-#INSV	rl,rl,rb,wb	iemul					# f0
+INSV	rl,rl,rb,ml	lbl=insv wback				# f0
 #
 AOBLEQ	rl,ml,ab#b^d(pc),wl#pc lbl=aobleq setnz wback		# f3
