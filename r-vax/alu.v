@@ -46,10 +46,11 @@ parameter SHIFT=1;
 
 	assign topbit = (op == `ALU_SHR) ? 0 : shldata[31];
 	always @(posedge clk) begin
+//if (stb|done)$fdisplay(32'h80000002, "CLK: stb %d ack %d\r", stb, ack);
 		if (stb == 0) begin
 			state <= BEGIN;
 			done <= 0;
-		end
+		end else
 		case (state)
 		BEGIN: if (stb) begin
 //$fdisplay(32'h80000002, "begin: op %d right %d left %x\r", op, right, left);
@@ -80,7 +81,7 @@ parameter SHIFT=1;
 		default: quick = 1;
 		endcase
 
-	assign ack = quick ? 1 : done;
+	assign ack = stb ? (quick ? 1 : done) : 0;
 
 	assign result = res;
 	assign cry = Ctmp;

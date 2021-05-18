@@ -212,11 +212,12 @@ BEGIN {
 	leftop["arg4"] = rightop["arg4"] = 3;
 	leftop["argd0"] = rightop["argd0"] = 4;
 	leftop["argd1"] = rightop["argd1"] = 5;
-#	leftop["argp0"] = rightop["argp0"] = 6;
-#	leftop["argp1"] = rightop["argp1"] = 7;
+	leftop["argp0"] = 6; # rightop["argp0"] = 6;
+	leftop["argp1"] = 7; # rightop["argp1"] = 7;
 	leftop["psl"] = rightop["psl"] = 8;
 	leftop["const"] = rightop["const"] = 9;
 	leftop["OPu"] = rightop["OPu"] = 10;
+	leftop["crv"] = 11; # rightop["OPu"] = 10;
 
 	# args to microcode instructions
 	stepargs["argd0"] = 12;	# save result in argd0
@@ -232,6 +233,12 @@ BEGIN {
 	stepargs["wback2"] = 22;# write back results 2
 	stepargs["goto"] = 23;	# goto somewhere
 	stepargs["savnz"] = 24;	# save NZ flags from op
+	stepargs["argp0"] = 25;	# save in argp0
+	stepargs["crn"] = 26;	# set current reg
+	stepargs["arg1"] = 27;	# save in arg1
+	stepargs["arg2"] = 28;	# save in arg2
+	stepargs["arg3"] = 29;	# save in arg3
+	stepargs["arg4"] = 30;	# save in arg4
 
 
 	curargoff=0;
@@ -261,11 +268,12 @@ BEGIN {
 
 		if (state == 2) {
 			shiftoff = 1;
-			if ($1 ~ /.*:/) {
+			while ($shiftoff ~ /.*:/) {
 				steplbl[substr($1,1,length($1)-1)] = stepoff;
 				shiftoff++;
 			}
-
+			if (shiftoff > NF)
+				continue;
 
 			aop = aluops($shiftoff);
 			shiftoff++;
@@ -414,8 +422,9 @@ BEGIN {
 	for (i in resolve) {
 		if (!(i in steplbl))
 			err(i " not defined");
+print "resolving " i " pos " resolve[i] " as " steplbl[i];
 		s = ucstep[resolve[i]];
-		ucstep[resolve[i]] = substr(s,1,24) num2bit(resolve[i], 8) \
+		ucstep[resolve[i]] = substr(s,1,24) num2bit(steplbl[i], 8) \
 		    substr(s,33);
 	}
 

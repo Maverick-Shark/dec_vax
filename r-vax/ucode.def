@@ -177,7 +177,7 @@ rot:	shl arg2 arg1	argd0
 	bis argd1 argd0	argd0 savnz eoi
 #
 #
-aobleq:	plus 1 arg2		argd0 savc		# inc index
+aobleq:	plus 1 arg2		argd0 savc savnz	# inc index
 	plus arg3 0		argd1			# save branch addr
 	minus arg1 argd0 	nncond wback2 eoi	# br if !(ix > l)
 #
@@ -208,14 +208,37 @@ bbcc:	shl 1 arg1	argd0		# position bit
 	and argd0 arg2	zcond wback2	# br if set
 	bic argd0 arg2	argd0 eoi	# clear bit
 #
-# INSV src,pos,size,base
-insv:	shl 1 arg3	argd0
-	minus argd0 1	argd0
-	and argd0 arg1	argd1
-	shl argd0 arg2	argd0
-	bic argd0 arg4	argd0
-	shl argd1 arg2	argd1
-	bis argd1 argd0	argd0 eoi
+# INSV arg1=pos,arg2=size,argd0/1=base(val),arg4=src
+#
+insv:	shr argp0 1E	argd0		# 56
+	minus argd0 3	argd0		# 57
+	plus argd0 argd0 nzcond goto insv_mem	# 58
+# value in register
+	and argp0 F	argp0 crn	# 59 set cur reg num
+	# plus argp0 1	argp1		# if two regs
+	plus crv 0	argd0 goto insv_common	# 60 move val to dest
+
+insv_mem:
+insv_common:
+	shl 1 arg2	arg3		# 61 shift left size bits
+	minus arg3 1	arg3		# 62 create mask (in arg3)
+	and arg3 arg4	arg4		# 63 clear unwanted bits in src
+	shl arg3 arg1	arg3		# 64 shift left pos bits in mask
+	bic arg3 argd0	argd0		# 65 clear unwanted bits in dest
+	shl arg4 arg1	arg3		# 66 put shifted src in arg3
+	bis arg3 argd0	argd0		# 67 written in dest
+
+	plus 0 0 	wback eoi	# 68
+
+
+and argp0 0 	argd0 wback eoi
+#insv:	shl 1 arg2	arg3		# shift left size bits
+#	minus arg3 1	arg3		# create mask (in arg3)
+#	and arg3 arg4	arg4		# clear unwanted bits in src
+#	shl arg3 arg1	arg3		# shift left pos bits in mask
+#	bic arg3 argd0	argd0		# clear unwanted bits in dest
+#	shl argd1 arg2	argd1
+#	bis argd1 argd0	argd0 eoi
 #
 #
 #
@@ -302,6 +325,6 @@ BBCCI	rl,ml,ab#b^d(pc),wl#pc lbl=bbcc wback			# e7
 BLBS	rl#0,rl,ab#b^d(pc),wl#pc,wl#pc lbl=bbs 			# e8
 BLBC	rl#0,rl,ab#b^d(pc),wl#pc,wl#pc lbl=bbc 			# e9
 #
-INSV	rl,rl,rb,ml	lbl=insv wback				# f0
+INSV	3rl,0rl,1rb,2wl	lbl=insv				# f0
 #
 AOBLEQ	rl,ml,ab#b^d(pc),wl#pc lbl=aobleq setnz wback		# f3
