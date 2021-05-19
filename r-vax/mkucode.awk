@@ -239,6 +239,7 @@ BEGIN {
 	stepargs["arg2"] = 28;	# save in arg2
 	stepargs["arg3"] = 29;	# save in arg3
 	stepargs["arg4"] = 30;	# save in arg4
+	stepargs["argp1"] = 31;	# save in argp1
 
 
 	curargoff=0;

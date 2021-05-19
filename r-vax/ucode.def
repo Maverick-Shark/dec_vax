@@ -213,33 +213,50 @@ bbcc:	shl 1 arg1	argd0		# position bit
 insv:	shr argp0 1E	argd0		# 56
 	minus argd0 3	argd0		# 57
 	plus argd0 argd0 nzcond goto insv_mem	# 58
-# value in register
-	and argp0 F	argp0 crn	# 59 set cur reg num
-	# plus argp0 1	argp1		# if two regs
-	plus crv 0	argd0 goto insv_common	# 60 move val to dest
-
+#
+# value is in register
+	plus argp0 0	crn		# 59 set cur reg num
+	plus crv 0	argd0		# 60 move val to dest
+	plus argp0 1	argp1 crn	# if two regs
+	plus crv 0	argd1 		# 60 move val to dest
+	and arg1 arg1	goto insv_common # 60 move val to dest
 insv_mem:
+# Notyet...
 insv_common:
+
+# Any writeback?
+	plus arg2 arg2	nzcond wback	# write back low word if sz != 0
+	plus arg2 arg1	arg3		# size + pos
+	minus 20 arg3	ncond wback2	# if > 32 write back high word
+#
+# Lower longword
+#
+	minus arg2 20	arg3
+	and arg3 arg3	nzcond goto insv_not20
+bic arg3 arg3	arg3
+minus arg3 1	arg3
+#	bis FFFFFFFF arg3 arg3	# special case - all bits set
+	and arg3 arg3	goto insv_sz
+insv_not20:
 	shl 1 arg2	arg3		# 61 shift left size bits
 	minus arg3 1	arg3		# 62 create mask (in arg3)
+insv_sz:
 	and arg3 arg4	arg4		# 63 clear unwanted bits in src
 	shl arg3 arg1	arg3		# 64 shift left pos bits in mask
 	bic arg3 argd0	argd0		# 65 clear unwanted bits in dest
 	shl arg4 arg1	arg3		# 66 put shifted src in arg3
 	bis arg3 argd0	argd0		# 67 written in dest
-
-	plus 0 0 	wback eoi	# 68
-
-
-and argp0 0 	argd0 wback eoi
-#insv:	shl 1 arg2	arg3		# shift left size bits
-#	minus arg3 1	arg3		# create mask (in arg3)
-#	and arg3 arg4	arg4		# clear unwanted bits in src
-#	shl arg3 arg1	arg3		# shift left pos bits in mask
-#	bic arg3 argd0	argd0		# clear unwanted bits in dest
-#	shl argd1 arg2	argd1
-#	bis argd1 argd0	argd0 eoi
 #
+# Upper long
+#
+	shl 1 arg2	arg3		# 61 shift left size bits
+	minus arg3 1	arg3		# 62 create mask (in arg3)
+	minus 20 arg1	arg1		# pos = 32-pos (leftover in lowword)
+	shr arg4 arg1	arg4		# shrink src
+	shr arg3 arg1	arg3		# shrink mask
+	bic arg3 argd1	argd1		# clear unwanted bits from d1
+	bis arg4 argd1	argd1 eoi	# set wanted bits in d1
+
 #
 #
 !INSTRUCTIONS

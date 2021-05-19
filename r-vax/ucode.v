@@ -80,6 +80,7 @@ module ucode(
 	output			s_arg2,
 	output			s_arg3,
 	output			s_arg4,
+	output			s_argp1,
 
 	output [31:0]		s_const,
 
@@ -150,6 +151,7 @@ parameter	S_ROM_ADDRS = 256;
 	assign s_arg2 = ucstep_data[28];
 	assign s_arg3 = ucstep_data[29];
 	assign s_arg4 = ucstep_data[30];
+	assign s_argp1 = ucstep_data[31];
 	assign s_const = ucstep_data[63:32];
 
 	assign i_argoff = ucinsn_data[7:0];

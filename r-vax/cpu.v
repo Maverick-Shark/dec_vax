@@ -338,7 +338,7 @@ initial psl_ipl = 5'h1f;
 	wire		s_enable, s_argd0, s_argd1, s_psl, s_eoi;
 	wire		s_nzcond, s_zcond, s_wback, s_savc, s_savnz;
 	wire		s_nncond, s_ncond, s_wback2, s_goto;
-	wire		s_argp0, s_cur_reg_num;
+	wire		s_argp0, s_argp1, s_cur_reg_num;
 	wire		s_arg1, s_arg2, s_arg3, s_arg4;
 	wire [7:0]	s_stepoff, i_stepoff;
 	wire [3:0]	s_op, s_left, s_right;
@@ -407,6 +407,7 @@ initial psl_ipl = 5'h1f;
 		.s_arg2(s_arg2),
 		.s_arg3(s_arg3),
 		.s_arg4(s_arg4),
+		.s_argp1(s_argp1),
 
 		.s_const(s_const),
 
@@ -820,7 +821,7 @@ if (debug) $fdisplay(32'h80000002, "ARGEND: a_rargno %d a_wargno %d arg_aR %d ar
 				cur_reg_num_save <= `REG_SP;
 			end else if (|scounter) begin
 				state <= `PREEXEC;
-if (cur_inst == 8'hf0) $fdisplay(32'h80000002, "INSV pos %x size %x base %x src %x\r", arg[0], arg[1], arg[2], arg[3]);
+//if (cur_inst == 8'hf0) $fdisplay(32'h80000002, "INSV pos %x size %x base %x src %x pc %x\r", arg[0], arg[1], arg[2], arg[3], oldpc);
 			end else begin
 				state <= `S_HALT;
 			end
@@ -861,7 +862,6 @@ if (debug) $fdisplay(32'h80000002, "PREEXEC: op %d sleft %d sright %d scounter %
 		end
 
 		`EXEC: begin
-reg [31:0] xxres; xxres = alu_res;
 if (debug) $fdisplay(32'h80000002, "EXEC: left %x right %x eoi %d ", alu_left, alu_right, s_eoi);
 if (debug) $fdisplay(32'h80000002, "wb %d iwb %d wb2 %d iwb2 %d wrok %d aluz %d\r", s_wback, i_wback, s_wback2, i_wback2, wr_cond_ok, alu_zero);
 if (debug) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d stepoff %d wrcond %d\r", alu_stb, alu_ack, s_enable, s_stepoff, wr_cond_ok);
@@ -876,6 +876,12 @@ if (debug) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d stepoff %d wr
 				argp_size[0] <= `O_LONG;
 				argp_isreg[0] <= &alu_res[31:30];
 			end
+			if (s_argp1) begin
+				argp[1] <= alu_res;
+				argp_regnum[1] <= alu_res[3:0];
+				argp_size[1] <= `O_LONG;
+				argp_isreg[1] <= &alu_res[31:30];
+			end
 			if (s_cur_reg_num)
 				cur_reg_num_save <= alu_res[3:0];
 			if (s_arg1)
@@ -886,24 +892,6 @@ if (debug) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d stepoff %d wr
 				arg[2] <= alu_res;
 			if (s_arg4)
 				arg[3] <= alu_res;
-`ifdef notdef
-			if (s_argp0) begin
-				if (&alu_res[31:30]) begin
-					argp_isreg[0] <= 1;
-					argp_size[0] <= alu_res[4:3];
-					argp_regnum[0] <= alu_res[2:0];
-				end else
-					argp[0] <= alu_res;
-			end
-			if (s_argp1) begin
-				if (&alu_res[31:30]) begin
-					argp_isreg[1] <= 1;
-					argp_size[1] <= alu_res[4:3];
-					argp_regnum[1] <= alu_res[2:0];
-				end else
-					argp[1] <= alu_res;
-			end
-`endif
 			if (s_psl)
 				{ psl_is, cur_mod, prv_mod, psl_ipl, psw } <=
 				    { alu_res[26], alu_res[25:24], 
@@ -952,7 +940,7 @@ if (debug) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d stepoff %d wr
 		`ENDINST: begin
 if (debug) $fdisplay(32'h80000002, "ENDINST: pc %x argd[0] %x argpsz[0] %d arg1p %x isreg %d regno %d wb %d\r", curpc, argd[0], argp_size[0], argp[0], argp_isreg[0], argp_regnum[0], writeback);
 if (debug) $fdisplay(32'h80000002, "ENDINST: pc %x argd[1] %x arg2p %x isreg %d regno %d wb %d\r", curpc, argd[1], argp[1], argp_isreg[1], argp_regnum[1], writeback2);
-if (cur_inst == 8'hf0) $fdisplay(32'h80000002, "INSV END: argd0 %x argd1 %x\r", argd[0], argd[1]);
+//if (cur_inst == 8'hf0) $fdisplay(32'h80000002, "INSV END: argd0 %x argd1 %x\r", argd[0], argd[1]);
 			state <= `S_FETCH;
 
 			if (anyfault) begin
