@@ -76,13 +76,15 @@ module ucode(
 	output			s_savnz,
 	output			s_argp0,
 	output			s_cur_reg_num,
+	output [3:0]		s_dest,
 	output			s_arg1,
 	output			s_arg2,
 	output			s_arg3,
 	output			s_arg4,
 	output			s_argp1,
+	output			s_resopflt,
 
-	output [31:0]		s_const,
+	output [23:0]		s_const,
 
 	/* Argument ROM */
 	input			a_enable,
@@ -146,13 +148,15 @@ parameter	S_ROM_ADDRS = 256;
 	assign s_goto = ucstep_data[23];
 	assign s_savnz = ucstep_data[24];
 	assign s_argp0 = ucstep_data[25];
-	assign s_cur_reg_num = ucstep_data[26];
-	assign s_arg1 = ucstep_data[27];
-	assign s_arg2 = ucstep_data[28];
-	assign s_arg3 = ucstep_data[29];
-	assign s_arg4 = ucstep_data[30];
+//	assign s_arg1 = ucstep_data[27];
+//	assign s_arg2 = ucstep_data[28];
+//	assign s_arg3 = ucstep_data[29];
+//	assign s_arg4 = ucstep_data[30];
+	assign s_dest = ucstep_data[29:26];
+	assign s_cur_reg_num = ucstep_data[30];
 	assign s_argp1 = ucstep_data[31];
-	assign s_const = ucstep_data[63:32];
+	assign s_resopflt = ucstep_data[32];
+	assign s_const = ucstep_data[63:40];
 
 	assign i_argoff = ucinsn_data[7:0];
 	assign i_hasargs = ucinsn_data[`IHASARGS];

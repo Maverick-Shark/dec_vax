@@ -220,9 +220,9 @@ BEGIN {
 	leftop["crv"] = 11; # rightop["OPu"] = 10;
 
 	# args to microcode instructions
-	stepargs["argd0"] = 12;	# save result in argd0
-	stepargs["argd1"] = 13;	# save result in argd1
-	stepargs["psl"] = 14;	# save result in psl
+#	stepargs["argd0"] = 12;	# save result in argd0
+#	stepargs["argd1"] = 13;	# save result in argd1
+#	stepargs["psl"] = 14;	# save result in psl
 	stepargs["eoi"] = 15;	# last instruction
 	stepargs["zcond"] = 16;	# only if result zero
 	stepargs["nzcond"] = 17;# only if result !zero
@@ -234,13 +234,22 @@ BEGIN {
 	stepargs["goto"] = 23;	# goto somewhere
 	stepargs["savnz"] = 24;	# save NZ flags from op
 	stepargs["argp0"] = 25;	# save in argp0
-	stepargs["crn"] = 26;	# set current reg
-	stepargs["arg1"] = 27;	# save in arg1
-	stepargs["arg2"] = 28;	# save in arg2
-	stepargs["arg3"] = 29;	# save in arg3
-	stepargs["arg4"] = 30;	# save in arg4
+#	stepargs["arg1"] = 27;	# save in arg1
+#	stepargs["arg2"] = 28;	# save in arg2
+#	stepargs["arg3"] = 29;	# save in arg3
+#	stepargs["arg4"] = 30;	# save in arg4
+	stepargs["crn"] = 30;	# set current reg
 	stepargs["argp1"] = 31;	# save in argp1
+	stepargs["resopflt"] = 32; # generate resopflt
 
+	# destination for alu result
+	alures["psl"] = 1;
+	alures["argd0"] = 2;
+	alures["argd1"] = 3;
+	alures["arg1"] = 4;
+	alures["arg2"] = 5;
+	alures["arg3"] = 6;
+	alures["arg4"] = 7;
 
 	curargoff=0;
 	emuloff = 1;
@@ -295,7 +304,8 @@ BEGIN {
 				rop = rightops($shiftoff);
 			shiftoff++;
 
-			ucstep[stepoff] = hval "00000000000000000000" \
+			ucstep[stepoff] = substr(hval,9) \
+			    "0000000000000000000000000000" \
 			    num2bit(lop, 4) \
 			    num2bit(rop, 4) \
 			    num2bit(aop, 4);
@@ -305,6 +315,15 @@ BEGIN {
 			for (i = shiftoff; i <= NF; i++) {
 				if ($i == "#")
 					break;
+				if ($i in alures) {
+					s = ucstep[stepoff];
+					if (substr(s,35,4) != "0000")
+						err("duplicate alures");
+					ucstep[stepoff] = substr(s,1,34) \
+					    num2bit(alures[$i], 4) \
+					    substr(s,39);
+					continue;
+				}
 				if (!($i in stepargs))
 					err($i " not in stepargs");
 				ucstep[stepoff] = \
@@ -425,8 +444,8 @@ BEGIN {
 			err(i " not defined");
 print "resolving " i " pos " resolve[i] " as " steplbl[i];
 		s = ucstep[resolve[i]];
-		ucstep[resolve[i]] = substr(s,1,24) num2bit(steplbl[i], 8) \
-		    substr(s,33);
+		ucstep[resolve[i]] = substr(s,1,16) num2bit(steplbl[i], 8) \
+		    substr(s,25);
 	}
 
 	# print out instructions
