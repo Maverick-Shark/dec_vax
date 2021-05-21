@@ -220,9 +220,6 @@ BEGIN {
 	leftop["crv"] = 11; # rightop["OPu"] = 10;
 
 	# args to microcode instructions
-#	stepargs["argd0"] = 12;	# save result in argd0
-#	stepargs["argd1"] = 13;	# save result in argd1
-#	stepargs["psl"] = 14;	# save result in psl
 	stepargs["eoi"] = 15;	# last instruction
 	stepargs["zcond"] = 16;	# only if result zero
 	stepargs["nzcond"] = 17;# only if result !zero
@@ -233,13 +230,9 @@ BEGIN {
 	stepargs["wback2"] = 22;# write back results 2
 	stepargs["goto"] = 23;	# goto somewhere
 	stepargs["savnz"] = 24;	# save NZ flags from op
-	stepargs["argp0"] = 25;	# save in argp0
-#	stepargs["arg1"] = 27;	# save in arg1
-#	stepargs["arg2"] = 28;	# save in arg2
-#	stepargs["arg3"] = 29;	# save in arg3
-#	stepargs["arg4"] = 30;	# save in arg4
-	stepargs["crn"] = 30;	# set current reg
-	stepargs["argp1"] = 31;	# save in argp1
+#	stepargs["argp0"] = 25;	# save in argp0
+#	stepargs["crn"] = 30;	# set current reg
+#	stepargs["argp1"] = 31;	# save in argp1
 	stepargs["resopflt"] = 32; # generate resopflt
 
 	# destination for alu result
@@ -250,6 +243,9 @@ BEGIN {
 	alures["arg2"] = 5;
 	alures["arg3"] = 6;
 	alures["arg4"] = 7;
+	alures["argp0"] = 8;
+	alures["argp1"] = 9;
+	alures["crn"] = 10;
 
 	curargoff=0;
 	emuloff = 1;

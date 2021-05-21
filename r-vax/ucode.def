@@ -223,7 +223,8 @@ insv:	shr argp0 1E	argd0		# 56
 insv_zero:
 	plus argp0 0	crn		# 59 set cur reg num
 	plus crv 0	argd0		# 60 move val to dest
-	plus argp0 1	argp1 crn	# if two regs
+	plus argp0 1	argp1		# if two regs
+	plus argp0 1	crn		# if two regs
 	plus crv 0	argd1 		# 60 move val to dest
 	and arg1 arg1	goto insv_common # 60 move val to dest
 insv_mem:

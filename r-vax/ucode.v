@@ -61,9 +61,6 @@ module ucode(
 	output [3:0]		s_right,
 	output [3:0]		s_op,
 
-	output			s_argd0,
-	output			s_argd1,
-	output			s_psl,
 	output			s_eoi,
 	output			s_zcond,
 	output			s_nzcond,
@@ -74,14 +71,7 @@ module ucode(
 	output			s_wback2,
 	output			s_goto,
 	output			s_savnz,
-	output			s_argp0,
-	output			s_cur_reg_num,
 	output [3:0]		s_dest,
-	output			s_arg1,
-	output			s_arg2,
-	output			s_arg3,
-	output			s_arg4,
-	output			s_argp1,
 	output			s_resopflt,
 
 	output [23:0]		s_const,
@@ -134,9 +124,6 @@ parameter	S_ROM_ADDRS = 256;
 	assign s_op = ucstep_data[3:0];
 	assign s_right = ucstep_data[7:4];
 	assign s_left = ucstep_data[11:8];
-	assign s_argd0 = ucstep_data[12];
-	assign s_argd1 = ucstep_data[13];
-	assign s_psl = ucstep_data[14];
 	assign s_eoi = ucstep_data[15];
 	assign s_zcond = ucstep_data[16];
 	assign s_nzcond = ucstep_data[17];
@@ -147,14 +134,7 @@ parameter	S_ROM_ADDRS = 256;
 	assign s_wback2 = ucstep_data[22];
 	assign s_goto = ucstep_data[23];
 	assign s_savnz = ucstep_data[24];
-	assign s_argp0 = ucstep_data[25];
-//	assign s_arg1 = ucstep_data[27];
-//	assign s_arg2 = ucstep_data[28];
-//	assign s_arg3 = ucstep_data[29];
-//	assign s_arg4 = ucstep_data[30];
 	assign s_dest = ucstep_data[29:26];
-	assign s_cur_reg_num = ucstep_data[30];
-	assign s_argp1 = ucstep_data[31];
 	assign s_resopflt = ucstep_data[32];
 	assign s_const = ucstep_data[63:40];
 

@@ -335,11 +335,9 @@ initial psl_ipl = 5'h1f;
 	reg [7:0]	acounter, curarg;
 	reg		arg_quad_u;
 
-	wire		s_enable, s_argd0, s_argd1, s_psl, s_eoi;
+	wire		s_enable, s_eoi;
 	wire		s_nzcond, s_zcond, s_wback, s_savc, s_savnz;
 	wire		s_nncond, s_ncond, s_wback2, s_goto;
-	wire		s_argp0, s_argp1, s_cur_reg_num;
-	wire		s_arg1, s_arg2, s_arg3, s_arg4;
 	wire		s_resopflt;
 	wire [3:0]	s_dest;
 	wire [7:0]	s_stepoff, i_stepoff;
@@ -390,9 +388,6 @@ initial psl_ipl = 5'h1f;
 		.s_left(s_left),
 		.s_right(s_right),
 		.s_op(s_op),
-		.s_argd0(s_argd0),
-		.s_argd1(s_argd1),
-		.s_psl(s_psl),
 		.s_eoi(s_eoi),
 		.s_zcond(s_zcond),
 		.s_nzcond(s_nzcond),
@@ -403,14 +398,7 @@ initial psl_ipl = 5'h1f;
 		.s_wback2(s_wback2),
 		.s_goto(s_goto),
 		.s_savnz(s_savnz),
-		.s_argp0(s_argp0),
-		.s_cur_reg_num(s_cur_reg_num),
 		.s_dest(s_dest),
-		.s_arg1(s_arg1),
-		.s_arg2(s_arg2),
-		.s_arg3(s_arg3),
-		.s_arg4(s_arg4),
-		.s_argp1(s_argp1),
 		.s_resopflt(s_resopflt),
 
 		.s_const(s_const),
@@ -484,10 +472,6 @@ initial psl_ipl = 5'h1f;
 		`O_LONG: cra = OP;
 		`O_QUAD: cra = OP;
 		endcase
-
-
-//	wire [31:0]	bm_pos, bm_neg;
-//	bitmasks bitmasks(arg[1][4:0], arg[2][4:0], bm_pos, bm_neg);
 
 	/*
 	 * Program counter mgmt. curpc is the "live" version. greg[15] is
@@ -870,27 +854,6 @@ if (debug) $fdisplay(32'h80000002, "EXEC: left %x right %x dest %d eoi %d ", alu
 if (debug) $fdisplay(32'h80000002, "wb %d iwb %d wb2 %d iwb2 %d wrok %d aluz %d\r", s_wback, i_wback, s_wback2, i_wback2, wr_cond_ok, alu_zero);
 if (debug) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d stepoff %d wrcond %d\r", alu_stb, alu_ack, s_enable, s_stepoff, wr_cond_ok);
 //if (cur_inst == 8'hf0) $fdisplay(32'h80000002, "EXECSTEP: sc %d left %x right %x res %x xres %x\r", scounter-8'h01, alu_left, alu_right, alu_res, xxres);
-//			if (s_argd0)
-//				argd[0] <= alu_res;
-//			if (s_argd1)
-//				argd[1] <= alu_res;
-			if (s_argp0) begin
-				argp[0] <= alu_res;
-				argp_regnum[0] <= alu_res[3:0];
-				argp_size[0] <= `O_LONG;
-				argp_isreg[0] <= &alu_res[31:30];
-			end
-			if (s_argp1) begin
-				argp[1] <= alu_res;
-				argp_regnum[1] <= alu_res[3:0];
-				argp_size[1] <= `O_LONG;
-				argp_isreg[1] <= &alu_res[31:30];
-			end
-			/* regval for sizes less than long XXX */
-			cur_reg_num_save <= argp_regnum[0];
-
-			if (s_cur_reg_num)
-				cur_reg_num_save <= alu_res[3:0];
 
 			case (s_dest)
 			0: ;
@@ -904,22 +867,22 @@ if (debug) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d stepoff %d wr
 			5: arg[1] <= alu_res;
 			6: arg[2] <= alu_res;
 			7: arg[3] <= alu_res;
+			8: begin
+				argp[0] <= alu_res;
+				argp_regnum[0] <= alu_res[3:0];
+				argp_size[0] <= `O_LONG;
+				argp_isreg[0] <= &alu_res[31:30];
+			end
+			9: begin
+				argp[1] <= alu_res;
+				argp_regnum[1] <= alu_res[3:0];
+				argp_size[1] <= `O_LONG;
+				argp_isreg[1] <= &alu_res[31:30];
+			end
+			10: cur_reg_num_save <= alu_res[3:0];
 			default: ;
 			endcase
 
-//			if (s_arg1)
-//				arg[0] <= alu_res;
-//			if (s_arg2)
-//				arg[1] <= alu_res;
-//			if (s_arg3)
-//				arg[2] <= alu_res;
-//			if (s_arg4)
-//				arg[3] <= alu_res;
-//			if (s_psl)
-//				{ psl_is, cur_mod, prv_mod, psl_ipl, psw } <=
-//				    { alu_res[26], alu_res[25:24], 
-//				      alu_res[23:22], alu_res[20:16],
-//				      alu_res[7:0] };
 			if ((wr_cond_ok && s_wback) || i_wback) begin
 				writeback <= 1;
 			end
@@ -953,9 +916,11 @@ if (debug) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d stepoff %d wr
 					state <= `READMEM;
 				else
 `endif
-				if (s_eoi)
+				if (s_eoi) begin
 					state <= `ENDINST;
-				else
+				    /* regval for sizes less than long XXX */
+					cur_reg_num_save <= argp_regnum[0];
+				end else
 					state <= `PREEXEC;
 			end
 
