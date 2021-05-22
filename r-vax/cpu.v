@@ -260,7 +260,7 @@ initial psl_ipl = 5'h1f;
 	 * Argument stuff.
 	 * evaluation.
 	 */
-	reg notrash, in_argd2;	// Control readmem trashing
+	reg notrash;	// Control readmem trashing
 
 	reg Ctmp, Ntmp, Ztmp;
 
@@ -766,10 +766,6 @@ if (debug) $fdisplay(32'h80000002, "ARGEND: a_rargno %d a_wargno %d arg_aR %d ar
 					argp_isreg[0]  <= OA_isreg;
 					argp_regnum[0] <= OA_regnum;
 					argp_size[0] <= a_argsz;
-					argp[1] <= OA + 4;
-					argp_isreg[1] <= OA_isreg;
-					argp_regnum[1] <= OA_regnum+1;
-					argp_size[1] <= a_argsz;
 				end
 				if (a_wargno == 1) begin
 					argp[1] <= OA;
@@ -1172,18 +1168,12 @@ if (debug) $fdisplay(32'h80000002, "IPR_TXCS: pmem %d \r\n", cpu_pmem);
 
 		`S_READMEM2: if (cpu_acki) begin
 			notrash <= 0;
-			in_argd2 <= 0;
 if (debug) $fdisplay(32'h80000002, "S_READMEM2: addr %x dat %x\r", cpu_addr, CPU_DAT_I);
 			if (notrash == 0)
 				OA <= CPU_DAT_I;
-			if (in_argd2) begin
-				if (rmemstate != `RMEM_PREEXEC)
-					argd[1] <= CPU_DAT_I;
-			end else begin
-				OP <= CPU_DAT_I;
-				if (rmemstate != `RMEM_PREEXEC)
-					argd[0] <= CPU_DAT_I;
-			end
+			OP <= CPU_DAT_I;
+			if (rmemstate != `RMEM_PREEXEC)
+				argd[0] <= CPU_DAT_I;
 			rmem_dat <= CPU_DAT_I;
 			cpu_stb <= 0;
 			case (rmemstate)
