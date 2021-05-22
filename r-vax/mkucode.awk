@@ -218,6 +218,7 @@ BEGIN {
 	leftop["const"] = rightop["const"] = 9;
 	leftop["OPu"] = rightop["OPu"] = 10;
 	leftop["crv"] = 11; # rightop["OPu"] = 10;
+	leftop["rmemdat"] = 12; # rightop["OPu"] = 10;
 
 	# args to microcode instructions
 	stepargs["eoi"] = 15;	# last instruction
@@ -230,7 +231,7 @@ BEGIN {
 	stepargs["wback2"] = 22;# write back results 2
 	stepargs["goto"] = 23;	# goto somewhere
 	stepargs["savnz"] = 24;	# save NZ flags from op
-#	stepargs["argp0"] = 25;	# save in argp0
+	stepargs["rmem"] = 25;	# next state is READMEM
 #	stepargs["crn"] = 30;	# set current reg
 #	stepargs["argp1"] = 31;	# save in argp1
 	stepargs["resopflt"] = 32; # generate resopflt
@@ -246,6 +247,7 @@ BEGIN {
 	alures["argp0"] = 8;
 	alures["argp1"] = 9;
 	alures["crn"] = 10;
+	alures["cpuaddr"] = 11;
 
 	curargoff=0;
 	emuloff = 1;

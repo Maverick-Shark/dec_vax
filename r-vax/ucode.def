@@ -154,15 +154,54 @@ and:	and arg1 arg2		argd0 savnz eoi
 zwl:	and arg1 FFFF		argd0 savnz eoi
 zbl:	and arg1 FF		argd0 savnz eoi
 #
-movq:	shr arg1 10		argd0
-	and arg1 FFFF		argd1
-	bis argd0 argd1		argd0
-	bis argd0 OPu		savnz		# set nz correct
-	plus arg1 0		argd0
-	plus OPu 0		argd1 eoi
+# Move quad word. First long is already read, extract addr for the
+# second, read val, update flags, write to output regs.
+# input addr in argp0 (must later be updated), output in argp1
 #
-# arg1 has addr
-clrq:	
+# XXX - need mov, shifted reg bits, split savn/savz
+#
+movq:
+	plus arg1 0	argd0			# 16 store lowword
+# get input addr
+	shr argp0 1E	arg4			# 17 arg4 = (argp0 >> 30)
+	minus arg4 3	arg4			# 18 arg4 = arg1 - 3
+	plus arg4 arg4	nzcond goto movq_rmem	# 19 if (arg4+arg4) goto...
+	plus argp0 1	crn			# 20 inc read reg by 1
+	plus crv 0	argd1			# 21 save in highword
+	plus arg1 arg1	goto movq_cmn		# 22
+movq_rmem:
+	plus argp0 4	cpuaddr rmem 		# 23 inc addr for read
+	plus rmemdat 0	argd1			# 24
+	
+movq_cmn:
+# Fix correct status bits
+	shr argd0 1	arg1		# shift in 0 as sign bit
+	and argd0 1	arg2		# get just lost low bit
+	plus arg1 arg2	arg1		# add it to check result
+	plus argd1 arg1	savnz		# set NZ bits by adding high and low
+
+# update output address
+	plus argp1 0	argp0
+
+	shr argp0 1E	arg1			# arg1 = (argp0 >> 30)
+	minus arg1 3	arg1			# arg1 = arg1 - 3
+	plus arg1 arg1	nzcond goto movq_mem	# if (arg1+arg1) goto...
+	plus argp0 1	argp1 eoi		# inc by 1
+movq_mem:
+	plus argp0 4	argp1 eoi		# inc by 4
+
+#
+# Clear quad word.  extract addr and set both output correct.
+#
+clrq:	plus 0 0	argd0			# clear both
+	plus 0 0 	argd1
+	shr argp0 1E	arg1			# arg1 = (argp0 >> 30)
+	minus arg1 3	arg1			# arg1 = arg1 - 3
+	plus arg1 arg1	nzcond goto clrq_mem	# if (arg1+arg1) goto...
+	plus argp0 1	argp1 eoi		# inc by 1
+clrq_mem:
+	plus argp0 4	argp1 eoi		# inc by 4
+	
 #
 # Check if a given bit in psl is set
 bset:	plus arg1 0	argd0			# move new pc to dest
@@ -291,9 +330,10 @@ BRW	aw#w^d(pc),wl#pc	lbl=mov wback 			# 31
 #
 MOVZWL	rw,wl		lbl=zwl setnz clv wback			# 3c
 #
-CLRQ	rq#0,wq		lbl=movq setnz clv wback wback2		# 7c
-#CLRQ	wq		lbl=clrq setnz clv wback wback2		# 7c
-MOVQ	rq,wq		lbl=movq setnz clv wback wback2		# 7d
+#CLRQ	rq#0,wq		lbl=movq setnz clv wback wback2		# 7c
+CLRQ	wq		lbl=clrq setnz clv wback wback2		# 7c
+#MOVQ	rq,wq		lbl=movq setnz clv wback wback2		# 7d
+MOVQ	mq,wq		lbl=movq setnz clv wback wback2		# 7d
 #
 MOVB	rb,wb		lbl=mov setnz clv wback			# 90
 CMPB	rb,rb		lbl=sub setnz clv setc			# 91

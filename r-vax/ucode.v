@@ -71,6 +71,7 @@ module ucode(
 	output			s_wback2,
 	output			s_goto,
 	output			s_savnz,
+	output			s_rmem,
 	output [3:0]		s_dest,
 	output			s_resopflt,
 
@@ -134,6 +135,7 @@ parameter	S_ROM_ADDRS = 256;
 	assign s_wback2 = ucstep_data[22];
 	assign s_goto = ucstep_data[23];
 	assign s_savnz = ucstep_data[24];
+	assign s_rmem = ucstep_data[25];
 	assign s_dest = ucstep_data[29:26];
 	assign s_resopflt = ucstep_data[32];
 	assign s_const = ucstep_data[63:40];
