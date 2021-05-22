@@ -216,7 +216,7 @@ BEGIN {
 	leftop["argp1"] = 7; # rightop["argp1"] = 7;
 	leftop["psl"] = rightop["psl"] = 8;
 	leftop["const"] = rightop["const"] = 9;
-	leftop["OPu"] = rightop["OPu"] = 10;
+#	leftop["OPu"] = rightop["OPu"] = 10;
 	leftop["crv"] = 11; # rightop["OPu"] = 10;
 	leftop["rmemdat"] = 12; # rightop["OPu"] = 10;
 

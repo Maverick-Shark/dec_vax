@@ -215,7 +215,7 @@ initial psl_ipl = 5'h1f;
 	reg [7:0]	cur_byte, cur_inst;
 
 	reg		writeback, writeback2;
-	reg [31:0]	OA, IA, OP, OPu;
+	reg [31:0]	OA, IA, OP;
 	reg [31:0]	getbwl_OA, addto_OA, indir_OA;
 	reg		OA_isreg;
 	reg [3:0]	OA_regnum;
@@ -334,7 +334,6 @@ initial psl_ipl = 5'h1f;
 	wire [2:0]	a_rargno;
 	wire		a_wargno;
 	reg [7:0]	acounter, curarg;
-	reg		arg_quad_u;
 
 	wire		s_enable, s_eoi;
 	wire		s_nzcond, s_zcond, s_wback, s_savc, s_savnz;
@@ -641,7 +640,6 @@ if (debug) $fdisplay(32'h80000002, "ASETUPx: isvalid %x curpc %x inslword %x\r",
 			    { {2{&cur_mux[6:5]}}, cur_mux[6], |cur_mux[6:5]};
 			cur_reg_num_save <= cur_mux[3:0];
 			getbwl_OA <= 0;
-			arg_quad_u <= 0;
 			bcnt <= 1;
 			if ((a_emul || isvalid) && cur_mux[7:4] != 4'b0100)
 				acounter <= acounter + 1;
@@ -734,37 +732,18 @@ if (debug)$fdisplay(32'h80000002, "ARG_INDIR\r");
 		`ARG_READ: begin
 if (debug)$fdisplay(32'h80000002, "ARG_READ: OA %x IA %x cur_byte %x curarg %x\r", OA, IA, cur_byte, curarg);
 			state <= `ARGEND;
-			arg_quad_u <= 1;
 			OA <= indir_OA + IA;
 			if (arg_lit && arg_aR) begin
 				OP <= { 24'b0, curarg};
-				OPu <= 32'b0;
-//$fdisplay(32'h80000002, "CLEAR OPu1\r");
 			end else if (arg_reg && arg_aR) begin
-				if (arg_quad_u == 0) begin
-					OP <= cur_reg_val;
-					cur_reg_num_save <= cur_reg_num_save +1;
-					if (a_argsz == `O_QUAD)
-						state <= `ARG_READ;
-				end else
-					OPu <= cur_reg_val;
-//$fdisplay(32'h80000002, "CLEAR OPu3\r");
+				OP <= cur_reg_val;
+				cur_reg_num_save <= cur_reg_num_save +1;
 			end else if (arg_aR) begin
-				if (arg_quad_u == 0) begin
-					cpu_addr <= indir_OA + IA;
-					cpu_size <= a_argsz;
-					notrash <= 1;
-					state <= `S_READMEM;
-					rmemstate <= `RMEM_xARGEND;
-					if (a_argsz == `O_QUAD)
-						rmemstate <= `RMEM_ARG_READ;
-				end else begin
-					cpu_addr <= cpu_addr + 4;
-					notrash <= 1;
-					in_argd2 <= 1;
-					state <= `S_READMEM;
-					rmemstate <= `RMEM_xARGEND;
-				end
+				cpu_addr <= indir_OA + IA;
+				cpu_size <= a_argsz;
+				notrash <= 1;
+				state <= `S_READMEM;
+				rmemstate <= `RMEM_xARGEND;
 			end else
 				OP <= indir_OA + IA;
 		end
@@ -830,7 +809,7 @@ if (debug) $fdisplay(32'h80000002, "PREEXEC: op %d sleft %d sright %d scounter %
 				argp[s_left[0]];
 			4'b1000: alu_left <= psl;
 			4'b1001: alu_left <= { 8'b0, s_const };
-			4'b1010: alu_left <= OPu;
+//			4'b1010: alu_left <= OPu;
 			4'b1011: alu_left <= cur_reg_val;
 			4'b1100: alu_left <= rmem_dat;
 			default: alu_left <= 0;
@@ -844,7 +823,7 @@ if (debug) $fdisplay(32'h80000002, "PREEXEC: op %d sleft %d sright %d scounter %
 //				argp[s_right[0]];
 			4'b1000: alu_right <= psl;
 			4'b1001: alu_right <= { 8'b0, s_const };
-			4'b1010: alu_right <= OPu;
+//			4'b1010: alu_right <= OPu;
 			default: alu_right <= 0;
 			endcase
 
@@ -1198,8 +1177,6 @@ if (debug) $fdisplay(32'h80000002, "S_READMEM2: addr %x dat %x\r", cpu_addr, CPU
 			if (notrash == 0)
 				OA <= CPU_DAT_I;
 			if (in_argd2) begin
-				OPu <= CPU_DAT_I;
-//$fdisplay(32'h80000002, "CLEAR OPu2\r");
 				if (rmemstate != `RMEM_PREEXEC)
 					argd[1] <= CPU_DAT_I;
 			end else begin
