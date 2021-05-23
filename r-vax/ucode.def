@@ -155,19 +155,46 @@ zwl:	and arg1 FFFF		argd0 savnz eoi
 zbl:	and arg1 FF		argd0 savnz eoi
 #
 # mtpr arg1=val,arg2=ipr
-#mtpr:
-#	plus arg2 0	crn		# set current ipr number
-#	plus arg1 0	crw wipr	# write to current ipr
-## check special cases for IPRs.
-#	and 0 0		arg3		# have zeroed reg
-#
-#	minus arg2 23	nzcond mtpr_1	# skip if not TXDB
-#	plus arg3 2000	arg3
-#	shl arg3 10	arg3
-#	plus arg3 1F76	cpuaddr phys	# address for TXDB
-#	plus arg1 0	cpudata wmem	# write!
-#mtpr_1:	
-#	plus 0 0	eoi
+mtpr:
+	and arg2 arg2	nzcond goto mtpr_1	# KSP?
+	shr psl 1A	arg3			# IS set?
+	and arg3 1	arg3
+	and arg3 arg3	nzcond goto mtpr_ok	# if so, fine
+	plus 0 0	resopflt eoi		# write back XXX fixme
+
+mtpr_1:
+	minus 3 arg2	arg3
+	and arg3 arg3	nncond goto mtpr_ok	# SSP, ESP, USP
+# check if ISP
+	minus arg2 4	arg3
+	and arg3 arg3	nzcond goto mtpr_2
+	shr psl 1A	arg3
+	and arg3 1	arg3
+	and arg3 arg3	zcond goto mtpr_ok	# not on ISP, get out
+	and C000 C000	arg3			# create wback encoding
+	shl arg3 10	arg3
+	plus arg3 E	argp0 wback
+	and arg1 arg1	argd0 goto mtpr_ok
+mtpr_2:
+	minus arg2 11	arg3
+	and arg3 arg3	zcond goto mtpr_ok	# Accept SCBB
+
+	minus arg2 23	arg3			# TXDB?
+	and arg3 arg3	nzcond goto mtpr_3	# jump if not TXDB
+	plus arg1 0	crw
+	and 2000 2000	arg3
+	shl arg3 10	arg3
+	plus arg3 1F76	cpuaddr wmem
+	plus 0 0	eoi
+
+mtpr_3:
+	plus 0 0	resopflt eoi
+
+# OK to write to IPR
+mtpr_ok:
+	plus arg2 0	crn		# set IPR number
+	plus arg1 0     crw wipr	# set IPR val and write
+	plus 0 0	eoi
 
 # mfpr arg1=ipr,arg2=dest
 mfpr:
@@ -412,9 +439,8 @@ TSTL	rl		lbl=tst setnz clv clc 			# d5
 INCL	ml		lbl=add1 setnz setc wback		# d6
 DECL	ml,rl#1		lbl=sub setnz wback 			# d7
 #
-MTPR	rl,rl		usemtpr 				# da
-#MFPR	rl,wl		usemfpr wback				# db
-#MTPR	rl,rl		lbl=mtpr 				# da
+#MTPR	rl,rl		usemtpr 				# da
+MTPR	rl,rl		lbl=mtpr 				# da
 MFPR	rl,wl		lbl=mfpr wback				# db
 MOVPSL	wl		lbl=movpsl wback			# dc
 #

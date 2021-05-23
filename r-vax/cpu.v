@@ -21,9 +21,8 @@
 `define S_READMEM2	6
 `define S_WRITEMEM	7
 `define S_WRITEMEM2	8
-`define MTPR		9
 `define S_DECODE	10
-`define S_TXCS_R	12
+`define WRITEIPR	11
 `define ASETUP		13
 `define ARG_GETBWL	14
 `define ARG_ADDTO	15
@@ -50,6 +49,7 @@
 
 /* WRITEMEM return states */
 `define WMEM_MCODE	0
+`define WMEM_PREEXEC	1
 `define	WMEM_xENDINST	3
 
 /* FILLUP return states */
@@ -163,11 +163,10 @@ module cpu(
 	wire [31:0]	ipr_val, ipr_regwdata;
 	reg [5:0]	ipr_addr;
 	reg [31:0]	ipr_wdata;
-	reg [14:0]	scbb;
 	reg		ipr_write;
 
 	always @(posedge clk)
-		if (ipr_write)
+		if (ipr_write || state == `WRITEIPR)
 			ipr_reg[ipr_regaddr] <= ipr_regwdata;
 	assign ipr_val = ipr_reg[ipr_regaddr];
 
@@ -326,7 +325,7 @@ initial psl_ipl = 5'h1f;
 	wire [7:0]	i_argoff, a_argoff, a_arg, cur_mux;
 	wire		i_enable, i_hasargs, i_emul, i_dohalt;
 	wire		a_enable, a_emul, a_last, i_move2, i_wback2;
-	wire		i_wback, i_usemtpr, i_usemfpr;
+	wire		i_wback;
 	wire		i_setnz, i_clv, i_clc, i_setc;
 	wire		arg_aR, arg_aW, arg_aA;
 	wire [2:0]	a_argcode;
@@ -338,7 +337,7 @@ initial psl_ipl = 5'h1f;
 	wire		s_enable, s_eoi;
 	wire		s_nzcond, s_zcond, s_wback, s_savc, s_savnz;
 	wire		s_nncond, s_ncond, s_wback2, s_goto, s_rmem;
-	wire		s_resopflt;
+	wire		s_resopflt, s_wipr, s_wmem;
 	wire [3:0]	s_dest;
 	wire [7:0]	s_stepoff, i_stepoff;
 	wire [3:0]	s_op, s_left, s_right;
@@ -365,8 +364,6 @@ initial psl_ipl = 5'h1f;
 		.i_hasargs(i_hasargs),
 		.i_emul(i_emul),
 
-		.i_usemtpr(i_usemtpr),
-		.i_usemfpr(i_usemfpr),
 		.i_wback(i_wback),
 
 		.i_setnz(i_setnz),
@@ -400,6 +397,8 @@ initial psl_ipl = 5'h1f;
 		.s_savnz(s_savnz),
 		.s_dest(s_dest),
 		.s_rmem(s_rmem),
+		.s_wipr(s_wipr),
+		.s_wmem(s_wmem),
 		.s_resopflt(s_resopflt),
 
 		.s_const(s_const),
@@ -552,18 +551,10 @@ initial debug = 0;
 
 			ipr_write <= 0;
 			if (ipr_greg_read) begin
-				casez (CON_ADR_I[5:0])
-				6'b00zzzz: con_dat_o_reg <= ipr_val;
-				`IPR_SCBB: con_dat_o_reg <= { 8'b0, scbb,9'b0 };
-				default: con_dat_o_reg <= 32'hdeadbabe;
-				endcase
+				con_dat_o_reg <= ipr_val;
 				con_ack_o_reg <= 1;
 			end else if (ipr_greg_write) begin
-				casez (CON_ADR_I[5:0])
-				6'b00zzzz: ipr_write <= 1;
-				`IPR_SCBB: scbb <= CON_DAT_I[23:9];
-				default: ;
-				endcase
+				ipr_write <= 1;
 				con_ack_o_reg <= 1;
 			end else if (ref_greg_read) begin
 				casez (CON_ADR_I[4:0])
@@ -776,18 +767,13 @@ if (debug) $fdisplay(32'h80000002, "ARGEND: a_rargno %d a_wargno %d arg_aR %d ar
 			end
 			if (a_last == 0)
 				state <= `ASETUP;
-			else if (i_usemtpr) begin
-				state <= `MTPR;
-				ipr_addr <= arg_rv[5:0];
-			end else if (i_emul) begin
+			else if (i_emul) begin
 				state <= `MCODE;
 				mcodectr <= 13;
 				cur_reg_num_save <= `REG_SP;
-			end else if (|scounter) begin
+			end else /* if (|scounter) */ begin
 				state <= `PREEXEC;
 //if (cur_inst == 8'hf0) $fdisplay(32'h80000002, "INSV pos %x size %x base %x src %x pc %x\r", arg[0], arg[1], arg[2], arg[3], oldpc);
-			end else begin
-				state <= `S_HALT;
 			end
 			OA_isreg <= 0;
 			IA <= 0;
@@ -829,7 +815,7 @@ if (debug) $fdisplay(32'h80000002, "PREEXEC: op %d sleft %d sright %d scounter %
 		`EXEC: begin
 if (debug & alu_ack) $fdisplay(32'h80000002, "EXEC: left %x right %x dest %d eoi %d ", alu_left, alu_right, s_dest, s_eoi);
 if (debug & alu_ack) $fdisplay(32'h80000002, "wb %d iwb %d wb2 %d iwb2 %d wrok %d aluz %d\r", s_wback, i_wback, s_wback2, i_wback2, wr_cond_ok, alu_zero);
-if (debug & alu_ack) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d stepoff %d wrcond %d\r", alu_stb, alu_ack, s_enable, s_stepoff, wr_cond_ok);
+if (debug & alu_ack) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d stepoff %d wrcond %d wipr %d\r", alu_stb, alu_ack, s_enable, s_stepoff, wr_cond_ok, s_wipr);
 //if (cur_inst == 8'hf0) $fdisplay(32'h80000002, "EXECSTEP: sc %d left %x right %x res %x xres %x\r", scounter-8'h01, alu_left, alu_right, alu_res, xxres);
 
 			case (s_dest)
@@ -856,8 +842,16 @@ if (debug & alu_ack) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d ste
 				argp_size[1] <= `O_LONG;
 				argp_isreg[1] <= &alu_res[31:30];
 			end
-			10: cur_reg_num_save <= alu_res[3:0];
+			10: begin
+				cur_reg_num_save <= alu_res[3:0];
+				ipr_addr <= alu_res[5:0];
+			end
 			11: cpu_addr <= alu_res;
+			12: begin
+				ipr_wdata <= alu_res; 
+				cpu_wdata <= alu_res;
+				cpu_size <= `O_LONG;
+			end
 			default: ;
 			endcase
 
@@ -894,7 +888,13 @@ if (debug & alu_ack) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d ste
 					state <= `READMEM;
 				else
 `endif
-				if (s_rmem) begin
+				if (s_wmem) begin
+					state <= `S_WRITEMEM;
+					wmemstate <= `WMEM_PREEXEC;
+					cpu_pmem <= 1; // XXX
+				end else if (s_wipr) begin
+					state <= `WRITEIPR;
+				end else if (s_rmem) begin
 					state <= `S_READMEM;
 					rmemstate <= `RMEM_PREEXEC;
 				end else if (s_eoi) begin
@@ -1015,47 +1015,6 @@ $fdisplay(32'h80000002, "MCODE: ctr %d mc_rv %x\r", mcodectr, mc_rv);
 			end
 		end
 
-		`MTPR: begin
-if (debug) $fdisplay(32'h80000002, "MTPR: arg[0] %x arg[1] %x\r", arg[0], arg[1]);
-			state <= `ENDINST;
-			ipr_write <= 0;
-			ipr_wdata <= arg[0];
-			casez (ipr_addr) // arg[1][5:0])
-			`IPR_KSP, `IPR_SSP, `IPR_ESP, `IPR_USP: begin
-				if (psl_is == 0 && arg[1][1:0] == cur_mod) begin
-					argp_size[0] <= `O_LONG;
-					argd[0] <= arg[0];
-					argp_regnum[0] <= `REG_SP;
-					argp_isreg[0] <= 1;
-					writeback <= 1;
-				end
-				ipr_write <= 1;
-			end
-			`IPR_ISP: begin
-				if (psl_is == 1) begin
-					argp_size[0] <= `O_LONG;
-					argd[0] <= arg[0];
-					argp_regnum[0] <= `REG_SP;
-					argp_isreg[0] <= 1;
-					writeback <= 1;
-				end
-				ipr_write <= 1;
-			end
-			`IPR_SCBB: scbb <= arg[0][23:9];
-			`IPR_PCBB: ;
-			`IPR_IPL: psl_ipl <= arg[0][4:0];
-			`IPR_TXDB: begin
-				cpu_addr <= 32'h20001f76;
-				cpu_wdata <= arg[0];
-				cpu_size <= `O_LONG;
-				cpu_pmem <= 1;
-				state <= `S_WRITEMEM;
-				wmemstate <= `WMEM_xENDINST;
-			end
-			default: resopflt <= 1;
-			endcase
-		end
-
 		/*
 		 * Set new stack based on ivec (in argd[0]).
 		 */
@@ -1097,7 +1056,12 @@ if (debug) $fdisplay(32'h80000002, "MTPR: arg[0] %x arg[1] %x\r", arg[0], arg[1]
 			default: state <= `S_HALT;
 			endcase
 		end
-		
+
+		`WRITEIPR: begin
+			state <= `PREEXEC;
+// $fdisplay(32'h80000002, "WIPR: wdata %x ipr %d\r", ipr_wdata, ipr_addr);
+		end
+
 		`S_WRITEMEM: begin
 			cpu_write <= 1;
 			cpu_stb <= 1;
@@ -1109,6 +1073,7 @@ if (debug) $fdisplay(32'h80000002, "MTPR: arg[0] %x arg[1] %x\r", arg[0], arg[1]
 			cpu_stb <= 0;
 			case (wmemstate)
 			`WMEM_MCODE: state <= `MCODE;
+			`WMEM_PREEXEC: state <= `PREEXEC;
 			`WMEM_xENDINST: state <= `ENDINST;
 			default: state <= `S_HALT;
 			endcase

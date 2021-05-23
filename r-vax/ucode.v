@@ -19,8 +19,6 @@
 `define	SETNZ		26
 `define	CLV		27
 `define	CLC		28
-`define	USEMTPR		29
-`define	USEMFPR		30
 `define	SETC		35
 /* 47-55 is step offset */
 
@@ -39,8 +37,6 @@ module ucode(
 
 	output			i_dohalt,
 
-	output			i_usemtpr,
-	output			i_usemfpr,
 	output			i_wback,
 
 	output			i_setnz,
@@ -72,6 +68,8 @@ module ucode(
 	output			s_goto,
 	output			s_savnz,
 	output			s_rmem,
+	output			s_wipr,
+	output			s_wmem,
 	output [3:0]		s_dest,
 	output			s_resopflt,
 
@@ -125,6 +123,8 @@ parameter	S_ROM_ADDRS = 256;
 	assign s_op = ucstep_data[3:0];
 	assign s_right = ucstep_data[7:4];
 	assign s_left = ucstep_data[11:8];
+	assign s_wipr = ucstep_data[12];
+	assign s_wmem = ucstep_data[13];
 	assign s_eoi = ucstep_data[15];
 	assign s_zcond = ucstep_data[16];
 	assign s_nzcond = ucstep_data[17];
@@ -153,8 +153,6 @@ parameter	S_ROM_ADDRS = 256;
 
 	assign i_move2 = ucinsn_data[`MOVE2];
 	assign i_wback2 = ucinsn_data[`WBACK2];
-	assign i_usemtpr = ucinsn_data[`USEMTPR];
-	assign i_usemfpr = ucinsn_data[`USEMFPR];
 
 	assign i_stepoff = ucinsn_data[54:47]; //ucinsn_data[55:47];
 

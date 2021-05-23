@@ -221,6 +221,8 @@ BEGIN {
 	leftop["rmemdat"] = 12; # rightop["OPu"] = 10;
 
 	# args to microcode instructions
+	stepargs["wipr"] = 12;	# write to IPR
+	stepargs["wmem"] = 13;	# write to memory
 	stepargs["eoi"] = 15;	# last instruction
 	stepargs["zcond"] = 16;	# only if result zero
 	stepargs["nzcond"] = 17;# only if result !zero
@@ -329,7 +331,8 @@ BEGIN {
 				    bitset(ucstep[stepoff], stepargs[$i]);
 				if ($i == "goto") {
 					i++;
-					resolve[$i] = stepoff;
+			#		resolve[$i] = stepoff;
+					resolve[stepoff] = $i;
 				}
 			}
 			stepoff++;
@@ -439,11 +442,11 @@ BEGIN {
 	close(FN);
 
 	for (i in resolve) {
-		if (!(i in steplbl))
-			err(i " not defined");
-print "resolving " i " pos " resolve[i] " as " steplbl[i];
-		s = ucstep[resolve[i]];
-		ucstep[resolve[i]] = substr(s,1,16) num2bit(steplbl[i], 8) \
+		if (!(resolve[i] in steplbl))
+			err(resolve[i] " not defined");
+print "resolving " resolve[i] " pos " i " as " steplbl[resolve[i]];
+		s = ucstep[i];
+		ucstep[i] = substr(s,1,16) num2bit(steplbl[resolve[i]], 8) \
 		    substr(s,25);
 	}
 
