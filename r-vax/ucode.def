@@ -154,6 +154,22 @@ and:	and arg1 arg2		argd0 savnz eoi
 zwl:	and arg1 FFFF		argd0 savnz eoi
 zbl:	and arg1 FF		argd0 savnz eoi
 #
+# mtpr arg1=val,arg2=ipr
+#mtpr:
+#	plus arg2 0	crn		# set current ipr number
+#	plus arg1 0	crw wipr	# write to current ipr
+## check special cases for IPRs.
+#	and 0 0		arg3		# have zeroed reg
+#
+#	minus arg2 23	nzcond mtpr_1	# skip if not TXDB
+#	plus arg3 2000	arg3
+#	shl arg3 10	arg3
+#	plus arg3 1F76	cpuaddr phys	# address for TXDB
+#	plus arg1 0	cpudata wmem	# write!
+#mtpr_1:	
+#	plus 0 0	eoi
+
+#
 # Move quad word. First long is already read, extract addr for the
 # second, read val, update flags, write to output regs.
 # input addr in argp0 (must later be updated), output in argp1
@@ -374,6 +390,8 @@ DECL	ml,rl#1		lbl=sub setnz wback 			# d7
 #
 MTPR	rl,rl		usemtpr 				# da
 MFPR	rl,wl		usemfpr wback				# db
+#MTPR	rl,rl		lbl=mtpr 				# da
+#MFPR	rl,wl		lbl=mfpr wback				# db
 MOVPSL	wl		lbl=movpsl wback			# dc
 #
 MOVAL	al,wl		lbl=mov setnz clv wback			# de

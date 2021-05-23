@@ -248,6 +248,7 @@ BEGIN {
 	alures["argp1"] = 9;
 	alures["crn"] = 10;
 	alures["cpuaddr"] = 11;
+	alures["crw"] = 12;
 
 	curargoff=0;
 	emuloff = 1;

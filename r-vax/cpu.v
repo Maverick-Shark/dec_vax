@@ -155,20 +155,22 @@ module cpu(
 	assign CPU_SIZE_O = halted ? `O_LONG : cpu_size;
 
 	/*
-	 * IPR regs.  First 15 in LUT RAM, rest in flipflops.
+	 * IPR regs in LUT RAM.
 	 */
 	(* ram_style = "DISTRIBUTED" *)
-	reg [31:0]	ipr_reg[15:0];
+	reg [31:0]	ipr_reg[63:0];
 
-	wire [3:0]	ipr_regraddr, ipr_regwaddr;
-	wire [31:0]	ipr_val, ipr_wdata;
+	wire [5:0]	ipr_regaddr;
+	wire [31:0]	ipr_val, ipr_regwdata;
+	reg [5:0]	ipr_addr;
+	reg [31:0]	ipr_wdata;
 	reg [14:0]	scbb;
 	reg		ipr_write;
 
 	always @(posedge clk)
 		if (ipr_write)
-			ipr_reg[ipr_regwaddr] <= ipr_wdata;
-	assign ipr_val = ipr_reg[ipr_regraddr];
+			ipr_reg[ipr_regaddr] <= ipr_regwdata;
+	assign ipr_val = ipr_reg[ipr_regaddr];
 
 
 	/*
@@ -185,9 +187,8 @@ module cpu(
 /* verilator lint_on UNDRIVEN */
 /* verilator lint_on UNUSED */
 
-	assign ipr_regraddr = halted ? CON_ADR_I[3:0] : arg[0][3:0];
-	assign ipr_regwaddr = halted ? CON_ADR_I[3:0] : arg[1][3:0];
-	assign ipr_wdata = halted ? CON_DAT_I : arg[0];
+	assign ipr_regaddr = halted ? CON_ADR_I[5:0] : ipr_addr[5:0];
+	assign ipr_regwdata = halted ? CON_DAT_I : ipr_wdata;
 
 	reg [`STATBITS-1:0]	state;
 	reg [3:0]	wregstate;
@@ -776,11 +777,13 @@ if (debug) $fdisplay(32'h80000002, "ARGEND: a_rargno %d a_wargno %d arg_aR %d ar
 			end
 			if (a_last == 0)
 				state <= `ASETUP;
-			else if (i_usemtpr)
+			else if (i_usemtpr) begin
 				state <= `MTPR;
-			else if (i_usemfpr)
+				ipr_addr <= arg_rv[5:0];
+			end else if (i_usemfpr) begin
 				state <= `MFPR;
-			else if (i_emul) begin
+				ipr_addr <= arg[0][5:0];
+			end else if (i_emul) begin
 				state <= `MCODE;
 				mcodectr <= 13;
 				cur_reg_num_save <= `REG_SP;
@@ -1020,9 +1023,7 @@ $fdisplay(32'h80000002, "MCODE: ctr %d mc_rv %x\r", mcodectr, mc_rv);
 if (debug) $fdisplay(32'h80000002, "MTPR: arg[0] %x arg[1] %x\r", arg[0], arg[1]);
 			state <= `ENDINST;
 			ipr_write <= 0;
-			if (|arg[1][31:7])
-				resopflt <= 1;
-			else if (~arg[1][6])
+			ipr_wdata <= arg[0];
 			casez (arg[1][5:0])
 			`IPR_KSP, `IPR_SSP, `IPR_ESP, `IPR_USP: begin
 				if (psl_is == 0 && arg[1][1:0] == cur_mod) begin
@@ -1066,9 +1067,7 @@ if (debug) $fdisplay(32'h80000002, "MTPR: arg[0] %x arg[1] %x\r", arg[0], arg[1]
 if (debug) $fdisplay(32'h80000002, "S_MFPR: arg[0] %x arg[1] %x\r\n", arg[0], arg[1]);
 			state <= `ENDINST;
 			writeback <= i_wback;
-			if (|arg[0][31:6])
-				resopflt <= 1;
-			casez (arg[0][5:0])
+			casez (ipr_addr)
 			`IPR_KSP, `IPR_SSP, `IPR_ESP, `IPR_USP: begin
 				if (arg[0][1:0] == cur_mod)
 					argd[0] <= cur_reg_val;
@@ -1088,7 +1087,7 @@ if (debug) $fdisplay(32'h80000002, "S_MFPR: arg[0] %x arg[1] %x\r\n", arg[0], ar
 if (debug) $fdisplay(32'h80000002, "IPR_TXCS: pmem %d \r\n", cpu_pmem);
 				state <= `S_READMEM;
 				rmemstate <= `RMEM_xENDINST;
-				if (arg[0][1])
+				if (ipr_addr[1])
 					cpu_addr <= 32'h20001f74;
 				else
 					cpu_addr <= 32'h20001f70;
