@@ -164,6 +164,7 @@ module cpu(
 	reg [5:0]	ipr_addr;
 	reg [31:0]	ipr_wdata;
 	reg		ipr_write;
+	reg [`STATBITS-1:0]	state;
 
 	always @(posedge clk)
 		if (ipr_write || state == `WRITEIPR)
@@ -188,7 +189,6 @@ module cpu(
 	assign ipr_regaddr = halted ? CON_ADR_I[5:0] : ipr_addr[5:0];
 	assign ipr_regwdata = halted ? CON_DAT_I : ipr_wdata;
 
-	reg [`STATBITS-1:0]	state;
 	reg [3:0]	wregstate;
 	reg [2:0]	rmemstate, wmemstate, fupstate;
 	reg [31:0]	rmem_dat;
