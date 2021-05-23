@@ -23,7 +23,6 @@
 `define S_WRITEMEM2	8
 `define MTPR		9
 `define S_DECODE	10
-`define MFPR		11
 `define S_TXCS_R	12
 `define ASETUP		13
 `define ARG_GETBWL	14
@@ -780,9 +779,6 @@ if (debug) $fdisplay(32'h80000002, "ARGEND: a_rargno %d a_wargno %d arg_aR %d ar
 			else if (i_usemtpr) begin
 				state <= `MTPR;
 				ipr_addr <= arg_rv[5:0];
-			end else if (i_usemfpr) begin
-				state <= `MFPR;
-				ipr_addr <= arg[0][5:0];
 			end else if (i_emul) begin
 				state <= `MCODE;
 				mcodectr <= 13;
@@ -1024,7 +1020,7 @@ if (debug) $fdisplay(32'h80000002, "MTPR: arg[0] %x arg[1] %x\r", arg[0], arg[1]
 			state <= `ENDINST;
 			ipr_write <= 0;
 			ipr_wdata <= arg[0];
-			casez (arg[1][5:0])
+			casez (ipr_addr) // arg[1][5:0])
 			`IPR_KSP, `IPR_SSP, `IPR_ESP, `IPR_USP: begin
 				if (psl_is == 0 && arg[1][1:0] == cur_mod) begin
 					argp_size[0] <= `O_LONG;
@@ -1056,45 +1052,6 @@ if (debug) $fdisplay(32'h80000002, "MTPR: arg[0] %x arg[1] %x\r", arg[0], arg[1]
 				state <= `S_WRITEMEM;
 				wmemstate <= `WMEM_xENDINST;
 			end
-			default: resopflt <= 1;
-			endcase
-		end
-
-		/*
-		 * XXX check if current sp is the same
-		 */
-		`MFPR: begin
-if (debug) $fdisplay(32'h80000002, "S_MFPR: arg[0] %x arg[1] %x\r\n", arg[0], arg[1]);
-			state <= `ENDINST;
-			writeback <= i_wback;
-			casez (ipr_addr)
-			`IPR_KSP, `IPR_SSP, `IPR_ESP, `IPR_USP: begin
-				if (arg[0][1:0] == cur_mod)
-					argd[0] <= cur_reg_val;
-				else
-					argd[0] <= ipr_val;
-			end
-			`IPR_ISP: begin
-				if (psl_is)
-					argd[0] <= cur_reg_val;
-				else
-					argd[0] <= ipr_val;
-			end
-			`IPR_SCBB: argd[0] <= { 8'b0, scbb, 9'b0 };
-			`IPR_PCBB: ;
-			`IPR_IPL: argd[0] <= { 27'b0, psl_ipl };
-			`IPR_RXCS, `IPR_TXCS: begin
-if (debug) $fdisplay(32'h80000002, "IPR_TXCS: pmem %d \r\n", cpu_pmem);
-				state <= `S_READMEM;
-				rmemstate <= `RMEM_xENDINST;
-				if (ipr_addr[1])
-					cpu_addr <= 32'h20001f74;
-				else
-					cpu_addr <= 32'h20001f70;
-				cpu_size <= `O_LONG;
-				cpu_pmem <= 1;
-			end
-			`IPR_SID: argd[0] <= 32'h0A000006;
 			default: resopflt <= 1;
 			endcase
 		end
@@ -1171,8 +1128,6 @@ if (debug) $fdisplay(32'h80000002, "S_READMEM2: addr %x dat %x\r", cpu_addr, CPU
 			if (notrash == 0)
 				OA <= CPU_DAT_I;
 			OP <= CPU_DAT_I;
-			if (rmemstate != `RMEM_PREEXEC)
-				argd[0] <= CPU_DAT_I;
 			rmem_dat <= CPU_DAT_I;
 			cpu_stb <= 0;
 			case (rmemstate)
