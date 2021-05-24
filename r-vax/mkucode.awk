@@ -216,13 +216,14 @@ BEGIN {
 	leftop["argp1"] = 7; # rightop["argp1"] = 7;
 	leftop["psl"] = rightop["psl"] = 8;
 	leftop["const"] = rightop["const"] = 9;
-#	leftop["OPu"] = rightop["OPu"] = 10;
+	leftop["civ"] = 10; #  rightop["OPu"] = 10;
 	leftop["crv"] = 11; # rightop["OPu"] = 10;
 	leftop["rmemdat"] = 12; # rightop["OPu"] = 10;
 
 	# args to microcode instructions
 	stepargs["wipr"] = 12;	# write to IPR
 	stepargs["wmem"] = 13;	# write to memory
+	stepargs["wreg"] = 14;	# write to memory
 	stepargs["eoi"] = 15;	# last instruction
 	stepargs["zcond"] = 16;	# only if result zero
 	stepargs["nzcond"] = 17;# only if result !zero
@@ -254,7 +255,7 @@ BEGIN {
 
 	curargoff=0;
 	emuloff = 1;
-	stepoff = 1;
+	stepoff = 0;
 
 	# arglist contains the argument specifications.
 	# inslist contains the instructions

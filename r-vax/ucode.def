@@ -138,6 +138,27 @@ F3	AOBLEQ
 #
 # [label:] op left right	[args...]
 #
+# First entries for exceptions, get numbers from 0
+	plus 0 0	goto resop	# entry 0
+
+resop:	
+# create stack frame
+	and E E		crn		# 1  set reg to sp
+	minus crv 4	argp0		# 2  sub 4 from sp and save in p0
+	plus psl 0	argd0 wback	# 3  save in d0
+	minus argp0 4	argp1		# 4  sub 4 more
+	plus argp1 0	crw wreg	# 5  write back to sp
+	and F F		crn		# 6  set PC
+	plus crv 0	argd1 wback2	# 7  store on stack
+# fetch resop vector (18) and store in pc
+
+	and 11 11	crn		# 8  SCBB offset
+	plus civ 18	cpuaddr rmem	# 9  fetch vector
+	and F F		crn		# 10
+	plus rmemdat 0	crw wreg	# 11 new pc
+	plus 0 0	eoi
+
+#
 mov:	plus arg1 0		argd0 savnz eoi
 tst:	plus arg1 0		argd0 savnz eoi
 add:	plus arg1 arg2		argd0 savnz eoi
@@ -260,7 +281,7 @@ movq_mem:
 #
 # Clear quad word.  extract addr and set both output correct.
 #
-clrq:	plus 0 0	argd0			# clear both
+clrq:	plus 0 0	argd0 savnz		# clear both
 	plus 0 0 	argd1
 	shr argp0 1E	arg1			# arg1 = (argp0 >> 30)
 	minus arg1 3	arg1			# arg1 = arg1 - 3

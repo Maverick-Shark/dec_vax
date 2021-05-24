@@ -36,6 +36,7 @@
 /* WREG return states */
 `define	WREG_HALT	0
 `define	WREG_WRITEMEM	1
+`define	WREG_PREEXEC	2
 `define	WREG_FETCH	5
 `define	WREG_ARG_INDIR	9
 `define	WREG_xENDINST	10
@@ -337,7 +338,7 @@ initial psl_ipl = 5'h1f;
 	wire		s_enable, s_eoi;
 	wire		s_nzcond, s_zcond, s_wback, s_savc, s_savnz;
 	wire		s_nncond, s_ncond, s_wback2, s_goto, s_rmem;
-	wire		s_resopflt, s_wipr, s_wmem;
+	wire		s_resopflt, s_wipr, s_wmem, s_wreg;
 	wire [3:0]	s_dest;
 	wire [7:0]	s_stepoff, i_stepoff;
 	wire [3:0]	s_op, s_left, s_right;
@@ -399,6 +400,7 @@ initial psl_ipl = 5'h1f;
 		.s_rmem(s_rmem),
 		.s_wipr(s_wipr),
 		.s_wmem(s_wmem),
+		.s_wreg(s_wreg),
 		.s_resopflt(s_resopflt),
 
 		.s_const(s_const),
@@ -773,7 +775,7 @@ if (debug) $fdisplay(32'h80000002, "ARGEND: a_rargno %d a_wargno %d arg_aR %d ar
 				cur_reg_num_save <= `REG_SP;
 			end else /* if (|scounter) */ begin
 				state <= `PREEXEC;
-//if (cur_inst == 8'hf0) $fdisplay(32'h80000002, "INSV pos %x size %x base %x src %x pc %x\r", arg[0], arg[1], arg[2], arg[3], oldpc);
+if (cur_inst == 8'hf0) $fdisplay(32'h80000002, "INSV pos %x size %x base %x src %x pc %x\r", arg[0], arg[1], arg[2], arg[3], oldpc);
 			end
 			OA_isreg <= 0;
 			IA <= 0;
@@ -790,7 +792,7 @@ if (debug) $fdisplay(32'h80000002, "PREEXEC: op %d sleft %d sright %d scounter %
 				argp[s_left[0]];
 			4'b1000: alu_left <= psl;
 			4'b1001: alu_left <= { 8'b0, s_const };
-//			4'b1010: alu_left <= OPu;
+			4'b1010: alu_left <= ipr_val;
 			4'b1011: alu_left <= cur_reg_val;
 			4'b1100: alu_left <= rmem_dat;
 			default: alu_left <= 0;
@@ -845,11 +847,14 @@ if (debug & alu_ack) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d ste
 			10: begin
 				cur_reg_num_save <= alu_res[3:0];
 				ipr_addr <= alu_res[5:0];
+				greg_wregnum <= alu_res[3:0];
 			end
 			11: cpu_addr <= alu_res;
 			12: begin
 				ipr_wdata <= alu_res; 
 				cpu_wdata <= alu_res;
+				greg_wbdata <= alu_res;
+				cpu_size <= `O_LONG;
 				cpu_size <= `O_LONG;
 			end
 			default: ;
@@ -888,7 +893,10 @@ if (debug & alu_ack) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d ste
 					state <= `READMEM;
 				else
 `endif
-				if (s_wmem) begin
+				if (s_wreg) begin
+					state <= `S_WREG;
+					wregstate <= `WREG_PREEXEC;
+				end else if (s_wmem) begin
 					state <= `S_WRITEMEM;
 					wmemstate <= `WMEM_PREEXEC;
 					cpu_pmem <= 1; // XXX
@@ -922,13 +930,16 @@ if (debug & alu_ack) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d ste
 		`ENDINST: begin
 if (debug) $fdisplay(32'h80000002, "ENDINST: pc %x argd[0] %x argpsz[0] %d arg1p %x isreg %d regno %d wb %d\r", curpc, argd[0], argp_size[0], argp[0], argp_isreg[0], argp_regnum[0], writeback);
 if (debug) $fdisplay(32'h80000002, "ENDINST: pc %x argd[1] %x arg2p %x isreg %d regno %d wb %d\r", curpc, argd[1], argp[1], argp_isreg[1], argp_regnum[1], writeback2);
-//if (cur_inst == 8'hf0) $fdisplay(32'h80000002, "INSV END: argd0 %x argd1 %x\r", argd[0], argd[1]);
+if (cur_inst == 8'hf0) $fdisplay(32'h80000002, "INSV END: argd0 %x argd1 %x\r", argd[0], argd[1]);
 			state <= `S_FETCH;
 
-			if (anyfault) begin
+			if (resopflt) begin
+				scounter <= 0;
+				state <= `PREEXEC;
+				resopflt <= 0;
+			end else if (anyfault) begin
 				haltpos <= 5;
 				state <= `S_HALT;
-		//		resopflt <= 0;
 			end else if (writeback) begin
 				if (argp_isreg[0]) begin
 if (debug) $fdisplay(32'h80000002, "WB0: argd0 %x size %d curreg %x curval %x\r", argd[0], argp_size[0], cur_reg_num_save, cur_reg_val);
@@ -1050,6 +1061,7 @@ $fdisplay(32'h80000002, "MCODE: ctr %d mc_rv %x\r", mcodectr, mc_rv);
 				curpc <= greg_wbdata;
 			case (wregstate)
 			`WREG_WRITEMEM: state <= `S_WRITEMEM;
+			`WREG_PREEXEC: state <= `PREEXEC;
 			`WREG_FETCH: state <= `S_FETCH;
 			`WREG_ARG_INDIR: state <= `ARG_INDIR;
 			`WREG_xENDINST: state <= `ENDINST;

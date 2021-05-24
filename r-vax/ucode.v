@@ -70,6 +70,7 @@ module ucode(
 	output			s_rmem,
 	output			s_wipr,
 	output			s_wmem,
+	output			s_wreg,
 	output [3:0]		s_dest,
 	output			s_resopflt,
 
@@ -125,6 +126,7 @@ parameter	S_ROM_ADDRS = 256;
 	assign s_left = ucstep_data[11:8];
 	assign s_wipr = ucstep_data[12];
 	assign s_wmem = ucstep_data[13];
+	assign s_wreg = ucstep_data[14];
 	assign s_eoi = ucstep_data[15];
 	assign s_zcond = ucstep_data[16];
 	assign s_nzcond = ucstep_data[17];
