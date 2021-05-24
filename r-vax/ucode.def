@@ -355,7 +355,18 @@ insv_zero:
 	plus crv 0	argd1 		# 60 move val to dest
 	and arg1 arg1	goto insv_common # 60 move val to dest
 insv_mem:
-# Notyet...
+# Normalize first
+	asr arg1 3	arg3		# get byte offset
+	plus argp0 arg3	argd0		# argp0 == byte offset
+	and argd0 3	arg3		# arg3 == byte offset in longword
+	and arg1 7	arg1		# arg1 == bit offset
+	shl arg3 3	arg3		# make bit offset
+	plus arg3 arg1	arg1		# pos == bit offset in longword
+	bic 3 argd0	argp0		# clear byte offset bits in ptr
+	plus argp0 0	cpuaddr rmem	# fetch low long
+	plus rmemdat 0	argd0		# dat now in argd0
+
+
 insv_common:
 
 # Any writeback?
