@@ -24,7 +24,7 @@ module alu(
 
 	reg [31:0]	res;
 	reg		Ctmp;
-	reg [4:0]	shlcnt;
+	reg [5:0]	shlcnt;
 	reg		state, done, quick;
 	reg [31:0]	shldata;
 	wire		topbit;
@@ -54,7 +54,7 @@ parameter SHIFT=1;
 		case (state)
 		BEGIN: if (stb) begin
 //$fdisplay(32'h80000002, "begin: op %d right %d left %x\r", op, right, left);
-			shlcnt <= right[4:0];
+			shlcnt <= right[5:0];
 			shldata <= left;
 			state <= SHIFT;
 		end

@@ -301,10 +301,11 @@ bclr:	plus arg1 0	argd0			# move new pc to dest
 	and arg2 psl	zcond wback eoi		# if result Z writeback
 #
 # ROTL: arg1 == shift count, arg2 = val
-rot:	shl arg2 arg1	argd0
-	and arg1 1F	argd1
-	minus 20 argd1	argd1
-	shr arg2 argd1 	argd1
+rot:	
+	and arg1 1F	arg1
+	shl arg2 arg1	argd0
+	minus 20 arg1	arg1
+	shr arg2 arg1 	argd1
 	bis argd1 argd0	argd0 savnz eoi
 #
 #
@@ -409,8 +410,10 @@ insv_sz:
 #
 bfield:
 # sanity: size > 32?
+	and 0 0 	argd0
 	minus arg2 21	arg3
 	and arg3 arg3	nncond resopflt
+	and arg2 arg2	zcond goto bf_done
 # Check whether read from mem or reg?
 	shr argp0 1E	argd0
 	minus argd0 3	argd0
@@ -436,40 +439,42 @@ bf_mem:
 	plus rmemdat 0	arg3		# XXX should check if needed
 bf_common:
 # create long in argd0
-	shr argd0 arg1	argd0		# right-adjust low bits
-	minus 20 arg1	arg4
-	shl arg3 arg4	arg3
-	bis arg3 argd0	argd0
+	shr argd0 arg1	argd0		# 200 right-adjust low bits
+	minus 20 arg1	arg4		# 201
+	shl arg3 arg4	arg3		# 202
+	bis arg3 argd0	argd0		# 203
 
-	plus argd1 0	zcond goto extzv_1
+bf_done:
+	and argd1 argd1	zcond goto extzv_1 # 204
 #	minus argd1 1	argd1	
-	plus 0 0	goto extv_1
+	plus 0 0	goto extv_1	# 205
 
 # EXTZV	rl,rb,wb,wl (arg1,arg2,argp0,argp1)
 extzv:	plus 0 0	argd1		# clear ret
 	plus 0 0	goto bfield
 extzv_1:	
-	minus arg2 20	arg3
-	and arg3 arg3	nncond goto extzv_is20	# full word, no need to mask
-	shl 1 arg2	arg3
-	minus arg3 1	arg3
-	and arg3 argd0	argd0 savnz
+	minus arg2 20	arg3		# 217
+	and arg3 arg3	nncond goto extzv_is20	# 218 full word, no need to mask
+	shl 1 arg2	arg3		# 219
+	minus arg3 1	arg3		# 220
+	and arg3 argd0	argd0		# 221
 extzv_is20:
-	plus argp1 0	argp0 eoi	# result in wb0
+	and argd0 argd0	savnz		# 222
+	plus argp1 0	argp0 eoi	# 223 result in wb0
 	
 
 # EXTV	rl,rb,wb,wl (arg1,arg2,argp0,argp1)
 extv:	and 1 1 	argd1
 	plus 0 0	goto bfield
 extv_1:	
-	minus arg2 20	arg3
-	and arg3 arg3	nncond goto extv_is20	# full word, no need to mask
+	minus arg2 20	arg3		# 216
+	and arg3 arg3	nncond goto extv_is20	# 217 full word, no need to mask
 	minus 20 arg2	arg2		# shift left bits
 	shl argd0 arg2	argd0
 	asr argd0 arg2	argd0 		# sign extend
 extv_is20:
-	and argd0 argd0	savnz
-	plus argp1 0	argp0 eoi	# result in wb0
+	and argd0 argd0	savnz		# 221 
+	plus argp1 0	argp0 eoi	# 222 result in wb0
 	
 
 #
