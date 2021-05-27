@@ -262,7 +262,7 @@ initial psl_ipl = 5'h1f;
 	 */
 	reg notrash;	// Control readmem trashing
 
-	reg Ctmp, Ntmp, Ztmp;
+	reg Ctmp, Ntmp, Ztmp, Vtmp;
 
 	/*
 	 * Faults.
@@ -327,7 +327,7 @@ initial psl_ipl = 5'h1f;
 	wire		i_enable, i_hasargs, i_emul, i_dohalt;
 	wire		a_enable, a_emul, a_last, i_move2, i_wback2;
 	wire		i_wback;
-	wire		i_setnz, i_clv, i_clc, i_setc;
+	wire		i_setnz, i_clv, i_clc, i_setc, i_setcmpnz;
 	wire		arg_aR, arg_aW, arg_aA;
 	wire [2:0]	a_argcode;
 	wire [1:0]	a_argsz;
@@ -336,7 +336,7 @@ initial psl_ipl = 5'h1f;
 	reg [7:0]	acounter, curarg;
 
 	wire		s_enable, s_eoi;
-	wire		s_nzcond, s_zcond, s_wback, s_savc, s_savnz;
+	wire		s_nzcond, s_zcond, s_wback, s_savc, s_savnz, s_savv;
 	wire		s_nncond, s_ncond, s_wback2, s_goto, s_rmem;
 	wire		s_resopflt, s_wipr, s_wmem, s_wreg;
 	wire [3:0]	s_dest;
@@ -367,6 +367,7 @@ initial psl_ipl = 5'h1f;
 
 		.i_wback(i_wback),
 
+		.i_setcmpnz(i_setcmpnz),
 		.i_setnz(i_setnz),
 		.i_clv(i_clv),
 		.i_clc(i_clc),
@@ -401,6 +402,7 @@ initial psl_ipl = 5'h1f;
 		.s_wipr(s_wipr),
 		.s_wmem(s_wmem),
 		.s_wreg(s_wreg),
+		.s_savv(s_savv),
 		.s_resopflt(s_resopflt),
 
 		.s_const(s_const),
@@ -489,9 +491,9 @@ assign debug = 0;
 `else
 reg debug;
 initial debug = 0;
-	always @(posedge clk)
-		if (curpc == 32'h5cf0)
-			debug <= 1;
+//	always @(posedge clk)
+//		if (curpc == 32'h5cf0)
+//			debug <= 1;
 `endif
 
 	/* console communications */
@@ -505,7 +507,7 @@ initial debug = 0;
 	 * ALU code.
 	 */
 	
-	wire		alu_cry, alu_zero, alu_stb, alu_ack, alu_neg;
+	wire		alu_cry, alu_zero, alu_stb, alu_ack, alu_neg, alu_ovf;
 	wire [31:0]	alu_res;
 	reg [31:0]	alu_right, alu_left;
 	assign alu_stb = (state == `EXEC);
@@ -520,6 +522,7 @@ initial debug = 0;
 		.ack(alu_ack),
 
 		.neg(alu_neg),
+		.ovf(alu_ovf),
 		.cry(alu_cry),
 		.zero(alu_zero),
 		.result(alu_res)
@@ -777,6 +780,7 @@ if (debug) $fdisplay(32'h80000002, "ARGEND: a_rargno %d a_wargno %d arg_aR %d ar
 				state <= `PREEXEC;
 // if (cur_inst == 8'hf0) $fdisplay(32'h80000002, "INSV pos %x size %x base %x src %x pc %x\r", arg[0], arg[1], arg[2], arg[3], oldpc);
 //if (cur_inst == 8'hef) $fdisplay(32'h80000002, "EXTZV pos %x size %x base %x dest %x pc %x\r", arg[0], arg[1], argp[0], argp[1], oldpc);
+//if (cur_inst == 8'hed) $fdisplay(32'h80000002, "CMPZV pos %x size %x base %x dest %x pc %x\r", arg[0], arg[1], argp[0], argp[1], oldpc);
 			end
 			OA_isreg <= 0;
 			IA <= 0;
@@ -817,7 +821,7 @@ if (debug) $fdisplay(32'h80000002, "PREEXEC: op %d sleft %d sright %d scounter %
 
 		`EXEC: begin
 if (debug & alu_ack) $fdisplay(32'h80000002, "EXEC: left %x right %x dest %d eoi %d ", alu_left, alu_right, s_dest, s_eoi);
-if (debug & alu_ack) $fdisplay(32'h80000002, "wb %d iwb %d wb2 %d iwb2 %d wrok %d aluz %d\r", s_wback, i_wback, s_wback2, i_wback2, wr_cond_ok, alu_zero);
+if (debug & alu_ack) $fdisplay(32'h80000002, "wb %d iwb %d wb2 %d iwb2 %d wrok %d aluz %d alun %d\r", s_wback, i_wback, s_wback2, i_wback2, wr_cond_ok, alu_zero, alu_neg);
 if (debug & alu_ack) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d stepoff %d wrcond %d wipr %d res %x\r", alu_stb, alu_ack, s_enable, s_stepoff, wr_cond_ok, s_wipr, alu_res);
 //if (cur_inst == 8'hf0) $fdisplay(32'h80000002, "EXECSTEP: sc %d left %x right %x res %x xres %x\r", scounter-8'h01, alu_left, alu_right, alu_res, xxres);
 
@@ -866,6 +870,8 @@ if (debug & alu_ack) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d ste
 			if ((wr_cond_ok && s_wback2) || i_wback2) begin
 				writeback2 <= 1;
 			end
+			if (s_savv)
+				Vtmp <= alu_ovf;
 			if (s_savc)
 				Ctmp <= alu_cry;
 			if (s_savnz) begin
@@ -932,6 +938,7 @@ if (debug) $fdisplay(32'h80000002, "ENDINST: pc %x argd[0] %x argpsz[0] %d arg1p
 if (debug) $fdisplay(32'h80000002, "ENDINST: pc %x argd[1] %x arg2p %x isreg %d regno %d wb %d\r", curpc, argd[1], argp[1], argp_isreg[1], argp_regnum[1], writeback2);
 // if (cur_inst == 8'hf0) $fdisplay(32'h80000002, "INSV END: argd0 %x argd1 %x\r", argd[0], argd[1]);
 //if (cur_inst == 8'hef) $fdisplay(32'h80000002, "EXTZV END: argd0 %x argp0 %x pc %x\r", argd[0], argp[0], oldpc);
+//if (cur_inst == 8'hed) $fdisplay(32'h80000002, "CMPZV END: argd0 %x argd1 %x pc %x\r", argd[0], argd[1], oldpc);
 			state <= `S_FETCH;
 
 			if (resopflt) begin
@@ -990,6 +997,10 @@ if (debug) $fdisplay(32'h80000002, "WB0: argd0 %x size %d curreg %x curval %x\r"
 					wmemstate <= `WMEM_xENDINST;
 				end
 				writeback2 <= 0;
+			end
+			if (i_setcmpnz) begin
+				psw[`PSL_N] <= argd[0][31] ^ Vtmp;
+				psw[`PSL_Z] <= Ztmp;
 			end
 			if (i_setnz) begin
 				psw[`PSL_N] <= Ntmp;
@@ -1084,6 +1095,7 @@ $fdisplay(32'h80000002, "MCODE: ctr %d mc_rv %x\r", mcodectr, mc_rv);
 		`S_WRITEMEM2: if (cpu_acki) begin
 			cpu_write <= 0;
 			cpu_stb <= 0;
+// if (debug || cur_inst == 8'hed || cpu_addr == 32'h00000238 || cpu_addr == 32'h0000023c) $fdisplay(32'h80000002, "S_WRITEMEM2: addr %x dat %x pc %x\r", cpu_addr, CPU_DAT_O, oldpc);
 			case (wmemstate)
 			`WMEM_MCODE: state <= `MCODE;
 			`WMEM_PREEXEC: state <= `PREEXEC;
@@ -1102,7 +1114,7 @@ $fdisplay(32'h80000002, "MCODE: ctr %d mc_rv %x\r", mcodectr, mc_rv);
 
 		`S_READMEM2: if (cpu_acki) begin
 			notrash <= 0;
-if (debug) $fdisplay(32'h80000002, "S_READMEM2: addr %x dat %x\r", cpu_addr, CPU_DAT_I);
+// if (debug || cur_inst == 8'hed || cpu_addr == 32'h00000238 || cpu_addr == 32'h0000023c) $fdisplay(32'h80000002, "S_READMEM2: addr %x dat %x pc %x\r", cpu_addr, CPU_DAT_I, oldpc);
 			if (notrash == 0)
 				OA <= CPU_DAT_I;
 			OP <= CPU_DAT_I;

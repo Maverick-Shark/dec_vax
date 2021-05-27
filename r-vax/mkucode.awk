@@ -235,7 +235,7 @@ BEGIN {
 	stepargs["goto"] = 23;	# goto somewhere
 	stepargs["savnz"] = 24;	# save NZ flags from op
 	stepargs["rmem"] = 25;	# next state is READMEM
-#	stepargs["crn"] = 30;	# set current reg
+	stepargs["savv"] = 30;	# set current reg
 #	stepargs["argp1"] = 31;	# save in argp1
 	stepargs["resopflt"] = 32; # generate resopflt
 

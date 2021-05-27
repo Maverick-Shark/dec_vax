@@ -473,8 +473,8 @@ struct vop vax_inst[256] = {
 /* 0xeb */	{	"FFC",		"rl,rb,vb"		},
 /* 0xec */	{	"CMPV",		"rl,rb,vb,rl"		},
 /* 0xed */	{	"CMPZV",	"rl,rb,vb,rl"		},
-/* 0xee */	{	"extv",		"rl,rb,vb,wl"		},
-/* 0xef */	{	"extzv",	"rl,rb,vb,wl"		},
+/* 0xee */	{	"EXTV",		"rl,rb,vb,wl"		},
+/* 0xef */	{	"EXTZV",	"rl,rb,vb,wl"		},
 
 /* 0xf0 */	{	"INSV",		"rl,rl,rb,vb"		},
 /* 0xf1 */	{	"acbl",		"rl,rl,ml,bw"		},

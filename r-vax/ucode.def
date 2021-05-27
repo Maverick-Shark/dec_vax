@@ -64,7 +64,7 @@
 93	BITB
 94	CLRB
 95	TSTB
-#
+96	INCB
 97	DECB
 #
 9A	MOVZBL
@@ -130,6 +130,8 @@ E7	BBCCI
 E8	BLBS
 E9	BLBC
 #
+EC	CMPV
+ED	CMPZV
 EE	EXTV
 EF	EXTZV
 F0	INSV
@@ -163,11 +165,11 @@ resop:
 #
 mov:	plus arg1 0		argd0 savnz eoi
 tst:	plus arg1 0		argd0 savnz eoi
-add:	plus arg1 arg2		argd0 savnz eoi
+add:	plus arg1 arg2		argd0 savnz savc eoi
 add1:	plus arg1 1		argd0 savc savnz eoi
 clr:	plus 0 0		argd0 savnz eoi
 xor:	xor arg1 arg2		argd0 savnz eoi
-sub:	minus arg1 arg2		argd0 savc savnz eoi
+sub:	minus arg1 arg2		argd0 savc savv savnz eoi
 bicpsw:	bic arg1 psl		psl eoi
 bispsw:	bis arg1 psl		psl eoi
 movpsl:	plus psl 0		argd0 savnz eoi
@@ -267,8 +269,8 @@ movq_cmn:
 # Fix correct status bits
 	shr argd0 1	arg1		# shift in 0 as sign bit
 	and argd0 1	arg2		# get just lost low bit
-	plus arg1 arg2	arg1		# add it to check result
-	plus argd1 arg1	savnz		# set NZ bits by adding high and low
+	bis arg1 arg2	arg1		# or it to check result
+	bis argd1 arg1	savnz		# set NZ bits by adding high and low
 
 # update output address
 	plus argp1 0	argp0
@@ -410,14 +412,14 @@ insv_sz:
 #
 bfield:
 # sanity: size > 32?
-	and 0 0 	argd0
-	minus arg2 21	arg3
-	and arg3 arg3	nncond resopflt
-	and arg2 arg2	zcond goto bf_done
+	and 0 0 	argd0			# 177
+	minus arg2 21	arg3			# 178
+	and arg3 arg3	nncond resopflt		# 179
+	and arg2 arg2	zcond goto bf_done	# 180
 # Check whether read from mem or reg?
-	shr argp0 1E	argd0
-	minus argd0 3	argd0
-	plus argd0 argd0 nzcond goto bf_mem
+	shr argp0 1E	argd0			# 181
+	minus argd0 3	argd0			# 182
+	plus argd0 argd0 nzcond goto bf_mem	# 183
 # Ok, get from reg.  
 	plus argp0 0	crn		# 59 set cur reg num
 	plus crv 0	argd0		# 60 move val to dest
@@ -426,17 +428,17 @@ bfield:
 	and arg1 arg1	goto bf_common	# just jump
 bf_mem:
 # Normalize first
-	asr arg1 3	arg3		# get byte offset
-	plus argp0 arg3 argd0		# argp0 == byte offset
-	and argd0 3	arg3		# arg3 == byte offset in longword
-	and arg1 7	arg1		# arg1 == bit offset
-	shl arg3 3	arg3		# make bit offset
-	plus arg3 arg1	arg1		# pos == bit offset in longword
-	bic 3 argd0	argp0		# clear byte offset bits in ptr
-	plus argp0 0	cpuaddr rmem	# fetch low long
-	plus rmemdat 0	argd0		# dat now in argd0
-	plus argp0 4	cpuaddr rmem	# next long
-	plus rmemdat 0	arg3		# XXX should check if needed
+	asr arg1 3	arg3		# 189 get byte offset
+	plus argp0 arg3 argd0		# 190 argp0 == byte offset
+	and argd0 3	arg3		# 191 arg3 == byte offset in longword
+	and arg1 7	arg1		# 192 arg1 == bit offset
+	shl arg3 3	arg3		# 193 make bit offset
+	plus arg3 arg1	arg1		# 194 pos == bit offset in longword
+	bic 3 argd0	argp0		# 195 clear byte offset bits in ptr
+	plus argp0 0	cpuaddr rmem	# 196 fetch low long
+	plus rmemdat 0	argd0		# 197 dat now in argd0
+	plus argp0 4	cpuaddr rmem	# 198 next long
+	plus rmemdat 0	arg3		# 199 XXX should check if needed
 bf_common:
 # create long in argd0
 	shr argd0 arg1	argd0		# 200 right-adjust low bits
@@ -445,47 +447,80 @@ bf_common:
 	bis arg3 argd0	argd0		# 203
 
 bf_done:
-	and argd1 argd1	zcond goto extzv_1 # 204
-#	minus argd1 1	argd1	
-	plus 0 0	goto extv_1	# 205
+	plus argp1 0	arg3		# 204
+
+	and arg3 arg3	zcond goto extzv_1 # 205 value 0
+	minus arg3 1	arg3		# 206
+	and arg3 arg3	zcond goto extv_1	# 207 value 1
+	minus arg3 1	arg3		# 208
+	and arg3 arg3	zcond goto cmpv_1	# 209 value 2
+	minus arg3 1	arg3		# 208
+	and arg3 arg3	zcond goto cmpzv_1	# 209 value 3
+	plus 0 0	resopflt eoi	# 210
 
 # EXTZV	rl,rb,wb,wl (arg1,arg2,argp0,argp1)
-extzv:	plus 0 0	argd1		# clear ret
-	plus 0 0	goto bfield
+extzv:	plus argp1 0	argd1		# 207 save ptr
+	plus 0 0	argp1		# 208 clear ret
+	plus 0 0	goto bfield	# 209
 extzv_1:	
-	minus arg2 20	arg3		# 217
+	minus arg2 20	arg3		# 210
 	and arg3 arg3	nncond goto extzv_is20	# 218 full word, no need to mask
-	shl 1 arg2	arg3		# 219
+	shl 1 arg2	arg3		# 211
 	minus arg3 1	arg3		# 220
 	and arg3 argd0	argd0		# 221
 extzv_is20:
 	and argd0 argd0	savnz		# 222
-	plus argp1 0	argp0 eoi	# 223 result in wb0
+	plus argd1 0	argp0 eoi	# 223 result in wb0
 	
 
 # EXTV	rl,rb,wb,wl (arg1,arg2,argp0,argp1)
-extv:	and 1 1 	argd1
+extv:	plus argp1 0	argd1
+	and 1 1 	argp1
 	plus 0 0	goto bfield
 extv_1:	
-	minus arg2 20	arg3		# 216
-	and arg3 arg3	nncond goto extv_is20	# 217 full word, no need to mask
-	minus 20 arg2	arg2		# shift left bits
-	shl argd0 arg2	argd0
-	asr argd0 arg2	argd0 		# sign extend
+	minus arg2 20	arg3		# 224
+	and arg3 arg3	nncond goto extv_is20	# 225 full word, no need to mask
+	minus 20 arg2	arg2		# 226 shift left bits
+	shl argd0 arg2	argd0		# 227 
+	asr argd0 arg2	argd0 		# 228 sign extend
 extv_is20:
-	and argd0 argd0	savnz		# 221 
-	plus argp1 0	argp0 eoi	# 222 result in wb0
+	and argd0 argd0	savnz		# 229 
+	plus argd1 0	argp0 eoi	# 230 result in wb0
 	
+# CMPV rl,rb,wb,rl (arg1,arg2,argp0,arg3)
+cmpv:	plus arg3 0	argd1			# 231 save cmpval
+	and 2 2		argp1			# 232
+	plus 0 0	goto bfield		# 233
+cmpv_1:
+	minus arg2 20	arg3			# 234
+	and arg3 arg3	nncond goto cmpv_is20	# 235 full word, no need to mask
+	minus 20 arg2	arg2			# 236 shift left bits
+	shl argd0 arg2	argd0			# 237
+	asr argd0 arg2	argd0			# 238 sign extend
+cmpv_is20:
+	minus argd0 argd1 argd0 savnz savc savv eoi	# 239
 
+# CMPZV rl,rb,wb,rl (arg1,arg2,argp0,arg3)
+cmpzv:	plus arg3 0	argd1			# 242 save cmpval
+	and 3 3		argp1			# 243
+	plus 0 0	goto bfield		# 244
+cmpzv_1:
+	minus arg2 20	arg3			# 245
+	and arg3 arg3	nncond goto cmpzv_is20	# 246 full word, no need to mask
+	shl 1 arg2	arg3			# 247
+	minus arg3 1	arg3			# 248 shift left bits
+	and arg3 argd0 	argd0			# 249 sign extend
+cmpzv_is20:
+	minus argd0 argd1 argd0 savnz savc savv eoi	# 250
 #
 #
 !INSTRUCTIONS
 #
-RSB	rl#(sp)+,wl#pc	lbl=mov wback 				# 05
+RSB	rl#(sp)+,wl#pc	lbl=mov wback				# 05
 #
 BSBB	0ab#b^d(pc),2rl#pc,wl#pc,wl#-(sp)	lbl=mov move2 wback wback2
 BRB	aw#b^d(pc),wl#pc	lbl=mov wback			# 11
-BNEQ	ab#b^d(pc),rl#4,wl#pc	lbl=bclr 			# 12
+BNEQ	ab#b^d(pc),rl#4,wl#pc	lbl=bclr			# 12
 BEQL	ab#b^d(pc),rl#4,wl#pc	lbl=bset			# 13
 BGTR	ab#b^d(pc),rl#C,wl#pc	lbl=bclr 			# 14
 BLEQ	ab#b^d(pc),rl#C,wl#pc	lbl=bset 			# 15
@@ -516,6 +551,7 @@ CMPB	rb,rb		lbl=sub setnz clv setc			# 91
 #BITB	rb,rb		lbl=andb setnz clv			# 93
 CLRB	wb		lbl=clr setnz clv wback			# 94
 TSTB	rb		lbl=tst setnz clv clc			# 95
+INCB	mb		lbl=add1 setnz setc wback		# 96
 #
 MOVZBL	rb,wl		lbl=zbl setnz clv wback			# 9a
 MOVZBW	rb,ww		lbl=zbl setnz clv wback			# 9b
@@ -539,7 +575,7 @@ BICL2	rl,ml		lbl=bic setnz clv wback			# ca
 XORL3	rl,rl,wl	lbl=xor setnz clv wback			# cd
 #
 MOVL	rl,wl		lbl=mov setnz clv wback			# d0
-CMPL	rl,rl		lbl=sub setnz clv setc			# d1
+CMPL	rl,rl		lbl=sub setcmpnz clv setc		# d1
 #
 BITL	rl,rl		lbl=and setnz clv 			# d3
 CLRL	wl		lbl=clr setnz clv wback 		# d4
@@ -565,6 +601,8 @@ BBCCI	rl,ml,ab#b^d(pc),wl#pc lbl=bbcc wback			# e7
 BLBS	rl#0,rl,ab#b^d(pc),wl#pc,wl#pc lbl=bbs 			# e8
 BLBC	rl#0,rl,ab#b^d(pc),wl#pc,wl#pc lbl=bbc 			# e9
 #
+CMPV	rl,rb,wb,rl lbl=cmpv setcmpnz clv setc			# ec
+CMPZV	rl,rb,wb,rl lbl=cmpzv setcmpnz clv setc			# ed
 EXTV	rl,rb,wb,wl lbl=extv setnz clv wback			# ee
 EXTZV	rl,rb,wb,wl lbl=extzv setnz clv wback			# ef
 #

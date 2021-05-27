@@ -17,6 +17,7 @@ module alu(
 	output		ack,
 
 	output		neg,
+	output		ovf,
 	output		cry,
 	output		zero,
 	output [31:0]	result
@@ -87,6 +88,9 @@ parameter SHIFT=1;
 	assign cry = Ctmp;
 	assign neg = res[31];
 	assign zero = ~|res;
+	assign ovf = op == `ALU_PLUS ?
+	    (left[31] == right[31]) && (left[31] != res[31]) :
+	    (left[31] ^ right[31]) && (left[31] ^ res[31]);
 
 
 endmodule

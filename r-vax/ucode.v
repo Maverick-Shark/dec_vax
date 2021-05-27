@@ -16,6 +16,7 @@
 
 `define	MOVE2		20
 `define	WBACK2		21
+`define	SETCMPNZ	25
 `define	SETNZ		26
 `define	CLV		27
 `define	CLC		28
@@ -39,6 +40,7 @@ module ucode(
 
 	output			i_wback,
 
+	output			i_setcmpnz,
 	output			i_setnz,
 	output			i_clv,
 	output			i_clc,
@@ -72,6 +74,7 @@ module ucode(
 	output			s_wmem,
 	output			s_wreg,
 	output [3:0]		s_dest,
+	output			s_savv,
 	output			s_resopflt,
 
 	output [23:0]		s_const,
@@ -139,6 +142,7 @@ parameter	S_ROM_ADDRS = 256;
 	assign s_savnz = ucstep_data[24];
 	assign s_rmem = ucstep_data[25];
 	assign s_dest = ucstep_data[29:26];
+	assign s_savv = ucstep_data[30];
 	assign s_resopflt = ucstep_data[32];
 	assign s_const = ucstep_data[63:40];
 
@@ -148,6 +152,7 @@ parameter	S_ROM_ADDRS = 256;
 	assign i_dohalt = ucinsn_data[`DOHALT];
 	assign i_wback = ucinsn_data[`WBACK];
 
+	assign i_setcmpnz = ucinsn_data[`SETCMPNZ];
 	assign i_setnz = ucinsn_data[`SETNZ];
 	assign i_clv = ucinsn_data[`CLV];
 	assign i_clc = ucinsn_data[`CLC];
