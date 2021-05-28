@@ -342,7 +342,7 @@ initial psl_ipl = 5'h1f;
 	wire [3:0]	s_dest;
 	wire [7:0]	s_stepoff, i_stepoff;
 	wire [3:0]	s_op, s_left, s_right;
-	wire [23:0]	s_const;
+	wire [15:0]	s_const, s_addr;
 	reg [7:0]	scounter;
 	
 
@@ -407,6 +407,7 @@ initial psl_ipl = 5'h1f;
 		.s_resopflt(s_resopflt),
 
 		.s_const(s_const),
+		.s_addr(s_addr),
 
 		.a_enable(a_enable),
 		.a_argoff(a_argoff),
@@ -536,7 +537,7 @@ initial debug = 0;
 	    (s_zcond && alu_zero) || (s_nzcond && alu_zero == 0) ||
 	    (s_ncond && alu_neg) || (s_nncond && alu_neg == 0);
 	assign s_stepoff = (state == `S_DECODE) ? i_stepoff : 
-	    wr_cond_ok && s_goto ? s_const[7:0] : scounter;
+	    wr_cond_ok && s_goto ? s_addr[7:0] : scounter;
 	assign s_enable = (state == `S_DECODE) || 
 	    ((state == `EXEC) && alu_ack);
 
@@ -798,7 +799,7 @@ if (debug) $fdisplay(32'h80000002, "PREEXEC: op %d sleft %d sright %d scounter %
 			    { 2'b11, 26'b0, argp_regnum[s_left[0]] } :
 				argp[s_left[0]];
 			4'b1000: alu_left <= psl;
-			4'b1001: alu_left <= { 8'b0, s_const };
+			4'b1001: alu_left <= { 16'b0, s_const };
 			4'b1010: alu_left <= ipr_val;
 			4'b1011: alu_left <= cur_reg_val;
 			4'b1100: alu_left <= rmem_dat;
@@ -812,7 +813,7 @@ if (debug) $fdisplay(32'h80000002, "PREEXEC: op %d sleft %d sright %d scounter %
 //	    { 2'b11, 25'b0, argp_size[s_right[0]], argp_regnum[s_right[0]] } :
 //				argp[s_right[0]];
 			4'b1000: alu_right <= psl;
-			4'b1001: alu_right <= { 8'b0, s_const };
+			4'b1001: alu_right <= { 16'b0, s_const };
 //			4'b1010: alu_right <= OPu;
 			default: alu_right <= 0;
 			endcase
@@ -922,7 +923,7 @@ if (debug & alu_ack) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d ste
 			end
 
 			if (wr_cond_ok && s_goto)
-				scounter <= s_const[7:0];
+				scounter <= s_addr[7:0];
 			if (wr_cond_ok && s_resopflt)
 				resopflt <= 1;
 

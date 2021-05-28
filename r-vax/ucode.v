@@ -79,7 +79,8 @@ module ucode(
 	output			s_savv,
 	output			s_resopflt,
 
-	output [23:0]		s_const,
+	output [15:0]		s_const,
+	output [15:0]		s_addr,
 
 	/* Argument ROM */
 	input			a_enable,
@@ -146,7 +147,8 @@ parameter	S_ROM_ADDRS = 256;
 	assign s_dest = ucstep_data[29:26];
 	assign s_savv = ucstep_data[30];
 	assign s_resopflt = ucstep_data[32];
-	assign s_const = ucstep_data[63:40];
+	assign s_const = ucstep_data[71:56];
+	assign s_addr = ucstep_data[55:40];
 
 	assign i_argoff = ucinsn_data[7:0];
 	assign i_hasargs = ucinsn_data[`IHASARGS];

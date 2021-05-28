@@ -151,7 +151,7 @@ function ishex(s,    i, c) {
 # Convert a hex string to binary
 #
 function hexcvt(s,    i, o) {
-	o = "00000000000000000000000000000000";
+	o = "0000000000000000";
 # print "hexcvt len " length(s);
 	for (i = 1; i <= length(s); i++) {
 		r = h1tod1(substr(s, i, 1));
@@ -289,7 +289,7 @@ BEGIN {
 
 			aop = aluops($shiftoff);
 			shiftoff++;
-			hval = "00000000000000000000000000000000";
+			hval = "0000000000000000";
 # print " LOP " $shiftoff;
 			if (ishex($shiftoff)) {
 				lop = leftops("const");
@@ -307,7 +307,7 @@ BEGIN {
 			shiftoff++;
 
 			# ucstep[stepoff] = substr(hval,9)
-			ucstep[stepoff] = hval \
+			ucstep[stepoff] = hval "0000000000000000" \
 			    "0000000000000000000000000000" \
 			    num2bit(lop, 4) \
 			    num2bit(rop, 4) \
@@ -448,7 +448,7 @@ BEGIN {
 			err(resolve[i] " not defined");
 print "resolving " resolve[i] " pos " i " as " steplbl[resolve[i]];
 		s = ucstep[i];
-		ucstep[i] = substr(s,1,24) num2bit(steplbl[resolve[i]], 8) \
+		ucstep[i] = substr(s,1,16) num2bit(steplbl[resolve[i]], 16) \
 		    substr(s,33);
 	}
 
