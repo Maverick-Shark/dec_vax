@@ -185,29 +185,28 @@ zbl:	and arg1 FF		argd0 savnz eoi
 mtpr:
 	and arg2 arg2	nzcond goto mtpr_1	# KSP?
 	shr psl 1A	arg3			# IS set?
-	and arg3 1	arg3
-	and arg3 arg3	nzcond goto mtpr_ok	# if so, fine
+	and arg3 1	nzcond goto mtpr_ok	# if so, fine
 	plus 0 0	resopflt eoi		# write back XXX fixme
 
 mtpr_1:
-	minus 3 arg2	arg3
-	and arg3 arg3	nncond goto mtpr_ok	# SSP, ESP, USP
+	minus 3 arg2	nncond goto mtpr_ok	# SSP, ESP, USP
+#	and arg3 arg3	nncond goto mtpr_ok	# SSP, ESP, USP
 # check if ISP
-	minus arg2 4	arg3
-	and arg3 arg3	nzcond goto mtpr_2
+	minus arg2 4	nzcond goto mtpr_2
+#	and arg3 arg3	nzcond goto mtpr_2
 	shr psl 1A	arg3
-	and arg3 1	arg3
-	and arg3 arg3	zcond goto mtpr_ok	# not on ISP, get out
+	and arg3 1	zcond goto mtpr_ok	# not on ISP, get out
+#	and arg3 arg3	zcond goto mtpr_ok	# not on ISP, get out
 	and C000 C000	arg3			# create wback encoding
 	shl arg3 10	arg3
 	plus arg3 E	argp0 wback
 	and arg1 arg1	argd0 goto mtpr_ok
 mtpr_2:
-	minus arg2 11	arg3
-	and arg3 arg3	zcond goto mtpr_ok	# Accept SCBB
+	minus arg2 11	zcond goto mtpr_ok	# Accept SCBB
+#	and arg3 arg3	zcond goto mtpr_ok	# Accept SCBB
 
-	minus arg2 23	arg3			# TXDB?
-	and arg3 arg3	nzcond goto mtpr_3	# jump if not TXDB
+	minus arg2 23	nzcond goto mtpr_3	# jump if not TXDB
+#	and arg3 arg3	nzcond goto mtpr_3	# jump if not TXDB
 	plus arg1 0	crw
 	and 2000 2000	arg3
 	shl arg3 10	arg3
@@ -225,21 +224,21 @@ mtpr_ok:
 
 # mfpr arg1=ipr,arg2=dest
 mfpr:
-	and 3E 3E	arg3		# SID
-	minus arg1 arg3	nzcond goto mfpr_1
+#	and 3E 3E	arg3		# SID
+	minus arg1 3E	nzcond goto mfpr_1	# SID
 	and 0A00 0A00	arg2
 	shl arg2 10	arg2
 	plus arg2 6	argd0 eoi
 mfpr_1:
-	and 22 22	arg3		# TXCS
-	minus arg1 arg3	nzcond goto mfpr_2
+#	and 22 22	arg3		# TXCS
+	minus arg1 22	nzcond goto mfpr_2	# TXCS
 	and 2000 2000	arg3
 	shl arg3 10	arg3
 	plus arg3 1F74	cpuaddr rmem
 	plus rmemdat 0	argd0 eoi
 mfpr_2:
-	and 20 20	arg3
-	minus arg1 arg3	nzcond goto mfpr_3
+#	and 20 20	arg3
+	minus arg1 20	nzcond goto mfpr_3	# RXCS
 	and 2000 2000	arg3
 	shl arg3 10	arg3
 	plus arg3 1F70	cpuaddr rmem
@@ -258,11 +257,9 @@ movq:
 	plus arg1 0	argd0			# 16 store lowword
 # get input addr
 	shr argp0 1E	arg4			# 17 arg4 = (argp0 >> 30)
-	minus arg4 3	arg4			# 18 arg4 = arg1 - 3
-	plus arg4 arg4	nzcond goto movq_rmem	# 19 if (arg4+arg4) goto...
+	minus arg4 3	nzcond goto movq_rmem		# 18 arg4 = arg1 - 3
 	plus argp0 1	crn			# 20 inc read reg by 1
-	plus crv 0	argd1			# 21 save in highword
-	plus arg1 arg1	goto movq_cmn		# 22
+	plus crv 0	argd1 goto movq_cmn		# 21 save in highword
 movq_rmem:
 	plus argp0 4	cpuaddr rmem 		# 23 inc addr for read
 	plus rmemdat 0	argd1			# 24
@@ -278,7 +275,7 @@ movq_cmn:
 	plus argp1 0	argp0
 
 	shr argp0 1E	arg1			# arg1 = (argp0 >> 30)
-	minus arg1 3	arg1			# arg1 = arg1 - 3
+	minus arg1 3	arg1 			# arg1 = arg1 - 3
 	plus arg1 arg1	nzcond goto movq_mem	# if (arg1+arg1) goto...
 	plus argp0 1	argp1 eoi		# inc by 1
 movq_mem:
@@ -347,7 +344,7 @@ bbcc:	shl 1 arg1	argd0		# position bit
 # INSV arg1=pos,arg2=size,argd0/1=base(val),arg4=src
 #
 insv:	shr argp0 1E	argd0		# 56
-	minus argd0 3	argd0		# 57
+	minus argd0 3	argd0 		# 57
 	plus argd0 argd0 nzcond goto insv_mem	# 58
 #
 # value is in register
@@ -359,8 +356,8 @@ insv_zero:
 	plus crv 0	argd0		# 60 move val to dest
 	plus argp0 1	argp1		# if two regs
 	plus argp0 1	crn		# if two regs
-	plus crv 0	argd1 		# 60 move val to dest
-	and arg1 arg1	goto insv_common # 60 move val to dest
+	plus crv 0	argd1 goto insv_common 		# 60 move val to dest
+#	and arg1 arg1	goto insv_common # 60 move val to dest
 insv_mem:
 # Normalize first
 	asr arg1 3	arg3		# get byte offset
@@ -383,11 +380,11 @@ insv_common:
 #
 # Lower longword
 #
-	minus arg2 20	arg3
-	and arg3 arg3	nzcond goto insv_not20
+	minus arg2 20	nzcond goto insv_not20
+#	and arg3 arg3	nzcond goto insv_not20
 	bic arg3 arg3	arg3
-	minus arg3 1	arg3
-	and arg3 arg3	goto insv_sz
+	minus arg3 1	arg3 goto insv_sz
+#	and arg3 arg3	goto insv_sz
 insv_not20:
 	shl 1 arg2	arg3		# 61 shift left size bits
 	minus arg3 1	arg3		# 62 create mask (in arg3)
@@ -420,14 +417,14 @@ bfield:
 	and arg2 arg2	zcond goto bf_done	# 180
 # Check whether read from mem or reg?
 	shr argp0 1E	argd0			# 181
-	minus argd0 3	argd0			# 182
-	plus argd0 argd0 nzcond goto bf_mem	# 183
+	minus argd0 3	argd0 nzcond goto bf_mem	# 182
+#	plus argd0 argd0 nzcond goto bf_mem	# 183
 # Ok, get from reg.  
 	plus argp0 0	crn		# 59 set cur reg num
 	plus crv 0	argd0		# 60 move val to dest
 	plus argp0 1	crn		# if two regs
-	plus crv 0	arg3		# 60 move val to dest
-	and arg1 arg1	goto bf_common	# just jump
+	plus crv 0	arg3 goto bf_common	# 60 move val to dest
+#	and arg1 arg1	goto bf_common	# just jump
 bf_mem:
 # Normalize first
 	asr arg1 3	arg3		# 189 get byte offset
@@ -452,10 +449,10 @@ bf_done:
 	plus argp1 0	arg3		# 204
 
 	and arg3 arg3	zcond goto extzv_1 # 205 value 0
-	minus arg3 1	arg3		# 206
-	and arg3 arg3	zcond goto extv_1	# 207 value 1
-	minus arg3 1	arg3		# 208
-	and arg3 arg3	zcond goto cmpv_1	# 209 value 2
+	minus arg3 1	arg3 zcond goto extv_1		# 206
+#	and arg3 arg3	zcond goto extv_1	# 207 value 1
+	minus arg3 1	arg3 zcond goto cmpv_1		# 208
+#	and arg3 arg3	zcond goto cmpv_1	# 209 value 2
 	minus arg3 1	arg3		# 208
 	and arg3 arg3	zcond goto cmpzv_1	# 209 value 3
 	plus 0 0	resopflt eoi	# 210
