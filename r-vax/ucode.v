@@ -99,7 +99,7 @@ parameter	I_ROM_WIDTH = 64;
 parameter	I_ROM_ADDRS = 256;
 parameter	A_ROM_WIDTH = 64;
 parameter	A_ROM_ADDRS = 256;
-parameter	S_ROM_WIDTH = 64;
+parameter	S_ROM_WIDTH = 72;
 parameter	S_ROM_ADDRS = 256;
 
 	reg [I_ROM_WIDTH-1:0] ucinsn_rom [I_ROM_ADDRS-1:0];

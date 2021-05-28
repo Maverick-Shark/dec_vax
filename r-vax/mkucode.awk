@@ -66,17 +66,17 @@ function bitset3(line, bit, val) {
 
 #
 # set bit bit in string lst
-# lst is expected to be 64 digits.
+# lst is expected to be llen digits.
 #
-function bitset(lst, bit) {
-	bit = 64 - bit;
+function bitset(lst, bit, llen) {
+	bit = llen - bit;
 	return substr(lst, 1, bit-1) "1" substr(lst, bit+1);
 }
 
-function line2hex(ln, lst,   i, n, rv) {
-	if (length(lst) != 64)
+function line2hex(ln, lst, llen,    i, n, rv) {
+	if (length(lst) != llen)
 		err("bad len " length(lst) " line " ln ": " lst);
-	for (i = 1; i < 64; i+= 4) {
+	for (i = 1; i < llen; i+= 4) {
 		n = substr(lst, i, 1) * 8 + \
 		    substr(lst, i+1, 1) * 4 + \
 		    substr(lst, i+2, 1) * 2 + \
@@ -306,7 +306,8 @@ BEGIN {
 				rop = rightops($shiftoff);
 			shiftoff++;
 
-			ucstep[stepoff] = substr(hval,9) \
+			# ucstep[stepoff] = substr(hval,9)
+			ucstep[stepoff] = hval \
 			    "0000000000000000000000000000" \
 			    num2bit(lop, 4) \
 			    num2bit(rop, 4) \
@@ -319,17 +320,17 @@ BEGIN {
 					break;
 				if ($i in alures) {
 					s = ucstep[stepoff];
-					if (substr(s,35,4) != "0000")
+					if (substr(s,43,4) != "0000")
 						err("duplicate alures");
-					ucstep[stepoff] = substr(s,1,34) \
+					ucstep[stepoff] = substr(s,1,42) \
 					    num2bit(alures[$i], 4) \
-					    substr(s,39);
+					    substr(s,47);
 					continue;
 				}
 				if (!($i in stepargs))
 					err($i " not in stepargs");
 				ucstep[stepoff] = \
-				    bitset(ucstep[stepoff], stepargs[$i]);
+				    bitset(ucstep[stepoff], stepargs[$i], 72);
 				if ($i == "goto") {
 					i++;
 			#		resolve[$i] = stepoff;
@@ -433,7 +434,7 @@ BEGIN {
 
 			} else if ($i in legalbits) {
 				inslist[insnr] = \
-				    bitset(inslist[insnr], legalbits[$i]);
+				    bitset(inslist[insnr], legalbits[$i], 64);
 			} else
 				err("bad bit " $i " line " lineno);
 		}
@@ -447,8 +448,8 @@ BEGIN {
 			err(resolve[i] " not defined");
 print "resolving " resolve[i] " pos " i " as " steplbl[resolve[i]];
 		s = ucstep[i];
-		ucstep[i] = substr(s,1,16) num2bit(steplbl[resolve[i]], 8) \
-		    substr(s,25);
+		ucstep[i] = substr(s,1,24) num2bit(steplbl[resolve[i]], 8) \
+		    substr(s,33);
 	}
 
 	# print out instructions
@@ -456,7 +457,7 @@ print "resolving " resolve[i] " pos " i " as " steplbl[resolve[i]];
 	system("rm -f " FN);
 	for (i = 0; i < 256; i++) {
 		if (i in inslist) {
-			print line2hex(i, inslist[i]) >> FN;
+			print line2hex(i, inslist[i], 64) >> FN;
 			numinst++;
 		} else
 			print "8000000000000000" >> FN;
@@ -469,7 +470,7 @@ print "resolving " resolve[i] " pos " i " as " steplbl[resolve[i]];
 	system("rm -f " FN);
 	for (i = 0; i < 256; i++) {
 		if (i in arglist) {
-			print line2hex(i, arglist[i]) >> FN;
+			print line2hex(i, arglist[i], 64) >> FN;
 			numargs++;
 		} else
 			print "0000000000000000" >> FN;
@@ -482,10 +483,10 @@ print "resolving " resolve[i] " pos " i " as " steplbl[resolve[i]];
 	system("rm -f " FN);
 	for (i = 0; i < 256; i++) {
 		if (i in ucstep) {
-			print line2hex(i, ucstep[i]) >> FN;
+			print line2hex(i, ucstep[i], 72) >> FN;
 			numstep++;
 		} else
-			print "0000000000000000" >> FN;
+			print "000000000000000000" >> FN;
 	}
 	close(FN);
 	print "microcode steps " numstep;
