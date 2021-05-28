@@ -327,7 +327,7 @@ initial psl_ipl = 5'h1f;
 	wire		i_enable, i_hasargs, i_emul, i_dohalt;
 	wire		a_enable, a_emul, a_last, i_move2, i_wback2;
 	wire		i_wback;
-	wire		i_setnz, i_clv, i_clc, i_setc, i_setcmpnz;
+	wire		i_setnz, i_clv, i_clc, i_setc, i_setcmpnz, i_setv;
 	wire		arg_aR, arg_aW, arg_aA;
 	wire [2:0]	a_argcode;
 	wire [1:0]	a_argsz;
@@ -372,6 +372,7 @@ initial psl_ipl = 5'h1f;
 		.i_clv(i_clv),
 		.i_clc(i_clc),
 		.i_setc(i_setc),
+		.i_setv(i_setv),
 
 
 		.i_stepoff(i_stepoff),
@@ -491,9 +492,9 @@ assign debug = 0;
 `else
 reg debug;
 initial debug = 0;
-//	always @(posedge clk)
-//		if (curpc == 32'h5cf0)
-//			debug <= 1;
+	always @(posedge clk)
+		if (curpc == 32'h650a)
+			debug <= 1;
 `endif
 
 	/* console communications */
@@ -781,6 +782,7 @@ if (debug) $fdisplay(32'h80000002, "ARGEND: a_rargno %d a_wargno %d arg_aR %d ar
 // if (cur_inst == 8'hf0) $fdisplay(32'h80000002, "INSV pos %x size %x base %x src %x pc %x\r", arg[0], arg[1], arg[2], arg[3], oldpc);
 //if (cur_inst == 8'hef) $fdisplay(32'h80000002, "EXTZV pos %x size %x base %x dest %x pc %x\r", arg[0], arg[1], argp[0], argp[1], oldpc);
 //if (cur_inst == 8'hed) $fdisplay(32'h80000002, "CMPZV pos %x size %x base %x dest %x pc %x\r", arg[0], arg[1], argp[0], argp[1], oldpc);
+if (cur_inst == 8'ha0) $fdisplay(32'h80000002, "ADDW2 arg1 %x arg2 %x dest %x pc %x\r", arg[0], arg[1], argp[0], oldpc);
 			end
 			OA_isreg <= 0;
 			IA <= 0;
@@ -939,6 +941,7 @@ if (debug) $fdisplay(32'h80000002, "ENDINST: pc %x argd[1] %x arg2p %x isreg %d 
 // if (cur_inst == 8'hf0) $fdisplay(32'h80000002, "INSV END: argd0 %x argd1 %x\r", argd[0], argd[1]);
 //if (cur_inst == 8'hef) $fdisplay(32'h80000002, "EXTZV END: argd0 %x argp0 %x pc %x\r", argd[0], argp[0], oldpc);
 //if (cur_inst == 8'hed) $fdisplay(32'h80000002, "CMPZV END: argd0 %x argd1 %x pc %x\r", argd[0], argd[1], oldpc);
+if (cur_inst == 8'ha0) $fdisplay(32'h80000002, "ADDW2 END: argd0 %x tmpV %d pc %x\r", argd[0], Vtmp, oldpc);
 			state <= `S_FETCH;
 
 			if (resopflt) begin
@@ -1008,6 +1011,8 @@ if (debug) $fdisplay(32'h80000002, "WB0: argd0 %x size %d curreg %x curval %x\r"
 			end
 			if (i_clv)
 				psw[`PSL_V] <= 0;
+			if (i_setv)
+				psw[`PSL_V] <= Vtmp;
 			if (i_clc)
 				psw[`PSL_C] <= 0;
 			if (i_setc)

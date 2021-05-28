@@ -71,6 +71,8 @@
 9B	MOVZBW
 9C	ROTL
 #
+A0	ADDW2
+A1	ADDW3
 A2	SUBW2
 A3	SUBW3
 #
@@ -165,7 +167,7 @@ resop:
 #
 mov:	plus arg1 0		argd0 savnz eoi
 tst:	plus arg1 0		argd0 savnz eoi
-add:	plus arg1 arg2		argd0 savnz savc eoi
+add:	plus arg1 arg2		argd0 savnz savc savv eoi
 add1:	plus arg1 1		argd0 savc savnz eoi
 clr:	plus 0 0		argd0 savnz eoi
 xor:	xor arg1 arg2		argd0 savnz eoi
@@ -556,6 +558,9 @@ INCB	mb		lbl=add1 setnz setc wback		# 96
 MOVZBL	rb,wl		lbl=zbl setnz clv wback			# 9a
 MOVZBW	rb,ww		lbl=zbl setnz clv wback			# 9b
 ROTL	rb,rl,wl	lbl=rot setnz clv wback			# 9c
+#
+ADDW2	rw,mw		lbl=add setnz setc setv wback 		# a0
+ADDW3	rw,rw,ww	lbl=add setnz setc setv wback 		# a1
 #
 MOVW	rw,ww		lbl=mov setnz clv wback			# b0
 CMPW	rw,rw		lbl=sub setnz clv setc			# b1
