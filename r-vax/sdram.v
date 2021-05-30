@@ -109,7 +109,7 @@ module sdram #(
 
 	always @(posedge clk) begin
 `ifdef DBGCNT
-if (STB_I) $fdisplay(32'h80000002, "SDRAM %d: state %d stb 1 ack %d addr %x dato %x", dcount, state, ACK_O, { ADR_I, 2'b0 }, DAT_O);
+//if (STB_I) $fdisplay(32'h80000002, "SDRAM %d: state %d stb 1 ack %d addr %x dato %x", dcount, state, ACK_O, { ADR_I, 2'b0 }, DAT_O);
 `endif
 		timer <= timer + 1;
 		if (timer[7:0] == 8'b0)

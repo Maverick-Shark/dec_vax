@@ -122,8 +122,8 @@ module vcache(
 
 	always @(posedge clk) begin
 `ifdef DBGCNT
-if (state != `IDLE && IN_ADR_I[31:4] != 28'h20001f7)
-$fdisplay(32'h80000002, "VC    %d: state %d in_addr %x rdata %x utdati %x sdack %d", dcount, state, IN_ADR_I, in_rdata, UT_DAT_I, UT_ACK_I);
+//if (state != `IDLE && IN_ADR_I[31:4] != 28'h20001f7)
+//$fdisplay(32'h80000002, "VC    %d: state %d in_addr %x rdata %x utdati %x sdack %d", dcount, state, IN_ADR_I, in_rdata, UT_DAT_I, UT_ACK_I);
 `endif
 		if (rst) begin
 			state <= `IDLE;

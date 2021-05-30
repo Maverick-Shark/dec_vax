@@ -182,9 +182,15 @@ and:	and arg1 arg2		argd0 savnz eoi
 zwl:	and arg1 FFFF		argd0 savnz eoi
 zbl:	and arg1 FF		argd0 savnz eoi
 #
-adwc:	plus arg1 arg2		argd0
-	and psl 1		arg3
-	plus argd0 arg3		argd0 savnz savc savv eoi
+adwc:	plus arg1 arg2	argd0 savc savv	# save C and V
+	and psl 1	arg3		# fetch old C
+	and savpsw 3	arg4		# store them
+	plus arg3 argd0	argd0 savc savv savnz	# save all status bits
+	bis savpsw arg4	arg4		# or them into saved bits
+	and arg4 3	arg4		# clean all other bits
+	bic 3 psl	psl		# clean CV  from psl
+	bis psl arg4	psl eoi		# replace with newly calculated
+
 #
 # mtpr arg1=val,arg2=ipr
 mtpr:
@@ -589,7 +595,7 @@ CLRL	wl		lbl=clr setnz clv wback 		# d4
 TSTL	rl		lbl=tst setnz clv clc 			# d5
 INCL	ml		lbl=add1 setnz setc wback		# d6
 DECL	ml,rl#1		lbl=sub setnz wback 			# d7
-ADWC	rl,ml		lbl=adwc setnz setc setv wback		# d9
+ADWC	rl,ml		lbl=adwc setnz wback			# d9
 #
 MTPR	rl,rl		lbl=mtpr 				# da
 MFPR	rl,wl		lbl=mfpr wback				# db

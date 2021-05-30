@@ -76,7 +76,7 @@ itracedump(Vnvax *tb)
 		F(" ");
 		prtargs(tb, vax_inst[cur_inst].arg);
 	}
-	F("\r\n");
+	F("\n");
 	
 }
 
@@ -450,8 +450,8 @@ struct vop vax_inst[256] = {
 /* 0xd5 */	{	"TSTL",		"rl"			},
 /* 0xd6 */	{	"INCL",		"ml"			},
 /* 0xd7 */	{	"DECL",		"ml"			},
-/* 0xd8 */	{	"adwc",		"rl,ml"			},
-/* 0xd9 */	{	"sbwc",		"rl,ml"			},
+/* 0xd8 */	{	"ADWC",		"rl,ml"			},
+/* 0xd9 */	{	"SBWC",		"rl,ml"			},
 /* 0xda */	{	"MTPR",		"rl,rl"			},
 /* 0xdb */	{	"MFPR",		"rl,wl"			},
 /* 0xdc */	{	"MOVPSL",	"wl"			},
