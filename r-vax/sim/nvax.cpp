@@ -28,9 +28,15 @@ int main(int argc, char **argv)
 	port = 10000;
 	fn = NULL;
 	off = 0;
-	while ((ch = getopt(argc, argv, "o:f:np:d:")) != -1)
+	while ((ch = getopt(argc, argv, "o:l:f:np:d:")) != -1)
 		switch (ch) {
-		case 'o': // offset
+		case 'o': // Error out file
+			if (freopen(optarg, "w", stderr) == NULL)
+				err(1, "stderr");
+			setvbuf(stderr, NULL, _IONBF, 0); // paranoia
+			break;
+
+		case 'l': // load address
 			off = strtol(optarg, 0, 0);
 			break;
 

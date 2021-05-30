@@ -13,7 +13,7 @@ DEST=nvax
 TDEST=nvax_trace
 OBJS=nvax.o ttotest.o ttitest.o verilated.o sdramtest.o disasm.o
 CFLAGS=-g -std=c++11
-VFLAGS=-Wno-fatal -Wall
+VFLAGS=-Wno-fatal -Wall -DDBGCNT
 
 TOP=sbi.v
 SRCS=console.v cpu.v decode.v opspec.v sbi.v sdram.v vcache.v \

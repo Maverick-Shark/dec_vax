@@ -20,6 +20,7 @@
 `define	WRHIGH2		8
 `define	WRHIGH3		9
 `define	SETTLE		10
+`define	SETTLEWD	11
 
 module vcache(
 	input		clk,
@@ -41,6 +42,9 @@ module vcache(
 
 //	output [1:0]	ut_sz,
 
+`ifdef DBGCNT
+	input [7:0]	dcount,
+`endif
 	output 		UT_STB_O,
 	output [31:0]	UT_ADR_O,
 	output [31:0]	UT_DAT_O,
@@ -117,8 +121,10 @@ module vcache(
 	end
 
 	always @(posedge clk) begin
-//if (state != `IDLE)
-//$fdisplay(32'h80000002, "vc STATE: %d in_addr %x\r\n", state, IN_ADR_I);
+`ifdef DBGCNT
+if (state != `IDLE && IN_ADR_I[31:4] != 28'h20001f7)
+$fdisplay(32'h80000002, "VC    %d: state %d in_addr %x rdata %x utdati %x sdack %d", dcount, state, IN_ADR_I, in_rdata, UT_DAT_I, UT_ACK_I);
+`endif
 		if (rst) begin
 			state <= `IDLE;
 			in_ack <= 0;
@@ -193,7 +199,7 @@ module vcache(
 				state <= `WRHIGH;
 			end else begin
 				in_ack <= 1;
-				state <= `SETTLE;
+				state <= `SETTLEWD;
 			end
 		end
 
@@ -223,6 +229,15 @@ module vcache(
 				in_ack <= 0;
 			if (UT_ACK_I == 1)
 				ut_stb <= 0;
+		end
+
+		`SETTLEWD: begin
+			if (in_stb == 0)
+				in_ack <= 0;
+			if (UT_ACK_I)
+				ut_stb <= 0;
+			if (in_ack == 0 && ut_stb == 0)
+				state <= `IDLE;
 		end
 
 		/* Return an unaligned word */

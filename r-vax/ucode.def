@@ -114,6 +114,7 @@ D4	CLRL
 D5	TSTL
 D6	INCL
 D7	DECL
+D8	ADWC
 #
 DA	MTPR
 DB	MFPR
@@ -180,6 +181,10 @@ bis:	bis arg1 arg2		argd0 savnz eoi
 and:	and arg1 arg2		argd0 savnz eoi
 zwl:	and arg1 FFFF		argd0 savnz eoi
 zbl:	and arg1 FF		argd0 savnz eoi
+#
+adwc:	plus arg1 arg2		argd0
+	and psl 1		arg3
+	plus argd0 arg3		argd0 savnz savc savv eoi
 #
 # mtpr arg1=val,arg2=ipr
 mtpr:
@@ -584,8 +589,8 @@ CLRL	wl		lbl=clr setnz clv wback 		# d4
 TSTL	rl		lbl=tst setnz clv clc 			# d5
 INCL	ml		lbl=add1 setnz setc wback		# d6
 DECL	ml,rl#1		lbl=sub setnz wback 			# d7
+ADWC	rl,ml		lbl=adwc setnz setc setv wback		# d9
 #
-#MTPR	rl,rl		usemtpr 				# da
 MTPR	rl,rl		lbl=mtpr 				# da
 MFPR	rl,wl		lbl=mfpr wback				# db
 MOVPSL	wl		lbl=movpsl wback			# dc

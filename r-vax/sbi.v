@@ -81,6 +81,13 @@ defparam console.tto.CLKPERBIT = 2604;
 
 	assign buzzer = 1;
 
+`ifdef DBGCNT
+	reg [7:0]	dcount;
+	initial dcount = 0;
+	always @(posedge clk)
+		dcount <= dcount + 1;
+`endif
+
 	/* wires from CPU */
 	wire mcheck;
 	wire [31:0] cpu_addr, cpu_wdata, cpu_rdata;
@@ -103,6 +110,9 @@ defparam console.tto.CLKPERBIT = 2604;
 
 		.CPU_PMEM_O(cpu_pmem),
 
+`ifdef DBGCNT
+		.dcount(dcount),
+`endif
 		.cpu_mcheck(mcheck)
 	);
 
@@ -130,6 +140,9 @@ defparam console.tto.CLKPERBIT = 2604;
 
 //		.ut_sz(),
 
+`ifdef DBGCNT
+		.dcount(dcount),
+`endif
 		.UT_STB_O(mmu_to_sw_stb),
 		.UT_ADR_O(mmu_to_sw_addr),
 		.UT_DAT_O(mmu_to_sw_wdata),
@@ -204,7 +217,10 @@ defparam console.tto.CLKPERBIT = 2604;
 		.sdram_addr(sdram_addr),
 		.sdram_ba(sdram_ba),
 		.sdram_data(sdram_data),
-		
+
+`ifdef DBGCNT
+		.dcount(dcount),
+`endif
 		.ADR_I(sw_to_mem_addr[23:2]),		// i
 		.WE_I(sw_to_mem_write),		// i
 		.DAT_I(sw_to_mem_wdata),		// i

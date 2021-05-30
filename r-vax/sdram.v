@@ -37,6 +37,10 @@ module sdram #(
 	output [1:0]	sdram_ba,
 	inout [15:0]	sdram_data,
 
+`ifdef DBGCNT
+	input [7:0]	dcount,
+`endif
+
 	input		STB_I,
 	input [21:0]	ADR_I,	// note: longword addressing.
 	input		WE_I,
@@ -83,27 +87,30 @@ module sdram #(
 
 	/* States for this SDRAM module.  */
 	reg [3:0]	state;
-	localparam	STARTUP = 4'd0,
-			IDLE = 4'd1,
-			READ1 = 4'd2,
-			READ2 = 4'd3,
-			SETCAS = 4'd4,
-			REF1 = 4'd5,
-			REF2 = 4'd6,
-			REF3 = 4'd7,
-			READ3 = 4'd8,
-			ISETTLE = 4'd9,
-			ICHARGE = 4'd10,
-			IREFRESH = 4'd11,
-			ISETMODE = 4'd12,
-			READ4 = 4'd13,
-			WRITE2 = 4'd14;
+	localparam	STARTUP = 0,
+			ISETTLE = 1,
+			ICHARGE = 2,
+			IREFRESH = 3,
+			ISETMODE = 4,
+			IDLE = 5,
+			READ1 = 6,
+			READ2 = 7,
+			SETCAS = 8,
+			REF1 = 9,
+			REF2 = 10,
+			REF3 = 11,
+			READ3 = 12,
+			READ4 = 13,
+			WRITE2 = 14;
 
 	reg [15:0]	timer;
 
 	reg cs;
 
 	always @(posedge clk) begin
+`ifdef DBGCNT
+if (STB_I) $fdisplay(32'h80000002, "SDRAM %d: state %d stb 1 ack %d addr %x dato %x", dcount, state, ACK_O, { ADR_I, 2'b0 }, DAT_O);
+`endif
 		timer <= timer + 1;
 		if (timer[7:0] == 8'b0)
 			need_refresh <= 1;

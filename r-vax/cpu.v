@@ -81,6 +81,10 @@ module cpu(
 
 	output		CPU_PMEM_O,
 
+`ifdef DBGCNT
+	input [7:0]	dcount,
+`endif
+
 	output		cpu_mcheck
 
 
@@ -487,6 +491,7 @@ initial psl_ipl = 5'h1f;
 	wire [31:0] pc_plus_1;
 	assign pc_plus_1 = curpc + 1;
 
+`ifdef DBGCNT
 `ifndef notdef
 wire debug;
 assign debug = 0;
@@ -496,6 +501,10 @@ initial debug = 0;
 	always @(posedge clk)
 		if (curpc == 32'h650a)
 			debug <= 1;
+`endif
+`else
+	reg		dcount = 0;
+	reg		debug = 0;
 `endif
 
 	/* console communications */
@@ -597,7 +606,7 @@ initial debug = 0;
 				delay_halt <= 0;
 				haltpos <= `HALT_STEP;
 			end else if (isvalid) begin
-if (debug) $fdisplay(32'h80000002, "FETCH: pc %x curbyte %x inslword %x\r", curpc, cur_byte, inslword);
+if (debug) $fdisplay(32'h80000002, "FETCH: pc %x curbyte %x inslword %x pc+1 %x\r", curpc, cur_byte, inslword, pc_plus_1);
 				/* put insbyte in decode reg */
 				cur_inst <= cur_byte;
 				oldpc <= curpc;
@@ -615,7 +624,7 @@ if (debug) $fdisplay(32'h80000002, "FETCH: pc %x curbyte %x inslword %x\r", curp
 		 * directives if necessary.
 		 */
 		`S_DECODE: begin
-if (debug) $fdisplay(32'h80000002, "S_DECODE: i_hasargs %d i_emul %d\r", i_hasargs, i_emul);
+if (debug) $fdisplay(32'h80000002, "S_DECODE: i_hasargs %d i_emul %d pc %x\r", i_hasargs, i_emul, curpc);
 			acounter <= i_argoff;
 			scounter <= i_stepoff;
 			if (i_dohalt) begin
@@ -783,7 +792,7 @@ if (debug) $fdisplay(32'h80000002, "ARGEND: a_rargno %d a_wargno %d arg_aR %d ar
 // if (cur_inst == 8'hf0) $fdisplay(32'h80000002, "INSV pos %x size %x base %x src %x pc %x\r", arg[0], arg[1], arg[2], arg[3], oldpc);
 //if (cur_inst == 8'hef) $fdisplay(32'h80000002, "EXTZV pos %x size %x base %x dest %x pc %x\r", arg[0], arg[1], argp[0], argp[1], oldpc);
 //if (cur_inst == 8'hed) $fdisplay(32'h80000002, "CMPZV pos %x size %x base %x dest %x pc %x\r", arg[0], arg[1], argp[0], argp[1], oldpc);
-if (cur_inst == 8'ha0) $fdisplay(32'h80000002, "ADDW2 arg1 %x arg2 %x dest %x pc %x\r", arg[0], arg[1], argp[0], oldpc);
+if (cur_inst == 8'hd8) $fdisplay(32'h80000002, "ADWC arg1 %x arg2 %x dest %x pc %x\r", arg[0], arg[1], argp[0], oldpc);
 			end
 			OA_isreg <= 0;
 			IA <= 0;
@@ -942,7 +951,7 @@ if (debug) $fdisplay(32'h80000002, "ENDINST: pc %x argd[1] %x arg2p %x isreg %d 
 // if (cur_inst == 8'hf0) $fdisplay(32'h80000002, "INSV END: argd0 %x argd1 %x\r", argd[0], argd[1]);
 //if (cur_inst == 8'hef) $fdisplay(32'h80000002, "EXTZV END: argd0 %x argp0 %x pc %x\r", argd[0], argp[0], oldpc);
 //if (cur_inst == 8'hed) $fdisplay(32'h80000002, "CMPZV END: argd0 %x argd1 %x pc %x\r", argd[0], argd[1], oldpc);
-if (cur_inst == 8'ha0) $fdisplay(32'h80000002, "ADDW2 END: argd0 %x tmpV %d pc %x\r", argd[0], Vtmp, oldpc);
+if (cur_inst == 8'hd8) $fdisplay(32'h80000002, "ADWC END: argd0 %x tmpV %d pc %x\r", argd[0], Vtmp, oldpc);
 			state <= `S_FETCH;
 
 			if (resopflt) begin
@@ -1049,7 +1058,7 @@ $fdisplay(32'h80000002, "MCODE: ctr %d mc_rv %x\r", mcodectr, mc_rv);
 		 */
 
 		`S_FILLUP: begin
-// $fdisplay(32'h80000002, "S_FILLUP: addr %x acki %d isvalid %d dati %x\r\n", { curpc[31:2], 2'b00 }, cpu_acki, isvalid, CPU_DAT_I);
+if (debug) $fdisplay(32'h80000002, "FILLUP%d: addr %x acki %d isvalid %d dati %x\r\n", dcount, { curpc[31:2], 2'b00 }, cpu_acki, isvalid, CPU_DAT_I);
 			/* Fetch new longword */
 			cpu_addr <= { curpc[31:2], 2'b00 };
 			cpu_write <= 0;
