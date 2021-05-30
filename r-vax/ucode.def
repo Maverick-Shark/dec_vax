@@ -359,9 +359,9 @@ bbcc:	shl 1 arg1	argd0		# position bit
 #
 # INSV arg1=pos,arg2=size,argd0/1=base(val),arg4=src
 #
-insv:	shr argp0 1E	argd0		# 56
-	minus argd0 3	argd0 		# 57
-	plus argd0 argd0 nzcond goto insv_mem	# 58
+insv:	shr argp0 1E	argd0		# 132
+	minus argd0 3	argd0 		# 133
+	plus argd0 argd0 nzcond goto insv_mem	# 134
 #
 # value is in register
 # First check whether a resopflt should be generated
@@ -370,6 +370,7 @@ insv:	shr argp0 1E	argd0		# 56
 insv_zero:
 	plus argp0 0	crn		# 59 set cur reg num
 	plus crv 0	argd0		# 60 move val to dest
+	plus argp0 0	argp0		# Set to longword
 	plus argp0 1	argp1		# if two regs
 	plus argp0 1	crn		# if two regs
 	plus crv 0	argd1 goto insv_common 		# 60 move val to dest
