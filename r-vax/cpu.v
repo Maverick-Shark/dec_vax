@@ -789,7 +789,7 @@ if (debug) $fdisplay(32'h80000002, "ARGEND: a_rargno %d a_wargno %d arg_aR %d ar
 				cur_reg_num_save <= `REG_SP;
 			end else /* if (|scounter) */ begin
 				state <= `PREEXEC;
-// if (cur_inst == 8'hf0) $fdisplay(32'h80000002, "INSV pos %x size %x base %x src %x pc %x\r", arg[0], arg[1], arg[2], arg[3], oldpc);
+//if (cur_inst == 8'hf0) $fdisplay(32'h80000002, "INSV pos %x size %x base %x src %x pc %x\r", arg[0], arg[1], arg[2], arg[3], oldpc);
 //if (cur_inst == 8'hef) $fdisplay(32'h80000002, "EXTZV pos %x size %x base %x dest %x pc %x\r", arg[0], arg[1], argp[0], argp[1], oldpc);
 //if (cur_inst == 8'hed) $fdisplay(32'h80000002, "CMPZV pos %x size %x base %x dest %x pc %x\r", arg[0], arg[1], argp[0], argp[1], oldpc);
 if (cur_inst == 8'hd8) $fdisplay(32'h80000002, "ADWC arg1 %x arg2 %x psl %x dest %x pc %x\r", arg[0], arg[1], psl, argp[0], oldpc);

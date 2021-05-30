@@ -84,8 +84,8 @@ defparam console.tto.CLKPERBIT = 2604;
 `ifdef DBGCNT
 	reg [7:0]	dcount;
 	initial dcount = 0;
-	always @(posedge clk)
-		dcount <= dcount + 1;
+//	always @(posedge clk)
+//		dcount <= dcount + 1;
 `endif
 
 	/* wires from CPU */

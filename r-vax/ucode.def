@@ -58,6 +58,8 @@
 8A	BICB2
 8B	BICB3
 #
+8E	MNEGB
+#
 90	MOVB
 91	CMPB
 #
@@ -80,6 +82,8 @@ A8	BISW2
 A9	BISW3
 AA	BICW2
 AB	BICW3
+#
+AE	MNEGW
 #
 B0	MOVW
 B1	CMPW
@@ -105,6 +109,7 @@ CA	BICL2
 CB	BICL3
 #
 CD	XORL3
+CE	MNEGL
 #
 D0	MOVL
 D1	CMPL
@@ -558,7 +563,7 @@ MOVQ	mq,wq		lbl=movq setnz clv wback wback2		# 7d
 MOVB	rb,wb		lbl=mov setnz clv wback			# 90
 CMPB	rb,rb		lbl=sub setnz clv setc			# 91
 #
-#BITB	rb,rb		lbl=andb setnz clv			# 93
+BITB	rb,rb		lbl=and setnz clv			# 93
 CLRB	wb		lbl=clr setnz clv wback			# 94
 TSTB	rb		lbl=tst setnz clv clc			# 95
 INCB	mb		lbl=add1 setnz setc wback		# 96
@@ -573,8 +578,11 @@ ADDW3	rw,rw,ww	lbl=add setnz setc setv wback 		# a1
 MOVW	rw,ww		lbl=mov setnz clv wback			# b0
 CMPW	rw,rw		lbl=sub setnz clv setc			# b1
 #
+BITW	rw,rw		lbl=and setnz clv			# b3
+#
 TSTW	rw		lbl=tst setnz clv clc			# b5
 #
+DECW	mw,rl#1		lbl=sub setnz setv setc wback 		# d7
 BISPSW	rw		lbl=bispsw				# b8
 BICPSW	rw		lbl=bicpsw				# b9
 # 
@@ -586,6 +594,7 @@ BISL2	rl,ml		lbl=bis setnz clv wback			# c8
 BICL2	rl,ml		lbl=bic setnz clv wback			# ca
 #
 XORL3	rl,rl,wl	lbl=xor setnz clv wback			# cd
+MNEGL	rl#0,rl,wl	lbl=sub setnz setv setc wback		# ce
 #
 MOVL	rl,wl		lbl=mov setnz clv wback			# d0
 CMPL	rl,rl		lbl=sub setcmpnz clv setc		# d1
@@ -594,7 +603,8 @@ BITL	rl,rl		lbl=and setnz clv 			# d3
 CLRL	wl		lbl=clr setnz clv wback 		# d4
 TSTL	rl		lbl=tst setnz clv clc 			# d5
 INCL	ml		lbl=add1 setnz setc wback		# d6
-DECL	ml,rl#1		lbl=sub setnz wback 			# d7
+DECL	ml,rl#1		lbl=sub setnz setv setc wback 		# d7
+#
 ADWC	rl,ml		lbl=adwc setnz wback			# d9
 #
 MTPR	rl,rl		lbl=mtpr 				# da
@@ -619,6 +629,6 @@ CMPZV	rl,rb,wb,rl lbl=cmpzv setcmpnz clv setc			# ed
 EXTV	rl,rb,wb,wl lbl=extv setnz clv wback			# ee
 EXTZV	rl,rb,wb,wl lbl=extzv setnz clv wback			# ef
 #
-INSV	3rl,0rl,1rb,2wl	lbl=insv				# f0
+INSV	3rl,0rl,1rb,2wb	lbl=insv				# f0
 #
 AOBLEQ	rl,ml,ab#b^d(pc),wl#pc lbl=aobleq setnz wback		# f3
