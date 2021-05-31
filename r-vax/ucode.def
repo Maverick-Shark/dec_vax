@@ -678,8 +678,8 @@ ADDL2	rl,ml		lbl=add setnz setc setv wback 		# c0
 ADDL3	rl,rl,wl	lbl=add setnz setc setv wback 		# c1
 SUBL2	1rl,0ml		lbl=sub setnz setc setv wback		# c2
 SUBL3	1rl,0rl,2wl	lbl=sub setnz setc setv wback		# c3
-#MULL2	rl,ml		lbl=mul setnz setv clc wback		# c4
-#MULL3	rl,rl,wl	lbl=mul setnz setv clc wback		# c5
+MULL2	rl,ml		lbl=mul setnz setv clc wback		# c4
+MULL3	rl,rl,wl	lbl=mul setnz setv clc wback		# c5
 #
 BISL2	rl,ml		lbl=bis setnz clv wback			# c8
 BICL2	rl,ml		lbl=bic setnz clv wback			# ca

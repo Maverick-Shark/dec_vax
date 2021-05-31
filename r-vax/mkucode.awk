@@ -346,16 +346,26 @@ BEGIN {
 		if (!($1 in opmap))
 			err($1 " not found");
 		insnr = opmap[$1];	# insnr is instruction number
-		n = split($2,a,",");
 
 		if (insnr in inslist)
 			err("duplicate " $1);
 
+	if ($2 in got_this_arg) {
+		gotnum = got_this_arg[$2];
+		got_skip = 1;
+	} else {
+		got_skip = 0;
+		gotnum = curargoff;
+		got_this_arg[$2] = curargoff;
+	}
+	
+
 		inslist[insnr] = "0000000000000000000000000000000000000000" \
 		    "000000000000000" \
-		    ($2 != "-" ? "1" : "0") num2bit(curargoff,8);
-# print "insnr " insnr " num2bit(curargoff,8) " num2bit(curargoff,8);
+		    ($2 != "-" ? "1" : "0") num2bit(gotnum,8);
 
+	if (got_skip == 0) {
+		n = split($2,a,",");
 		rdcnt = 0;
 		wrcnt = 0;
 		if ($2 != "-")
@@ -416,6 +426,7 @@ BEGIN {
 			    rdwr earg "0" (i==n? "1" : "0") isearg al;
 
 		}
+	}
 
 		for (i = 3; i <= NF; i++) {
 			if ($i == "#")
