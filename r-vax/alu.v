@@ -46,6 +46,7 @@ parameter SHIFT=1;
 		`ALU_AND: res = left & right;
 		`ALU_XOR: res = left ^ right;
 		`ALU_SHL, `ALU_SHR, `ALU_ASR: res = shldata;
+		`ALU_MUL: res = left * right;
 		default: res = 0;
 		endcase
 
@@ -91,11 +92,13 @@ parameter SHIFT=1;
 	assign result = res;
 	assign cry = Ctmp;
 	assign neg = use8 ? res[7] : use16 ? res[15] : res[31];
-	assign zero = ~|res;
-	assign t_ovf8 = op == `ALU_PLUS ?
+	assign zero = use8 ? ~|res[7:0] : use16 ? ~|res[15:0] : ~|res;
+	assign t_ovf8 = op == `ALU_MUL ? res[15:8] != {8{res[7]}} :
+	    op == `ALU_PLUS ?
 	    (left[7] == right[7]) && (left[7] != res[7]) :
 	    (left[7] ^ right[7]) && (left[7] ^ res[7]);
-	assign t_ovf16 = op == `ALU_PLUS ?
+	assign t_ovf16 = op == `ALU_MUL ? res[31:16] != {16{res[15]}} :
+	    op == `ALU_PLUS ?
 	    (left[15] == right[15]) && (left[15] != res[15]) :
 	    (left[15] ^ right[15]) && (left[15] ^ res[15]);
 	assign t_ovf = op == `ALU_PLUS ?

@@ -21,6 +21,7 @@
 #
 !OPCODES
 #
+01	NOP
 02	REI
 #
 05	RSB
@@ -54,6 +55,8 @@
 81	ADDB3
 82	SUBB2
 83	SUBB3
+84	MULB2
+85	MULB3
 #
 88	BISB2
 89	BISB3
@@ -80,6 +83,8 @@ A0	ADDW2
 A1	ADDW3
 A2	SUBW2
 A3	SUBW3
+A4	MULW2
+A5	MULW3
 #
 A8	BISW2
 A9	BISW3
@@ -106,6 +111,8 @@ C0	ADDL2
 C1	ADDL3
 C2	SUBL2
 C3	SUBL3
+C4	MULL2
+C5	MULL3
 #
 C8	BISL2
 C9	BISL3
@@ -592,7 +599,13 @@ casel:
 	minus arg3 argd1	nncond goto case_off	# inside boundaries?
 	plus 0 0		goto case_ex
 #
+mul:	mul arg1 arg2		argd0 savnz savv eoi
+mul8:	mul arg1 arg2		argd0 savnz savv use8 eoi
+mul16:	mul arg1 arg2		argd0 savnz savv use16 eoi
+#
 !INSTRUCTIONS
+#
+NOP	rl#0,rl#0		lbl=add				# 02
 #
 RSB	rl#(sp)+,wl#pc	lbl=mov wback				# 05
 #
@@ -625,6 +638,8 @@ ADDB2	rb,mb		lbl=add8 setnz setc setv wback 		# 80
 ADDB3	rb,rb,wb	lbl=add8 setnz setc setv wback 		# 81
 SUBB2	1rb,0mb		lbl=sub8 setnz setc setv wback		# 82
 SUBB3	1rb,0rb,2wb	lbl=sub8 setnz setc setv wback		# 83
+MULB2	rb,mb		lbl=mul8 setnz setv clc wback		# 84
+MULB3	rb,rb,wb	lbl=mul8 setnz setv clc wback		# 85
 #
 CASEB	rb,rb,rb,rl#pc,wl#pc	lbl=caseb setnz clv setc wback	# 8f
 #
@@ -644,6 +659,8 @@ ADDW2	rw,mw		lbl=add16 setnz setc setv wback		# a0
 ADDW3	rw,rw,ww	lbl=add16 setnz setc setv wback		# a1
 SUBW2	1rw,0mw		lbl=sub16 setnz setc setv wback		# a2
 SUBW3	1rw,0rw,2ww	lbl=sub16 setnz setc setv wback		# a3
+MULW2	rw,mw		lbl=mul16 setnz setv clc wback		# a4
+MULW3	rw,rw,ww	lbl=mul16 setnz setv clc wback		# a5
 #
 CASEW	rw,rw,rw,rl#pc,wl#pc	lbl=casew setnz clv setc wback	# af
 MOVW	rw,ww		lbl=mov setnz clv wback			# b0
@@ -661,6 +678,8 @@ ADDL2	rl,ml		lbl=add setnz setc setv wback 		# c0
 ADDL3	rl,rl,wl	lbl=add setnz setc setv wback 		# c1
 SUBL2	1rl,0ml		lbl=sub setnz setc setv wback		# c2
 SUBL3	1rl,0rl,2wl	lbl=sub setnz setc setv wback		# c3
+#MULL2	rl,ml		lbl=mul setnz setv clc wback		# c4
+#MULL3	rl,rl,wl	lbl=mul setnz setv clc wback		# c5
 #
 BISL2	rl,ml		lbl=bis setnz clv wback			# c8
 BICL2	rl,ml		lbl=bic setnz clv wback			# ca

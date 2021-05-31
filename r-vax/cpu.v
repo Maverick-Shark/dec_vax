@@ -496,7 +496,7 @@ initial psl_ipl = 5'h1f;
 `ifdef DBGCNT
 `ifndef notdef
 wire debug;
-assign debug = 0;
+assign debug = 1;
 `else
 reg debug;
 initial debug = 0;
@@ -838,7 +838,7 @@ if (debug) $fdisplay(32'h80000002, "PREEXEC: op %d sleft %d sright %d scounter %
 
 		`EXEC: begin
 if (debug & alu_ack) $fdisplay(32'h80000002, "EXEC: left %x right %x dest %d eoi %d ", alu_left, alu_right, s_dest, s_eoi);
-if (debug & alu_ack) $fdisplay(32'h80000002, "wb %d iwb %d wb2 %d iwb2 %d wrok %d aluz %d alun %d\r", s_wback, i_wback, s_wback2, i_wback2, wr_cond_ok, alu_zero, alu_neg);
+if (debug & alu_ack) $fdisplay(32'h80000002, "wb %d iwb %d wb2 %d iwb2 %d wrok %d aluz %d alun %d AN %d AZ %d AV %d AC %d", s_wback, i_wback, s_wback2, i_wback2, wr_cond_ok, alu_zero, alu_neg, alu_neg, alu_zero, alu_ovf, alu_cry);
 if (debug & alu_ack) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d stepoff %d wrcond %d wipr %d res %x\r", alu_stb, alu_ack, s_enable, s_stepoff, wr_cond_ok, s_wipr, alu_res);
 //if (cur_inst == 8'hf0) $fdisplay(32'h80000002, "EXECSTEP: sc %d left %x right %x res %x xres %x\r", scounter-8'h01, alu_left, alu_right, alu_res, xxres);
 

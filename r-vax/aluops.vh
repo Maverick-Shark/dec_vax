@@ -9,3 +9,4 @@
 `define	ALU_SHL		4'd6
 `define	ALU_SHR		4'd7
 `define	ALU_ASR		4'd8
+`define	ALU_MUL		4'd9
