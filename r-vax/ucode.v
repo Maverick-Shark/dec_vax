@@ -77,6 +77,8 @@ module ucode(
 	output			s_wreg,
 	output [3:0]		s_dest,
 	output			s_savv,
+	output			s_use8,
+	output			s_use16,
 	output			s_resopflt,
 
 	output [15:0]		s_const,
@@ -146,7 +148,9 @@ parameter	S_ROM_ADDRS = 512;
 	assign s_rmem = ucstep_data[25];
 	assign s_dest = ucstep_data[29:26];
 	assign s_savv = ucstep_data[30];
+	assign s_use8 = ucstep_data[31];
 	assign s_resopflt = ucstep_data[32];
+	assign s_use16 = ucstep_data[33];
 	assign s_const = ucstep_data[71:56];
 	assign s_addr = ucstep_data[55:40];
 

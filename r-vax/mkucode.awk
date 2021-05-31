@@ -237,8 +237,9 @@ BEGIN {
 	stepargs["savnz"] = 24;	# save NZ flags from op
 	stepargs["rmem"] = 25;	# next state is READMEM
 	stepargs["savv"] = 30;	# set current reg
-#	stepargs["argp1"] = 31;	# save in argp1
+	stepargs["use8"] = 31;	# Use 8-bit for alu
 	stepargs["resopflt"] = 32; # generate resopflt
+	stepargs["use16"] = 33;	# Use 16-bit for alu
 
 	# destination for alu result
 	alures["psl"] = 1;

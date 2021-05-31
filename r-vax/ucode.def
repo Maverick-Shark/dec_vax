@@ -50,6 +50,8 @@
 7C	CLRQ
 7D	MOVQ
 #
+80	ADDB2
+81	ADDB3
 82	SUBB2
 83	SUBB3
 #
@@ -180,10 +182,14 @@ resop:
 mov:	plus arg1 0		argd0 savnz eoi
 tst:	plus arg1 0		argd0 savnz eoi
 add:	plus arg1 arg2		argd0 savnz savc savv eoi
+add8:	plus arg1 arg2		argd0 savnz savc savv use8 eoi
+add16:	plus arg1 arg2		argd0 savnz savc savv use16 eoi
 add1:	plus arg1 1		argd0 savc savnz eoi
 clr:	plus 0 0		argd0 savnz eoi
 xor:	xor arg1 arg2		argd0 savnz eoi
 sub:	minus arg1 arg2		argd0 savc savv savnz eoi
+sub8:	minus arg1 arg2		argd0 savc savv savnz use8 eoi
+sub16:	minus arg1 arg2		argd0 savc savv savnz use16 eoi
 bicpsw:	bic arg1 psl		psl eoi
 bispsw:	bis arg1 psl		psl eoi
 movpsl:	plus psl 0		argd0 savnz eoi
@@ -612,10 +618,13 @@ BRW	aw#w^d(pc),wl#pc	lbl=mov wback 			# 31
 #
 MOVZWL	rw,wl		lbl=zwl setnz clv wback			# 3c
 #
-#CLRQ	rq#0,wq		lbl=movq setnz clv wback wback2		# 7c
 CLRQ	wq		lbl=clrq setnz clv wback wback2		# 7c
-#MOVQ	rq,wq		lbl=movq setnz clv wback wback2		# 7d
 MOVQ	mq,wq		lbl=movq setnz clv wback wback2		# 7d
+#
+ADDB2	rb,mb		lbl=add8 setnz setc setv wback 		# 80
+ADDB3	rb,rb,wb	lbl=add8 setnz setc setv wback 		# 81
+SUBB2	1rb,0mb		lbl=sub8 setnz setc setv wback		# 82
+SUBB3	1rb,0rb,2wb	lbl=sub8 setnz setc setv wback		# 83
 #
 CASEB	rb,rb,rb,rl#pc,wl#pc	lbl=caseb setnz clv setc wback	# 8f
 #
@@ -631,8 +640,10 @@ MOVZBL	rb,wl		lbl=zbl setnz clv wback			# 9a
 MOVZBW	rb,ww		lbl=zbl setnz clv wback			# 9b
 ROTL	rb,rl,wl	lbl=rot setnz clv wback			# 9c
 #
-ADDW2	rw,mw		lbl=add setnz setc setv wback 		# a0
-ADDW3	rw,rw,ww	lbl=add setnz setc setv wback 		# a1
+ADDW2	rw,mw		lbl=add16 setnz setc setv wback		# a0
+ADDW3	rw,rw,ww	lbl=add16 setnz setc setv wback		# a1
+SUBW2	1rw,0mw		lbl=sub16 setnz setc setv wback		# a2
+SUBW3	1rw,0rw,2ww	lbl=sub16 setnz setc setv wback		# a3
 #
 CASEW	rw,rw,rw,rl#pc,wl#pc	lbl=casew setnz clv setc wback	# af
 MOVW	rw,ww		lbl=mov setnz clv wback			# b0
@@ -646,9 +657,10 @@ DECW	mw,rl#1		lbl=sub setnz setv setc wback 		# d7
 BISPSW	rw		lbl=bispsw				# b8
 BICPSW	rw		lbl=bicpsw				# b9
 # 
-ADDL2	rl,ml		lbl=add setnz setc wback 		# c0
-ADDL3	rl,rl,wl	lbl=add setnz setc wback 		# c1
-SUBL2	1rl,0ml		lbl=sub setnz wback			# c2
+ADDL2	rl,ml		lbl=add setnz setc setv wback 		# c0
+ADDL3	rl,rl,wl	lbl=add setnz setc setv wback 		# c1
+SUBL2	1rl,0ml		lbl=sub setnz setc setv wback		# c2
+SUBL3	1rl,0rl,2wl	lbl=sub setnz setc setv wback		# c3
 #
 BISL2	rl,ml		lbl=bis setnz clv wback			# c8
 BICL2	rl,ml		lbl=bic setnz clv wback			# ca

@@ -13,6 +13,9 @@ module alu(
 	input [31:0]	left,
 	input [31:0]	right,
 
+	input		use8,
+	input		use16,
+
 	input		stb,
 	output		ack,
 
@@ -29,6 +32,7 @@ module alu(
 	reg		state, done, quick;
 	reg [31:0]	shldata;
 	wire		topbit;
+	wire		t_ovf, t_ovf8, t_ovf16;
 
 parameter BEGIN=0;
 parameter SHIFT=1;
@@ -86,11 +90,18 @@ parameter SHIFT=1;
 
 	assign result = res;
 	assign cry = Ctmp;
-	assign neg = res[31];
+	assign neg = use8 ? res[7] : use16 ? res[15] : res[31];
 	assign zero = ~|res;
-	assign ovf = op == `ALU_PLUS ?
+	assign t_ovf8 = op == `ALU_PLUS ?
+	    (left[7] == right[7]) && (left[7] != res[7]) :
+	    (left[7] ^ right[7]) && (left[7] ^ res[7]);
+	assign t_ovf16 = op == `ALU_PLUS ?
+	    (left[15] == right[15]) && (left[15] != res[15]) :
+	    (left[15] ^ right[15]) && (left[15] ^ res[15]);
+	assign t_ovf = op == `ALU_PLUS ?
 	    (left[31] == right[31]) && (left[31] != res[31]) :
 	    (left[31] ^ right[31]) && (left[31] ^ res[31]);
+	assign ovf = use8 ? t_ovf8 : use16 ? t_ovf16 : t_ovf;
 
 
 endmodule

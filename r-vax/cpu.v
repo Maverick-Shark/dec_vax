@@ -342,7 +342,7 @@ initial psl_ipl = 5'h1f;
 	wire		s_enable, s_eoi;
 	wire		s_nzcond, s_zcond, s_wback, s_savc, s_savnz, s_savv;
 	wire		s_nncond, s_ncond, s_wback2, s_goto, s_rmem;
-	wire		s_resopflt, s_wipr, s_wmem, s_wreg;
+	wire		s_resopflt, s_wipr, s_wmem, s_wreg, s_use8, s_use16;
 	wire [3:0]	s_dest;
 	wire [8:0]	s_stepoff, i_stepoff;
 	wire [3:0]	s_op, s_left, s_right;
@@ -408,6 +408,8 @@ initial psl_ipl = 5'h1f;
 		.s_wmem(s_wmem),
 		.s_wreg(s_wreg),
 		.s_savv(s_savv),
+		.s_use8(s_use8),
+		.s_use16(s_use16),
 		.s_resopflt(s_resopflt),
 
 		.s_const(s_const),
@@ -494,7 +496,7 @@ initial psl_ipl = 5'h1f;
 `ifdef DBGCNT
 `ifndef notdef
 wire debug;
-assign debug = 1;
+assign debug = 0;
 `else
 reg debug;
 initial debug = 0;
@@ -534,6 +536,8 @@ initial debug = 0;
 
 		.neg(alu_neg),
 		.ovf(alu_ovf),
+		.use8(s_use8),
+		.use16(s_use16),
 		.cry(alu_cry),
 		.zero(alu_zero),
 		.result(alu_res)
