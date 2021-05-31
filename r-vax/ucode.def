@@ -144,7 +144,10 @@ EE	EXTV
 EF	EXTZV
 F0	INSV
 #
+F1	ACBL
+F2	AOBLSS
 F3	AOBLEQ
+F4	SOBGEQ
 #
 !MICROCODE
 #
@@ -325,10 +328,28 @@ rot:
 	shr arg2 arg1 	argd1
 	bis argd1 argd0	argd0 savnz eoi
 #
+# ACBL    rl,rl,ml,ab#b^d(pc),wl#pc
+acb:	plus arg2 arg3		argd0 savv savnz	# addto
+	plus arg4 0		argd1			# dest addr
+	plus arg2 0		ncond goto acb_2	# arg2 < 0
+	minus arg1 arg3		ncond goto acb_2	# limit >= index
+	plus 0 0		wback2 goto acb_done
+acb_2:	plus arg2 0		nncond goto acb_done
+	minus arg3 arg1		ncond goto acb_done
+	plus 0 0		wback2
+acb_done:
+	plus 0 0		eoi
 #
 aobleq:	plus 1 arg2		argd0 savc savnz	# inc index
 	plus arg3 0		argd1			# save branch addr
 	minus arg1 argd0 	nncond wback2 eoi	# br if !(ix > l)
+#
+aoblss:	plus 1 arg2		argd0 savc savnz	# inc index
+	plus arg3 0		argd1			# save branch addr
+	minus argd0 arg1 	ncond wback2 eoi	# br if (ix < l)
+#
+sobgeq:	plus arg2 0	argd1				# save branch addr
+	minus arg1 1	argd0 savv savnz nncond wback2 eoi	# dec index
 #
 # arg1=pos, arg2=base, arg3=displ
 bbc:	shr arg2 arg1	argd0
@@ -631,5 +652,8 @@ EXTV	rl,rb,wb,wl lbl=extv setnz clv wback			# ee
 EXTZV	rl,rb,wb,wl lbl=extzv setnz clv wback			# ef
 #
 INSV	3rl,0rl,1rb,2wb	lbl=insv				# f0
+ACBL	rl,rl,ml,aw#w^d(pc),wl#pc lbl=acb setnz setv wback	# f1
 #
+AOBLSS	rl,ml,ab#b^d(pc),wl#pc lbl=aoblss setnz wback		# f2
 AOBLEQ	rl,ml,ab#b^d(pc),wl#pc lbl=aobleq setnz wback		# f3
+SOBGEQ	ml,ab#b^d(pc),wl#pc lbl=sobgeq setnz setv wback		# f4
