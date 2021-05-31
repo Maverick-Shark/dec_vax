@@ -344,10 +344,10 @@ initial psl_ipl = 5'h1f;
 	wire		s_nncond, s_ncond, s_wback2, s_goto, s_rmem;
 	wire		s_resopflt, s_wipr, s_wmem, s_wreg;
 	wire [3:0]	s_dest;
-	wire [7:0]	s_stepoff, i_stepoff;
+	wire [8:0]	s_stepoff, i_stepoff;
 	wire [3:0]	s_op, s_left, s_right;
 	wire [15:0]	s_const, s_addr;
-	reg [7:0]	scounter;
+	reg [8:0]	scounter;
 	
 
 	assign i_enable = (state == `S_FETCH) && isvalid;
@@ -546,7 +546,7 @@ initial debug = 0;
 	    (s_zcond && alu_zero) || (s_nzcond && alu_zero == 0) ||
 	    (s_ncond && alu_neg) || (s_nncond && alu_neg == 0);
 	assign s_stepoff = (state == `S_DECODE) ? i_stepoff : 
-	    wr_cond_ok && s_goto ? s_addr[7:0] : scounter;
+	    wr_cond_ok && s_goto ? s_addr[8:0] : scounter;
 	assign s_enable = (state == `S_DECODE) || 
 	    ((state == `EXEC) && alu_ack);
 
@@ -933,7 +933,7 @@ if (debug & alu_ack) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d ste
 			end
 
 			if (wr_cond_ok && s_goto)
-				scounter <= s_addr[7:0];
+				scounter <= s_addr[8:0];
 			if (wr_cond_ok && s_resopflt)
 				resopflt <= 1;
 
