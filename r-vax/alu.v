@@ -32,7 +32,14 @@ module alu(
 	reg		state, done, quick;
 	reg [31:0]	shldata;
 	wire		topbit;
-	wire		t_ovf, t_ovf8, t_ovf16;
+	wire		t_ovf, t_ovf8, t_ovf16, mul_z, mul_v, mul_n;
+
+	wire signed [31:0] s_left, s_right;
+	reg signed [63:0] s_res;
+
+	assign s_left = left;
+	assign s_right = right;
+
 
 parameter BEGIN=0;
 parameter SHIFT=1;
@@ -46,7 +53,7 @@ parameter SHIFT=1;
 		`ALU_AND: res = left & right;
 		`ALU_XOR: res = left ^ right;
 		`ALU_SHL, `ALU_SHR, `ALU_ASR: res = shldata;
-		`ALU_MUL: res = left * right;
+		`ALU_MUL: s_res = s_left * s_right;
 		default: res = 0;
 		endcase
 
@@ -89,22 +96,30 @@ parameter SHIFT=1;
 
 	assign ack = stb ? (quick ? 1 : done) : 0;
 
-	assign result = res;
+	assign result = op == `ALU_MUL ? s_res[31:0] : res;
 	assign cry = Ctmp;
-	assign neg = use8 ? res[7] : use16 ? res[15] : res[31];
-	assign zero = use8 ? ~|res[7:0] : use16 ? ~|res[15:0] : ~|res;
-	assign t_ovf8 = op == `ALU_MUL ? res[15:8] != {8{res[7]}} :
-	    op == `ALU_PLUS ?
+	assign mul_n = use8 ? s_res[7] : use16 ? s_res[15] : s_res[31];
+	assign neg = op == `ALU_MUL ? mul_n :
+		use8 ? res[7] : use16 ? res[15] : res[31];
+	assign mul_z = use8 ? ~|s_res[7:0] : use16 ?
+		~|s_res[15:0] : ~|s_res[31:0];
+	assign zero = op == `ALU_MUL ?  mul_z :
+		use8 ? ~|res[7:0] : use16 ? ~|res[15:0] : ~|res;
+	assign mul_v = use8 ? s_res[15:8] != {8{s_res[7]}} :
+		use16 ? s_res[31:16] != {16{s_res[15]}} :
+		s_res[63:32] != {32{s_res[31]}};
+		
+	assign t_ovf8 = op == `ALU_PLUS ?
 	    (left[7] == right[7]) && (left[7] != res[7]) :
 	    (left[7] ^ right[7]) && (left[7] ^ res[7]);
-	assign t_ovf16 = op == `ALU_MUL ? res[31:16] != {16{res[15]}} :
-	    op == `ALU_PLUS ?
+	assign t_ovf16 = op == `ALU_PLUS ?
 	    (left[15] == right[15]) && (left[15] != res[15]) :
 	    (left[15] ^ right[15]) && (left[15] ^ res[15]);
 	assign t_ovf = op == `ALU_PLUS ?
 	    (left[31] == right[31]) && (left[31] != res[31]) :
 	    (left[31] ^ right[31]) && (left[31] ^ res[31]);
-	assign ovf = use8 ? t_ovf8 : use16 ? t_ovf16 : t_ovf;
+	assign ovf = op == `ALU_MUL ? mul_v :
+		use8 ? t_ovf8 : use16 ? t_ovf16 : t_ovf;
 
 
 endmodule
