@@ -63,7 +63,8 @@
 89	BISB3
 8A	BICB2
 8B	BICB3
-#
+8C	XORB2
+8D	XORB3
 8E	MNEGB
 8F	CASEB
 #
@@ -88,12 +89,12 @@ A4	MULW2
 A5	MULW3
 A6	DIVW2
 A7	DIVW3
-#
 A8	BISW2
 A9	BISW3
 AA	BICW2
 AB	BICW3
-#
+AC	XORW2
+AD	XORW3
 AE	MNEGW
 AF	CASEW
 #
@@ -122,7 +123,7 @@ C8	BISL2
 C9	BISL3
 CA	BICL2
 CB	BICL3
-#
+CC	XORL2
 CD	XORL3
 CE	MNEGL
 CF	CASEL
@@ -620,10 +621,33 @@ div8_nz:
 div8_done:
 	div arg1 arg2	argd0 savnz use8 eoi	# work!
 #
-
-div16:	div arg1 arg2		argd0 savnz savv use16 eoi
-div:	div arg1 arg2		argd0 savnz savv eoi
+div16:	
+	bic 2 psl	psl			# clear V
+	plus arg1 0	nzcond goto div16_nz	# skip if no division by 0
+	bis 2 psl	psl			# div by 0, set V
+div16_nz:
+	# check if -MAXSHORT/-1
+	plus arg1 1	nzcond goto div16_done	# jump if not -1
+	plus arg2 8000	nzcond goto div16_done	# jump if not -32768
+	bis 2 psl	psl
+div16_done:
+	div arg1 arg2	argd0 savnz use16 eoi	# work!
 #
+div:	
+	bic 2 psl	psl			# clear V
+	plus arg1 0	nzcond goto div_nz	# skip if no division by 0
+	bis 2 psl	psl			# div by 0, set V
+div_nz:
+	# check if -MAXSHORT/-1
+	plus arg1 1	nzcond goto div_done	# jump if not -1
+	plus arg2 0	zcond goto div_done	# jump if 0
+	plus arg2 arg2	nzcond goto div_done	# jump if not -MAXINT
+	bis 2 psl	psl
+div_done:
+	div arg1 arg2	argd0 savnz eoi		# work!
+#
+xor8:	xor arg1 arg2	argd0 savnz use8 eoi
+xor16:	xor arg1 arg2	argd0 savnz use16 eoi
 #
 #
 #
@@ -668,6 +692,9 @@ MULB3	rb,rb,wb	lbl=mul8 setnz setv clc wback		# 85
 DIVB2	rb,mb		lbl=div8 setnz clc wback		# 86
 DIVB3	rb,rb,wb	lbl=div8 setnz clc wback		# 87
 #
+XORB2	rb,mb		lbl=xor8 setnz clv wback		# 8c
+XORB3	rb,rb,wb	lbl=xor8 setnz clv wback		# 8d
+#
 CASEB	rb,rb,rb,rl#pc,wl#pc	lbl=caseb setnz clv setc wback	# 8f
 #
 MOVB	rb,wb		lbl=mov setnz clv wback			# 90
@@ -688,6 +715,11 @@ SUBW2	1rw,0mw		lbl=sub16 setnz setc setv wback		# a2
 SUBW3	1rw,0rw,2ww	lbl=sub16 setnz setc setv wback		# a3
 MULW2	rw,mw		lbl=mul16 setnz setv clc wback		# a4
 MULW3	rw,rw,ww	lbl=mul16 setnz setv clc wback		# a5
+DIVW2	rw,mw		lbl=div16 setnz clc wback		# a6
+DIVW3	rw,rw,ww	lbl=div16 setnz clc wback		# a7
+#
+XORW2	rw,mw		lbl=xor16 setnz clv wback		# ac
+XORW3	rw,rw,ww	lbl=xor16 setnz clv wback		# ad
 #
 CASEW	rw,rw,rw,rl#pc,wl#pc	lbl=casew setnz clv setc wback	# af
 MOVW	rw,ww		lbl=mov setnz clv wback			# b0
@@ -707,11 +739,12 @@ SUBL2	1rl,0ml		lbl=sub setnz setc setv wback		# c2
 SUBL3	1rl,0rl,2wl	lbl=sub setnz setc setv wback		# c3
 MULL2	rl,ml		lbl=mul setnz setv clc wback		# c4
 MULL3	rl,rl,wl	lbl=mul setnz setv clc wback		# c5
-DIVL2	rl,ml		lbl=div setnz setv clc wback		# c6
-#
+DIVL2	rl,ml		lbl=div setnz clc wback			# c6
+DIVL3	rl,rl,wl	lbl=div setnz clc wback			# c7
 BISL2	rl,ml		lbl=bis setnz clv wback			# c8
 BICL2	rl,ml		lbl=bic setnz clv wback			# ca
 #
+XORL2	rl,ml		lbl=xor setnz clv wback			# cc
 XORL3	rl,rl,wl	lbl=xor setnz clv wback			# cd
 MNEGL	rl#0,rl,wl	lbl=sub setnz setv setc wback		# ce
 CASEL	rl,rl,rl,rl#pc,wl#pc	lbl=casel setnz clv setc wback	# cf
