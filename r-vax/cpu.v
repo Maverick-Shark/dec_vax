@@ -1063,7 +1063,7 @@ $fdisplay(32'h80000002, "MCODE: ctr %d mc_rv %x\r", mcodectr, mc_rv);
 		 */
 
 		`S_FILLUP: begin
-if (debug) $fdisplay(32'h80000002, "FILLUP%d: addr %x acki %d isvalid %d dati %x\r\n", dcount, { curpc[31:2], 2'b00 }, cpu_acki, isvalid, CPU_DAT_I);
+//if (debug) $fdisplay(32'h80000002, "FILLUP%d: addr %x acki %d isvalid %d dati %x\r\n", dcount, { curpc[31:2], 2'b00 }, cpu_acki, isvalid, CPU_DAT_I);
 			/* Fetch new longword */
 			cpu_addr <= { curpc[31:2], 2'b00 };
 			cpu_write <= 0;

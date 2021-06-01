@@ -29,22 +29,57 @@ module alu(
 	reg [31:0]	res;
 	reg		Ctmp;
 	reg [5:0]	shlcnt;
-	reg		state, done, quick;
+	reg		state, done, quick, dstate;
 	reg [31:0]	shldata;
 	wire		topbit;
 	wire		t_ovf, t_ovf8, t_ovf16, mul_z, mul_v, mul_n;
+	wire		isdone;
 
 	wire signed [31:0] s_left, s_right;
 	reg signed [63:0] s_res;
 
 	assign s_left = left;
 	assign s_right = right;
-
-
 parameter BEGIN=0;
 parameter SHIFT=1;
 
-	always @(op, left, right, shldata)
+	wire [31:0]	q, r;
+	wire		divbusy;
+	reg		divstart, divdone;
+
+	div div(
+		.clock(clk),
+		.dividend(right),
+		.divisor(left),
+		.start(divstart),
+
+		.q(q),
+		.r(r),
+		.busy(divbusy)
+	);
+	always @(posedge clk) begin
+		if (stb == 0) begin
+			divdone <= 0;
+			divstart <= 0;
+			dstate <= BEGIN;
+		end else
+		case (dstate)
+		BEGIN: if (stb) begin
+$fdisplay(32'h80000002, "DIV0: divbusy %d q %x ack %d quick %d op %d", divbusy, q, ack, quick, op);
+			divstart <= 1;
+			if (divbusy)
+				dstate <= SHIFT;
+		end
+		SHIFT: begin
+$fdisplay(32'h80000002, "DIV: divbusy %d q %x", divbusy, q);
+			divstart <= 0;
+			if (divbusy == 0)
+				divdone <= 1;
+		end
+		endcase
+	end
+
+	always @(*)
 		case (op)
 		`ALU_PLUS: { Ctmp, res } = { 1'b0, left } + { 1'b0, right };
 		`ALU_MINUS: { Ctmp, res } = { 1'b0, left } - { 1'b0, right };
@@ -54,6 +89,7 @@ parameter SHIFT=1;
 		`ALU_XOR: res = left ^ right;
 		`ALU_SHL, `ALU_SHR, `ALU_ASR: res = shldata;
 		`ALU_MUL: s_res = s_left * s_right;
+		`ALU_DIV: res = q;
 		default: res = 0;
 		endcase
 
@@ -90,11 +126,13 @@ parameter SHIFT=1;
 		case (op)
 		`ALU_PLUS, `ALU_MINUS, `ALU_BIS, `ALU_BIC, `ALU_AND,
 		    `ALU_XOR: quick = 1;
-		`ALU_SHL, `ALU_SHR, `ALU_ASR: quick = 0;
+		`ALU_SHL, `ALU_SHR, `ALU_ASR, `ALU_DIV: quick = 0;
 		default: quick = 1;
 		endcase
 
-	assign ack = stb ? (quick ? 1 : done) : 0;
+	
+	assign isdone = op == `ALU_DIV ? divdone : done;
+	assign ack = stb ? (quick ? 1 : isdone) : 0;
 
 	assign result = op == `ALU_MUL ? s_res[31:0] : res;
 	assign cry = Ctmp;

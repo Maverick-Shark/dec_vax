@@ -103,6 +103,7 @@ function num2bit(num, sz,    shsz, i, rv) {
 	for (i = shsz = 1; i < sz; i++)
 		shsz *= 2;
 # printf "num %d sz %d shsz %d\n", num, sz, shsz;
+	num += 0; # XXX ensure numeric
 	for (i = sz-1; i >= 0; i--) {
 		if (num >= shsz) {
 # printf "%d >= %d: rv %s\n", num, shsz, rv;

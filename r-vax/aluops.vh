@@ -10,3 +10,4 @@
 `define	ALU_SHR		4'd7
 `define	ALU_ASR		4'd8
 `define	ALU_MUL		4'd9
+`define	ALU_DIV		4'd10
