@@ -65,13 +65,13 @@ parameter SHIFT=1;
 		end else
 		case (dstate)
 		BEGIN: if (stb) begin
-$fdisplay(32'h80000002, "DIV0: divbusy %d q %x ack %d quick %d op %d", divbusy, q, ack, quick, op);
+//$fdisplay(32'h80000002, "DIV0: divbusy %d q %x ack %d quick %d op %d", divbusy, q, ack, quick, op);
 			divstart <= 1;
 			if (divbusy)
 				dstate <= SHIFT;
 		end
 		SHIFT: begin
-$fdisplay(32'h80000002, "DIV: divbusy %d q %x", divbusy, q);
+//$fdisplay(32'h80000002, "DIV: divbusy %d q %x", divbusy, q);
 			divstart <= 0;
 			if (divbusy == 0)
 				divdone <= 1;

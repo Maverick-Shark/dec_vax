@@ -48,6 +48,9 @@
 #
 3C	MOVZWL
 #
+78	ASHL
+79	ASHQ
+#
 7C	CLRQ
 7D	MOVQ
 #
@@ -649,8 +652,31 @@ div_done:
 xor8:	xor arg1 arg2	argd0 savnz use8 eoi
 xor16:	xor arg1 arg2	argd0 savnz use16 eoi
 #
+bic8:	bic arg1 arg2	argd0 savnz use8 eoi
+bic16:	bic arg1 arg2	argd0 savnz use16 eoi
 #
+bis8:	bis arg1 arg2	argd0 savnz use8 eoi
+bis16:	bis arg1 arg2	argd0 savnz use16 eoi
 #
+ashl:	bic 2 psl	psl			# clear V
+	plus arg2 0	argd0
+	plus arg1 0	nncond goto ashl_left	# negative shifts right
+	minus 0 arg1	arg1			# make positive
+	minus arg1 1F	ncond goto ashl_1f	# less than 31?
+	and 1F 1F	arg1			# set to 31
+ashl_1f:
+	asr arg2 arg1	argd0 savnz eoi		# right shift
+
+ashl_left:
+	and arg1 arg1	zcond goto ashl_ret	# save and return
+	xor arg2 argd0	nncond goto ashl_skip	# check if sign bit changed
+	bis psl 2	psl
+ashl_skip:
+	shl argd0 1	argd0
+	minus arg1 1	arg1 goto ashl_left
+ashl_ret:
+	plus argd0 0	savnz eoi
+
 #
 !INSTRUCTIONS
 #
@@ -680,6 +706,8 @@ BRW	aw#w^d(pc),wl#pc	lbl=mov wback 			# 31
 #
 MOVZWL	rw,wl		lbl=zwl setnz clv wback			# 3c
 #
+ASHL	rb,rl,wl	lbl=ashl setnz clc wback		# 78
+#
 CLRQ	wq		lbl=clrq setnz clv wback wback2		# 7c
 MOVQ	mq,wq		lbl=movq setnz clv wback wback2		# 7d
 #
@@ -691,7 +719,10 @@ MULB2	rb,mb		lbl=mul8 setnz setv clc wback		# 84
 MULB3	rb,rb,wb	lbl=mul8 setnz setv clc wback		# 85
 DIVB2	rb,mb		lbl=div8 setnz clc wback		# 86
 DIVB3	rb,rb,wb	lbl=div8 setnz clc wback		# 87
-#
+BISB2	rb,mb		lbl=bis8 setnz clv wback		# c8
+BISB3	rb,rb,wb	lbl=bis8 setnz clv wback		# c9
+BICB2	rb,mb		lbl=bic8 setnz clv wback		# 8a
+BICB3	rb,rb,wb	lbl=bic8 setnz clv wback		# 8b
 XORB2	rb,mb		lbl=xor8 setnz clv wback		# 8c
 XORB3	rb,rb,wb	lbl=xor8 setnz clv wback		# 8d
 #
@@ -717,7 +748,10 @@ MULW2	rw,mw		lbl=mul16 setnz setv clc wback		# a4
 MULW3	rw,rw,ww	lbl=mul16 setnz setv clc wback		# a5
 DIVW2	rw,mw		lbl=div16 setnz clc wback		# a6
 DIVW3	rw,rw,ww	lbl=div16 setnz clc wback		# a7
-#
+BISW2	rw,mw		lbl=bis16 setnz clv wback		# a8
+BISW3	rw,rw,ww	lbl=bis16 setnz clv wback		# a9
+BICW2	rw,mw		lbl=bic16 setnz clv wback		# aa
+BICW3	rw,rw,ww	lbl=bic16 setnz clv wback		# ab
 XORW2	rw,mw		lbl=xor16 setnz clv wback		# ac
 XORW3	rw,rw,ww	lbl=xor16 setnz clv wback		# ad
 #
@@ -742,7 +776,9 @@ MULL3	rl,rl,wl	lbl=mul setnz setv clc wback		# c5
 DIVL2	rl,ml		lbl=div setnz clc wback			# c6
 DIVL3	rl,rl,wl	lbl=div setnz clc wback			# c7
 BISL2	rl,ml		lbl=bis setnz clv wback			# c8
+BISL3	rl,rl,wl	lbl=bis setnz clv wback			# c9
 BICL2	rl,ml		lbl=bic setnz clv wback			# ca
+BICL3	rl,rl,wl	lbl=bic setnz clv wback			# cb
 #
 XORL2	rl,ml		lbl=xor setnz clv wback			# cc
 XORL3	rl,rl,wl	lbl=xor setnz clv wback			# cd
