@@ -45,6 +45,8 @@
 #
 30	BSBW
 31	BRW
+32	CVTWL
+33	CVTWB
 #
 3C	MOVZWL
 #
@@ -79,7 +81,8 @@
 95	TSTB
 96	INCB
 97	DECB
-#
+98	CVTBL
+99	CVTBW
 9A	MOVZBL
 9B	MOVZBW
 9C	ROTL
@@ -168,6 +171,8 @@ F2	AOBLSS
 F3	AOBLEQ
 F4	SOBGEQ
 F5	SOBGTR
+F6	CVTLB
+F7	CVTLW
 #
 !MICROCODE
 #
@@ -739,7 +744,16 @@ ashq_skip:
 ashq_4f:
 	shl argd0 1	argd0			# shift left low word
 	minus arg1 1	arg1 goto ashq_left
-
+#
+cvtlw:	bic 2 psl	psl
+	plus arg1 0	argd0
+	shl arg1 10	arg1
+	asr arg1 10	arg1 savnz
+	minus argd0 arg1 zcond goto cvtlw_1f
+	bis psl 2	psl
+cvtlw_1f:
+	plus 0 0	eoi
+	
 #
 !INSTRUCTIONS
 #
@@ -766,6 +780,7 @@ BLSSU	ab#b^d(pc),rl#1,wl#pc	lbl=bset			# 1f
 #
 BSBW	0aw#w^d(pc),2rl#pc,wl#pc,wl#-(sp)	lbl=mov move2 wback wback2 
 BRW	aw#w^d(pc),wl#pc	lbl=mov wback 			# 31
+CVTWL	rw,wl		lbl=mov setnz clv clc clv wback		# 32
 #
 MOVZWL	rw,wl		lbl=zwl setnz clv wback			# 3c
 #
@@ -799,7 +814,9 @@ BITB	rb,rb		lbl=and setnz clv			# 93
 CLRB	wb		lbl=clr setnz clv wback			# 94
 TSTB	rb		lbl=tst setnz clv clc			# 95
 INCB	mb		lbl=add1 setnz setc wback		# 96
+DECB	mb,rl#1		lbl=sub8 setnz setv setc wback		# 97
 #
+CVTBL	rb,wl		lbl=mov setnz clv clc wback		# 99
 MOVZBL	rb,wl		lbl=zbl setnz clv wback			# 9a
 MOVZBW	rb,ww		lbl=zbl setnz clv wback			# 9b
 ROTL	rb,rl,wl	lbl=rot setnz clv wback			# 9c
@@ -827,7 +844,7 @@ BITW	rw,rw		lbl=and setnz clv			# b3
 #
 TSTW	rw		lbl=tst setnz clv clc			# b5
 #
-DECW	mw,rl#1		lbl=sub setnz setv setc wback 		# d7
+DECW	mw,rl#1		lbl=sub16 setnz setv setc wback		# b7
 BISPSW	rw		lbl=bispsw				# b8
 BICPSW	rw		lbl=bicpsw				# b9
 # 
@@ -888,3 +905,5 @@ AOBLSS	rl,ml,ab#b^d(pc),wl#pc lbl=aoblss setnz wback		# f2
 AOBLEQ	rl,ml,ab#b^d(pc),wl#pc lbl=aobleq setnz wback		# f3
 SOBGEQ	ml,ab#b^d(pc),wl#pc lbl=sobgeq setnz setv wback		# f4
 SOBGTR	ml,ab#b^d(pc),wl#pc lbl=sobgtr setnz setv wback		# f5
+#
+CVTLW	rl,ww	lbl=cvtlw setnz clc wback			# f7

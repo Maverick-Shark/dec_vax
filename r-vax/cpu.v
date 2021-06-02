@@ -496,7 +496,7 @@ initial psl_ipl = 5'h1f;
 `ifdef DBGCNT
 `ifndef notdef
 wire debug;
-assign debug = 1;
+assign debug = 0;
 `else
 reg debug;
 initial debug = 0;
