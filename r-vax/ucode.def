@@ -676,6 +676,69 @@ ashl_skip:
 	minus arg1 1	arg1 goto ashl_left
 ashl_ret:
 	plus argd0 0	savnz eoi
+#
+# ASHQ  arg1,argp0,argp1
+# Read in value in arg3/arg4 first, shift it, then 
+ashq:
+	shr argp0 1E	arg3			# 324 fetch two high bit
+	minus arg3 3	nzcond goto ashq_mem	# 325 jump if mem
+# from reg
+	plus argp0 0	crn			# 326
+	plus crv 0	argd0			# 327
+	plus argp0 1	crn			# 328
+	plus crv 0	argd1 goto ashq_s2	# 329
+ashq_mem:
+	plus argp0 0	cpuaddr rmem
+	plus rmemdat 0	argd0
+	plus argp0 4	cpuaddr rmem
+	plus rmemdat 0	argd1
+
+# set argp0/argp1
+ashq_s2:
+	plus argp1 0	argp0			# 334
+	plus argp1 1	argp1			# 335
+	shr argp1 1E	arg3			# 336
+	minus arg3 3	zcond goto ashq_cmn	# 337
+	plus argp1 3	argp1			# 338
+
+ashq_cmn:
+# do shifts
+	bic 2 psl	psl			# 339 clear V
+	plus argd1 0	arg4			# 340 remember high word
+	plus arg1 0	nncond goto ashq_left	# 341
+	minus 0 arg1	arg1			# 342 make right shift positive
+	minus arg1 3F	ncond goto ashq_3f	# 343
+	and 3F 3F	arg1			# 344 set to 63
+ashq_3f:
+	and arg1 arg1	zcond goto ashq_ret
+	shr argd0 1	argd0
+	and argd1 1	zcond goto ashq_5f	# jump if no need to or
+	and 8000 8000	arg3
+	shl arg3 10	arg3
+	bis argd0 arg3	argd0
+ashq_5f:
+	asr argd1 1	argd1
+	minus arg1 1	arg1 goto ashq_3f
+
+# set flags before return
+ashq_ret:
+	shr argd0 1	arg1
+	and argd0 1	arg2
+	bis arg1 arg2	arg1
+	bis argd1 arg1	savnz eoi
+		
+
+ashq_left:
+	and arg1 arg1	zcond goto ashq_ret	# save and return
+	xor arg4 argd1	nncond goto ashq_skip
+	bis psl 2	psl
+ashq_skip:
+	shl argd1 1	argd1			# shift high word
+	plus argd0 0	nncond goto ashq_4f	# low word high bit set?
+	bis argd1 1	argd1			# if so, set high word LSB
+ashq_4f:
+	shl argd0 1	argd0			# shift left low word
+	minus arg1 1	arg1 goto ashq_left
 
 #
 !INSTRUCTIONS
@@ -707,6 +770,7 @@ BRW	aw#w^d(pc),wl#pc	lbl=mov wback 			# 31
 MOVZWL	rw,wl		lbl=zwl setnz clv wback			# 3c
 #
 ASHL	rb,rl,wl	lbl=ashl setnz clc wback		# 78
+ASHQ	rb,wq,wq	lbl=ashq setnz clc wback wback2		# 79
 #
 CLRQ	wq		lbl=clrq setnz clv wback wback2		# 7c
 MOVQ	mq,wq		lbl=movq setnz clv wback wback2		# 7d
