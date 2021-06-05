@@ -610,29 +610,7 @@ casel:
 mul:	mul arg1 arg2		argd0 savnz savv eoi
 #
 # Handle division check here
-div8:	
-	bic 2 psl	psl			# clear V
-	plus arg1 0	nzcond goto div8_nz	# skip if no division by 0
-	bis 2 psl	psl			# div by 0, set V
-div8_nz:
-	# check if -MAXCHAR/-1
-	plus arg1 1	nzcond goto div8_done	# jump if not -1
-	plus arg2 80	nzcond goto div8_done	# jump if not -128
-	bis 2 psl	psl
-div8_done:
-	div arg1 arg2	argd0 savnz use8 eoi	# work!
-#
-div16:	
-	bic 2 psl	psl			# clear V
-	plus arg1 0	nzcond goto div16_nz	# skip if no division by 0
-	bis 2 psl	psl			# div by 0, set V
-div16_nz:
-	# check if -MAXSHORT/-1
-	plus arg1 1	nzcond goto div16_done	# jump if not -1
-	plus arg2 8000	nzcond goto div16_done	# jump if not -32768
-	bis 2 psl	psl
-div16_done:
-	div arg1 arg2	argd0 savnz use16 eoi	# work!
+# HW division is unsigned, so we convert to unsigned here.
 #
 div:	
 	bic 2 psl	psl			# clear V
@@ -645,7 +623,16 @@ div_nz:
 	plus arg2 arg2	nzcond goto div_done	# jump if not -MAXINT
 	bis 2 psl	psl
 div_done:
-	div arg1 arg2	argd0 savnz eoi		# work!
+	and arg1 arg1	arg3 nncond goto div_1f	# skip if divr positive
+	minus 0 arg1	arg3			# otherwise convert
+div_1f:	and arg2 arg2	arg4 nncond goto div_2f	# 299 same again for divd
+	minus 0 arg2	arg4
+div_2f:
+	div arg3 arg4	argd0			# 301
+	xor arg1 arg2	nncond goto div_3f	# source sign same = no conv
+	minus 0 argd0	argd0			# change sign
+div_3f:	and argd0 argd0 savnz eoi		# set flags
+#
 #
 ashl:	bic 2 psl	psl			# clear V
 	plus arg2 0	argd0
@@ -780,8 +767,8 @@ SUBB2	1rb,0mb		lbl=sub setnz setc setv use8 wback	# 82
 SUBB3	1rb,0rb,2wb	lbl=sub setnz setc setv use8 wback	# 83
 MULB2	rb,mb		lbl=mul setnz setv clc use8 wback	# 84
 MULB3	rb,rb,wb	lbl=mul setnz setv clc use8 wback	# 85
-DIVB2	rb,mb		lbl=div8 setnz clc wback		# 86
-DIVB3	rb,rb,wb	lbl=div8 setnz clc wback		# 87
+DIVB2	rb,mb		lbl=div setnz clc use8 wback		# 86
+DIVB3	rb,rb,wb	lbl=div setnz clc use8 wback		# 87
 BISB2	rb,mb		lbl=bis setnz clv use8 wback		# c8
 BISB3	rb,rb,wb	lbl=bis setnz clv use8 wback		# c9
 BICB2	rb,mb		lbl=bic setnz clv use8 wback		# 8a
@@ -811,8 +798,8 @@ SUBW2	1rw,0mw		lbl=sub setnz setc setv use16 wback	# a2
 SUBW3	1rw,0rw,2ww	lbl=sub setnz setc setv use16 wback	# a3
 MULW2	rw,mw		lbl=mul setnz setv clc use16 wback	# a4
 MULW3	rw,rw,ww	lbl=mul setnz setv clc use16 wback	# a5
-DIVW2	rw,mw		lbl=div16 setnz clc wback		# a6
-DIVW3	rw,rw,ww	lbl=div16 setnz clc wback		# a7
+DIVW2	rw,mw		lbl=div setnz clc use16 wback		# a6
+DIVW3	rw,rw,ww	lbl=div setnz clc use16 wback		# a7
 BISW2	rw,mw		lbl=bis setnz clv use16 wback		# a8
 BISW3	rw,rw,ww	lbl=bis setnz clv use16 wback		# a9
 BICW2	rw,mw		lbl=bic setnz clv use16 wback		# aa
