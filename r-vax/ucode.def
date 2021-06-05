@@ -202,14 +202,9 @@ resop:
 mov:	plus arg1 0		argd0 savnz eoi
 tst:	plus arg1 0		argd0 savnz eoi
 add:	plus arg1 arg2		argd0 savnz savc savv eoi
-add8:	plus arg1 arg2		argd0 savnz savc savv use8 eoi
-add16:	plus arg1 arg2		argd0 savnz savc savv use16 eoi
-add1:	plus arg1 1		argd0 savc savnz eoi
 clr:	plus 0 0		argd0 savnz eoi
 xor:	xor arg1 arg2		argd0 savnz eoi
 sub:	minus arg1 arg2		argd0 savc savv savnz eoi
-sub8:	minus arg1 arg2		argd0 savc savv savnz use8 eoi
-sub16:	minus arg1 arg2		argd0 savc savv savnz use16 eoi
 bicpsw:	bic arg1 psl		psl eoi
 bispsw:	bis arg1 psl		psl eoi
 movpsl:	plus psl 0		argd0 savnz eoi
@@ -613,8 +608,6 @@ casel:
 	plus 0 0		goto case_ex
 #
 mul:	mul arg1 arg2		argd0 savnz savv eoi
-mul8:	mul arg1 arg2		argd0 savnz savv use8 eoi
-mul16:	mul arg1 arg2		argd0 savnz savv use16 eoi
 #
 # Handle division check here
 div8:	
@@ -653,15 +646,6 @@ div_nz:
 	bis 2 psl	psl
 div_done:
 	div arg1 arg2	argd0 savnz eoi		# work!
-#
-xor8:	xor arg1 arg2	argd0 savnz use8 eoi
-xor16:	xor arg1 arg2	argd0 savnz use16 eoi
-#
-bic8:	bic arg1 arg2	argd0 savnz use8 eoi
-bic16:	bic arg1 arg2	argd0 savnz use16 eoi
-#
-bis8:	bis arg1 arg2	argd0 savnz use8 eoi
-bis16:	bis arg1 arg2	argd0 savnz use16 eoi
 #
 ashl:	bic 2 psl	psl			# clear V
 	plus arg2 0	argd0
@@ -790,20 +774,20 @@ ASHQ	rb,wq,wq	lbl=ashq setnz clc wback wback2		# 79
 CLRQ	wq		lbl=clrq setnz clv wback wback2		# 7c
 MOVQ	mq,wq		lbl=movq setnz clv wback wback2		# 7d
 #
-ADDB2	rb,mb		lbl=add8 setnz setc setv wback 		# 80
-ADDB3	rb,rb,wb	lbl=add8 setnz setc setv wback 		# 81
-SUBB2	1rb,0mb		lbl=sub8 setnz setc setv wback		# 82
-SUBB3	1rb,0rb,2wb	lbl=sub8 setnz setc setv wback		# 83
-MULB2	rb,mb		lbl=mul8 setnz setv clc wback		# 84
-MULB3	rb,rb,wb	lbl=mul8 setnz setv clc wback		# 85
+ADDB2	rb,mb		lbl=add setnz setc setv use8 wback 	# 80
+ADDB3	rb,rb,wb	lbl=add setnz setc setv use8 wback 	# 81
+SUBB2	1rb,0mb		lbl=sub setnz setc setv use8 wback	# 82
+SUBB3	1rb,0rb,2wb	lbl=sub setnz setc setv use8 wback	# 83
+MULB2	rb,mb		lbl=mul setnz setv clc use8 wback	# 84
+MULB3	rb,rb,wb	lbl=mul setnz setv clc use8 wback	# 85
 DIVB2	rb,mb		lbl=div8 setnz clc wback		# 86
 DIVB3	rb,rb,wb	lbl=div8 setnz clc wback		# 87
-BISB2	rb,mb		lbl=bis8 setnz clv wback		# c8
-BISB3	rb,rb,wb	lbl=bis8 setnz clv wback		# c9
-BICB2	rb,mb		lbl=bic8 setnz clv wback		# 8a
-BICB3	rb,rb,wb	lbl=bic8 setnz clv wback		# 8b
-XORB2	rb,mb		lbl=xor8 setnz clv wback		# 8c
-XORB3	rb,rb,wb	lbl=xor8 setnz clv wback		# 8d
+BISB2	rb,mb		lbl=bis setnz clv use8 wback		# c8
+BISB3	rb,rb,wb	lbl=bis setnz clv use8 wback		# c9
+BICB2	rb,mb		lbl=bic setnz clv use8 wback		# 8a
+BICB3	rb,rb,wb	lbl=bic setnz clv use8 wback		# 8b
+XORB2	rb,mb		lbl=xor setnz clv use8 wback		# 8c
+XORB3	rb,rb,wb	lbl=xor setnz clv use8 wback		# 8d
 #
 CASEB	rb,rb,rb,rl#pc,wl#pc	lbl=caseb setnz clv setc wback	# 8f
 #
@@ -813,28 +797,28 @@ CMPB	rb,rb		lbl=sub setnz clv setc			# 91
 BITB	rb,rb		lbl=and setnz clv			# 93
 CLRB	wb		lbl=clr setnz clv wback			# 94
 TSTB	rb		lbl=tst setnz clv clc			# 95
-INCB	mb		lbl=add1 setnz setc wback		# 96
-DECB	mb,rl#1		lbl=sub8 setnz setv setc wback		# 97
+INCB	mb,rl#1		lbl=add setnz setc use8 wback		# 96
+DECB	mb,rl#1		lbl=sub setnz setv setc use8 wback	# 97
 #
 CVTBL	rb,wl		lbl=mov setnz clv clc wback		# 99
 MOVZBL	rb,wl		lbl=zbl setnz clv wback			# 9a
 MOVZBW	rb,ww		lbl=zbl setnz clv wback			# 9b
 ROTL	rb,rl,wl	lbl=rot setnz clv wback			# 9c
 #
-ADDW2	rw,mw		lbl=add16 setnz setc setv wback		# a0
-ADDW3	rw,rw,ww	lbl=add16 setnz setc setv wback		# a1
-SUBW2	1rw,0mw		lbl=sub16 setnz setc setv wback		# a2
-SUBW3	1rw,0rw,2ww	lbl=sub16 setnz setc setv wback		# a3
-MULW2	rw,mw		lbl=mul16 setnz setv clc wback		# a4
-MULW3	rw,rw,ww	lbl=mul16 setnz setv clc wback		# a5
+ADDW2	rw,mw		lbl=add setnz setc setv use16 wback	# a0
+ADDW3	rw,rw,ww	lbl=add setnz setc setv use16 wback	# a1
+SUBW2	1rw,0mw		lbl=sub setnz setc setv use16 wback	# a2
+SUBW3	1rw,0rw,2ww	lbl=sub setnz setc setv use16 wback	# a3
+MULW2	rw,mw		lbl=mul setnz setv clc use16 wback	# a4
+MULW3	rw,rw,ww	lbl=mul setnz setv clc use16 wback	# a5
 DIVW2	rw,mw		lbl=div16 setnz clc wback		# a6
 DIVW3	rw,rw,ww	lbl=div16 setnz clc wback		# a7
-BISW2	rw,mw		lbl=bis16 setnz clv wback		# a8
-BISW3	rw,rw,ww	lbl=bis16 setnz clv wback		# a9
-BICW2	rw,mw		lbl=bic16 setnz clv wback		# aa
-BICW3	rw,rw,ww	lbl=bic16 setnz clv wback		# ab
-XORW2	rw,mw		lbl=xor16 setnz clv wback		# ac
-XORW3	rw,rw,ww	lbl=xor16 setnz clv wback		# ad
+BISW2	rw,mw		lbl=bis setnz clv use16 wback		# a8
+BISW3	rw,rw,ww	lbl=bis setnz clv use16 wback		# a9
+BICW2	rw,mw		lbl=bic setnz clv use16 wback		# aa
+BICW3	rw,rw,ww	lbl=bic setnz clv use16 wback		# ab
+XORW2	rw,mw		lbl=xor setnz clv use16 wback		# ac
+XORW3	rw,rw,ww	lbl=xor setnz clv use16 wback		# ad
 #
 CASEW	rw,rw,rw,rl#pc,wl#pc	lbl=casew setnz clv setc wback	# af
 MOVW	rw,ww		lbl=mov setnz clv wback			# b0
@@ -844,7 +828,7 @@ BITW	rw,rw		lbl=and setnz clv			# b3
 #
 TSTW	rw		lbl=tst setnz clv clc			# b5
 #
-DECW	mw,rl#1		lbl=sub16 setnz setv setc wback		# b7
+DECW	mw,rl#1		lbl=sub setnz setv setc use16 wback	# b7
 BISPSW	rw		lbl=bispsw				# b8
 BICPSW	rw		lbl=bicpsw				# b9
 # 
@@ -871,7 +855,7 @@ CMPL	rl,rl		lbl=sub setcmpnz clv setc		# d1
 BITL	rl,rl		lbl=and setnz clv 			# d3
 CLRL	wl		lbl=clr setnz clv wback 		# d4
 TSTL	rl		lbl=tst setnz clv clc 			# d5
-INCL	ml		lbl=add1 setnz setc wback		# d6
+INCL	ml,rl#1		lbl=add setnz setc wback		# d6
 DECL	ml,rl#1		lbl=sub setnz setv setc wback 		# d7
 #
 ADWC	rl,ml		lbl=adwc setnz wback			# d9

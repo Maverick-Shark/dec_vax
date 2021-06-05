@@ -6,7 +6,9 @@
 `define	IHASARGS	8
 `define	IEMUL		9
 `define	SETADDV		10
+`define	USE8		11
 `define	WBACK		12
+`define	USE16		13
 
 /* 16/19 nmatches psw bits */
 `define	CCC		16
@@ -40,6 +42,8 @@ module ucode(
 	output			i_dohalt,
 
 	output			i_wback,
+	output			i_use8,
+	output			i_use16,
 
 	output			i_setcmpnz,
 	output			i_setnz,
@@ -159,6 +163,8 @@ parameter	S_ROM_ADDRS = 512;
 	assign i_emul = ucinsn_data[`IEMUL];
 	assign i_dohalt = ucinsn_data[`DOHALT];
 	assign i_wback = ucinsn_data[`WBACK];
+	assign i_use8 = ucinsn_data[`USE8];
+	assign i_use16 = ucinsn_data[`USE16];
 
 	assign i_setcmpnz = ucinsn_data[`SETCMPNZ];
 	assign i_setnz = ucinsn_data[`SETNZ];

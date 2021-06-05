@@ -330,7 +330,7 @@ initial psl_ipl = 5'h1f;
 	wire [7:0]	i_argoff, a_argoff, a_arg, cur_mux;
 	wire		i_enable, i_hasargs, i_emul, i_dohalt;
 	wire		a_enable, a_emul, a_last, i_move2, i_wback2;
-	wire		i_wback;
+	wire		i_wback, i_use8, i_use16;
 	wire		i_setnz, i_clv, i_clc, i_setc, i_setcmpnz, i_setv;
 	wire		arg_aR, arg_aW, arg_aA;
 	wire [2:0]	a_argcode;
@@ -369,6 +369,8 @@ initial psl_ipl = 5'h1f;
 		.i_hasargs(i_hasargs),
 		.i_emul(i_emul),
 
+		.i_use8(i_use8),
+		.i_use16(i_use16),
 		.i_wback(i_wback),
 
 		.i_setcmpnz(i_setcmpnz),
@@ -536,8 +538,8 @@ initial debug = 0;
 
 		.neg(alu_neg),
 		.ovf(alu_ovf),
-		.use8(s_use8),
-		.use16(s_use16),
+		.use8(s_use8|i_use8),
+		.use16(s_use16|i_use16),
 		.cry(alu_cry),
 		.zero(alu_zero),
 		.result(alu_res)
