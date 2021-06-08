@@ -261,12 +261,6 @@ initial psl_ipl = 5'h1f;
 		default: mc_rv = 0;
 		endcase
 
-	/*
-	 * Argument stuff.
-	 * evaluation.
-	 */
-	reg notrash;	// Control readmem trashing
-
 	reg Ctmp, Ntmp, Ztmp, Vtmp;
 
 	/*
@@ -774,10 +768,12 @@ if (debug)$fdisplay(32'h80000002, "ARG_READ: OA %x IA %x cur_byte %x curarg %x\r
 					state <= `S_READMEM;
 				cpu_addr <= arg_read_add;
 				cpu_size <= a_argsz;
-				notrash <= 1;
 				rmemstate <= `RMEM_ARG_READ;
-			end else 
+			end else begin
 				OP <= arg_read_add;
+				if (a_argsz == `O_QUAD && arg_read_step1 == 0)
+					state <= `ARG_READ; // OAu set
+			end
 		end
 
 		/*
@@ -798,7 +794,7 @@ if (debug) $fdisplay(32'h80000002, "ARGEND: a_rargno %d a_wargno %d arg_aR %d ar
 					argp_isreg[0]  <= OA_isreg;
 					argp_regnum[0] <= OA_regnum;
 					argp_size[0] <= a_argsz;
-					argp[1] <= OA + 4;
+					argp[1] <= OAu;
 					argp_isreg[1] <= OA_isreg;
 					argp_regnum[1] <= OA_regnum + 1;
 					argp_size[1] <= a_argsz;
@@ -818,10 +814,10 @@ if (debug) $fdisplay(32'h80000002, "ARGEND: a_rargno %d a_wargno %d arg_aR %d ar
 				cur_reg_num_save <= `REG_SP;
 			end else /* if (|scounter) */ begin
 				state <= `PREEXEC;
-if (cur_inst == 8'hf0) $fdisplay(32'h80000002, "INSV pos %x size %x base %x src %x pc %x\r", arg[0], arg[1], arg[2], arg[3], oldpc);
+//if (cur_inst == 8'hf0) $fdisplay(32'h80000002, "INSV pos %x size %x base %x src %x pc %x\r", arg[0], arg[1], arg[2], arg[3], oldpc);
 //if (cur_inst == 8'hef) $fdisplay(32'h80000002, "EXTZV pos %x size %x base %x dest %x pc %x\r", arg[0], arg[1], argp[0], argp[1], oldpc);
 //if (cur_inst == 8'hed) $fdisplay(32'h80000002, "CMPZV pos %x size %x base %x dest %x pc %x\r", arg[0], arg[1], argp[0], argp[1], oldpc);
-if (cur_inst == 8'hd8) $fdisplay(32'h80000002, "ADWC arg1 %x arg2 %x psl %x dest %x pc %x\r", arg[0], arg[1], psl, argp[0], oldpc);
+//if (cur_inst == 8'hd8) $fdisplay(32'h80000002, "ADWC arg1 %x arg2 %x psl %x dest %x pc %x\r", arg[0], arg[1], psl, argp[0], oldpc);
 			end
 			arg_read_step1 <= 0;
 			arg_read_step2 <= 0;
@@ -888,7 +884,6 @@ if (debug & alu_ack) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d ste
 				argp_isreg[0] <= &alu_res[31:30];
 			end
 			9: begin
-$fdisplay(32'h80000002, "ARGP1: %d", argp_size[1]);
 				argp[1] <= alu_res;
 				argp_regnum[1] <= alu_res[3:0];
 				argp_size[1] <= `O_LONG;
@@ -981,10 +976,10 @@ $fdisplay(32'h80000002, "ARGP1: %d", argp_size[1]);
 		`ENDINST: begin
 if (debug) $fdisplay(32'h80000002, "ENDINST: pc %x argd[0] %x argpsz[0] %d arg1p %x isreg %d regno %d wb %d\r", curpc, argd[0], argp_size[0], argp[0], argp_isreg[0], argp_regnum[0], writeback);
 if (debug) $fdisplay(32'h80000002, "ENDINST: pc %x argd[1] %x argpsz[1] %d arg2p %x isreg %d regno %d wb %d\r", curpc, argd[1], argp_size[1], argp[1], argp_isreg[1], argp_regnum[1], writeback2);
-if (cur_inst == 8'hf0) $fdisplay(32'h80000002, "INSV END: argd0 %x argd1 %x\r", argd[0], argd[1]);
+//if (cur_inst == 8'hf0) $fdisplay(32'h80000002, "INSV END: argd0 %x argd1 %x\r", argd[0], argd[1]);
 //if (cur_inst == 8'hef) $fdisplay(32'h80000002, "EXTZV END: argd0 %x argp0 %x pc %x\r", argd[0], argp[0], oldpc);
 //if (cur_inst == 8'hed) $fdisplay(32'h80000002, "CMPZV END: argd0 %x argd1 %x pc %x\r", argd[0], argd[1], oldpc);
-if (cur_inst == 8'hd8) $fdisplay(32'h80000002, "ADWC END: argd0 %x tmpV %d pc %x\r", argd[0], Vtmp, oldpc);
+//if (cur_inst == 8'hd8) $fdisplay(32'h80000002, "ADWC END: argd0 %x tmpV %d pc %x\r", argd[0], Vtmp, oldpc);
 			state <= `S_FETCH;
 
 			if (resopflt) begin
@@ -1162,11 +1157,7 @@ $fdisplay(32'h80000002, "MCODE: ctr %d mc_rv %x\r", mcodectr, mc_rv);
 		end
 
 		`S_READMEM2: if (cpu_acki) begin
-			notrash <= 0;
-if (debug || cur_inst == 8'hed || cpu_addr == 32'h00000238 || cpu_addr == 32'h0000023c) $fdisplay(32'h80000002, "S_READMEM2: addr %x dat %x pc %x\r", cpu_addr, CPU_DAT_I, oldpc);
-			if (notrash == 0)
-				OA <= CPU_DAT_I;
-//			OP <= CPU_DAT_I;
+//if (debug || cur_inst == 8'hed || cpu_addr == 32'h00000238 || cpu_addr == 32'h0000023c) $fdisplay(32'h80000002, "S_READMEM2: addr %x dat %x pc %x\r", cpu_addr, CPU_DAT_I, oldpc);
 			rmem_dat <= CPU_DAT_I;
 			cpu_stb <= 0;
 			case (rmemstate)
