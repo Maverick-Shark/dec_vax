@@ -220,12 +220,11 @@ initial psl_ipl = 5'h1f;
 
 	reg		writeback, writeback2;
 	reg		arg_read_step1, arg_read_step2;
-	reg [31:0]	OA, IA, OP, OPu;
+	reg [31:0]	OA, IA, OP, OPu, OAu;
 	reg [31:0]	getbwl_OA, addto_OA, indir_OA;
 	reg		OA_isreg;
 	reg [3:0]	OA_regnum;
-
-
+	wire [31:0]	arg_read_add;
 
 	reg [31:0] curpc, oldpc, oldpsl;
 	wire [3:0] cur_reg_num;
@@ -233,6 +232,7 @@ initial psl_ipl = 5'h1f;
 	reg [3:0] cur_reg_num_save;
 /* verilator lint_on UNUSED */
 	assign cur_reg_num = cur_byte[3:0];
+	assign arg_read_add = indir_OA + IA + { arg_read_step1 ? 4 : 0 };
 
 	/*
 	 * get current instruction byte based on pc.
@@ -747,7 +747,10 @@ if (debug)$fdisplay(32'h80000002, "ARG_INDIR\r");
 if (debug)$fdisplay(32'h80000002, "ARG_READ: OA %x IA %x cur_byte %x curarg %x\r", OA, IA, cur_byte, curarg);
 			arg_read_step1 <= 1;
 			state <= `ARGEND;
-			OA <= indir_OA + IA;
+			if (arg_read_step1 == 0)
+				OA <= arg_read_add;
+			else
+				OAu <= arg_read_add;
 			if (arg_lit && arg_aR) begin
 				OP <= { 24'b0, curarg};
 				OPu <= 0;
@@ -769,14 +772,12 @@ if (debug)$fdisplay(32'h80000002, "ARG_READ: OA %x IA %x cur_byte %x curarg %x\r
 					arg_read_step2 <= 1;
 				end else
 					state <= `S_READMEM;
-				cpu_addr <= indir_OA + IA +
-				     { arg_read_step1 ? 4 : 0 };
-//				IA <= IA + 4;	// if QUAD
+				cpu_addr <= arg_read_add;
 				cpu_size <= a_argsz;
 				notrash <= 1;
 				rmemstate <= `RMEM_ARG_READ;
-			end else
-				OP <= indir_OA + IA;
+			end else 
+				OP <= arg_read_add;
 		end
 
 		/*
