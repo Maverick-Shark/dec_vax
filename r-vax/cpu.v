@@ -187,7 +187,7 @@ module cpu(
 	reg [31:0]	argp[1:0], arg[3:0], argd[1:0];
 	reg		argp_isreg[1:0];
 	reg [3:0]	argp_regnum[1:0];
-	reg [1:0]	a1sz, argp_size[1:0];
+	reg [1:0]	argp_size[1:0];
 /* verilator lint_on UNDRIVEN */
 /* verilator lint_on UNUSED */
 
@@ -219,7 +219,8 @@ initial psl_ipl = 5'h1f;
 	reg [7:0]	cur_byte, cur_inst;
 
 	reg		writeback, writeback2;
-	reg [31:0]	OA, IA, OP;
+	reg		arg_read_step1, arg_read_step2;
+	reg [31:0]	OA, IA, OP, OPu;
 	reg [31:0]	getbwl_OA, addto_OA, indir_OA;
 	reg		OA_isreg;
 	reg [3:0]	OA_regnum;
@@ -744,19 +745,36 @@ if (debug)$fdisplay(32'h80000002, "ARG_INDIR\r");
 
 		`ARG_READ: begin
 if (debug)$fdisplay(32'h80000002, "ARG_READ: OA %x IA %x cur_byte %x curarg %x\r", OA, IA, cur_byte, curarg);
+			arg_read_step1 <= 1;
 			state <= `ARGEND;
 			OA <= indir_OA + IA;
 			if (arg_lit && arg_aR) begin
 				OP <= { 24'b0, curarg};
+				OPu <= 0;
 			end else if (arg_reg && arg_aR) begin
-				OP <= cur_reg_val;
+				if (arg_read_step1 == 0)
+					OP <= cur_reg_val;
+				else
+					OPu <= cur_reg_val;
 				cur_reg_num_save <= cur_reg_num_save +1;
+				if (a_argsz == `O_QUAD && arg_read_step1 == 0)
+					state <= `ARG_READ;
 			end else if (arg_aR) begin
-				cpu_addr <= indir_OA + IA;
+				if (arg_read_step2) begin
+					OPu <= rmem_dat;
+				end else if (arg_read_step1) begin
+					OP <= rmem_dat;
+					if (a_argsz == `O_QUAD)
+						state <= `S_READMEM;
+					arg_read_step2 <= 1;
+				end else
+					state <= `S_READMEM;
+				cpu_addr <= indir_OA + IA +
+				     { arg_read_step1 ? 4 : 0 };
+//				IA <= IA + 4;	// if QUAD
 				cpu_size <= a_argsz;
 				notrash <= 1;
-				state <= `S_READMEM;
-				rmemstate <= `RMEM_xARGEND;
+				rmemstate <= `RMEM_ARG_READ;
 			end else
 				OP <= indir_OA + IA;
 		end
@@ -765,12 +783,12 @@ if (debug)$fdisplay(32'h80000002, "ARG_READ: OA %x IA %x cur_byte %x curarg %x\r
 		 * Store the argument results in their next slot.
 		 */
 		`ARGEND: begin
-if (debug) $fdisplay(32'h80000002, "ARGEND: OP %x OA %x arg_rv %x acounter %d isreg %d regnum %d \r", OP, OA, arg_rv, acounter, OA_isreg, OA_regnum);
+if (debug) $fdisplay(32'h80000002, "ARGEND: OP %x OPu %x OA %x arg_rv %x acounter %d isreg %d regnum %d \r", OP, OPu, OA, arg_rv, acounter, OA_isreg, OA_regnum);
 if (debug) $fdisplay(32'h80000002, "ARGEND: a_rargno %d a_wargno %d arg_aR %d arg_aA %d arg_aW %d\r\n", a_rargno, a_wargno, arg_aR, arg_aA, arg_aW);
 			if (arg_aR|arg_aA) begin
 				arg[a_rargno[1:0]] <= arg_rv;
-				if (a_rargno == 0)
-					a1sz <= a_argsz;
+				if (a_argsz == `O_QUAD)
+					arg[a_rargno[1:0]+1] <= OPu;
 			end
 
 			if (arg_aW) begin
@@ -779,6 +797,10 @@ if (debug) $fdisplay(32'h80000002, "ARGEND: a_rargno %d a_wargno %d arg_aR %d ar
 					argp_isreg[0]  <= OA_isreg;
 					argp_regnum[0] <= OA_regnum;
 					argp_size[0] <= a_argsz;
+					argp[1] <= OA + 4;
+					argp_isreg[1] <= OA_isreg;
+					argp_regnum[1] <= OA_regnum + 1;
+					argp_size[1] <= a_argsz;
 				end
 				if (a_wargno == 1) begin
 					argp[1] <= OA;
@@ -795,11 +817,13 @@ if (debug) $fdisplay(32'h80000002, "ARGEND: a_rargno %d a_wargno %d arg_aR %d ar
 				cur_reg_num_save <= `REG_SP;
 			end else /* if (|scounter) */ begin
 				state <= `PREEXEC;
-//if (cur_inst == 8'hf0) $fdisplay(32'h80000002, "INSV pos %x size %x base %x src %x pc %x\r", arg[0], arg[1], arg[2], arg[3], oldpc);
+if (cur_inst == 8'hf0) $fdisplay(32'h80000002, "INSV pos %x size %x base %x src %x pc %x\r", arg[0], arg[1], arg[2], arg[3], oldpc);
 //if (cur_inst == 8'hef) $fdisplay(32'h80000002, "EXTZV pos %x size %x base %x dest %x pc %x\r", arg[0], arg[1], argp[0], argp[1], oldpc);
 //if (cur_inst == 8'hed) $fdisplay(32'h80000002, "CMPZV pos %x size %x base %x dest %x pc %x\r", arg[0], arg[1], argp[0], argp[1], oldpc);
 if (cur_inst == 8'hd8) $fdisplay(32'h80000002, "ADWC arg1 %x arg2 %x psl %x dest %x pc %x\r", arg[0], arg[1], psl, argp[0], oldpc);
 			end
+			arg_read_step1 <= 0;
+			arg_read_step2 <= 0;
 			OA_isreg <= 0;
 			IA <= 0;
 		end
@@ -863,6 +887,7 @@ if (debug & alu_ack) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d ste
 				argp_isreg[0] <= &alu_res[31:30];
 			end
 			9: begin
+$fdisplay(32'h80000002, "ARGP1: %d", argp_size[1]);
 				argp[1] <= alu_res;
 				argp_regnum[1] <= alu_res[3:0];
 				argp_size[1] <= `O_LONG;
@@ -954,8 +979,8 @@ if (debug & alu_ack) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d ste
 		 */
 		`ENDINST: begin
 if (debug) $fdisplay(32'h80000002, "ENDINST: pc %x argd[0] %x argpsz[0] %d arg1p %x isreg %d regno %d wb %d\r", curpc, argd[0], argp_size[0], argp[0], argp_isreg[0], argp_regnum[0], writeback);
-if (debug) $fdisplay(32'h80000002, "ENDINST: pc %x argd[1] %x arg2p %x isreg %d regno %d wb %d\r", curpc, argd[1], argp[1], argp_isreg[1], argp_regnum[1], writeback2);
-// if (cur_inst == 8'hf0) $fdisplay(32'h80000002, "INSV END: argd0 %x argd1 %x\r", argd[0], argd[1]);
+if (debug) $fdisplay(32'h80000002, "ENDINST: pc %x argd[1] %x argpsz[1] %d arg2p %x isreg %d regno %d wb %d\r", curpc, argd[1], argp_size[1], argp[1], argp_isreg[1], argp_regnum[1], writeback2);
+if (cur_inst == 8'hf0) $fdisplay(32'h80000002, "INSV END: argd0 %x argd1 %x\r", argd[0], argd[1]);
 //if (cur_inst == 8'hef) $fdisplay(32'h80000002, "EXTZV END: argd0 %x argp0 %x pc %x\r", argd[0], argp[0], oldpc);
 //if (cur_inst == 8'hed) $fdisplay(32'h80000002, "CMPZV END: argd0 %x argd1 %x pc %x\r", argd[0], argd[1], oldpc);
 if (cur_inst == 8'hd8) $fdisplay(32'h80000002, "ADWC END: argd0 %x tmpV %d pc %x\r", argd[0], Vtmp, oldpc);
@@ -1010,6 +1035,7 @@ if (debug) $fdisplay(32'h80000002, "WB0: argd0 %x size %d curreg %x curval %x\r"
 					wregstate <= `WREG_FETCH;
 					state <= `S_WREG;
 				end else begin
+if (debug) $fdisplay(32'h80000002, "WB1: argd1 %x size %d addr %x\r", argd[1], argp_size[1], argp[1]);
 					cpu_addr <= argp[1];
 					cpu_wdata <= argd[1];
 					cpu_size <= argp_size[1];
@@ -1136,10 +1162,10 @@ $fdisplay(32'h80000002, "MCODE: ctr %d mc_rv %x\r", mcodectr, mc_rv);
 
 		`S_READMEM2: if (cpu_acki) begin
 			notrash <= 0;
-// if (debug || cur_inst == 8'hed || cpu_addr == 32'h00000238 || cpu_addr == 32'h0000023c) $fdisplay(32'h80000002, "S_READMEM2: addr %x dat %x pc %x\r", cpu_addr, CPU_DAT_I, oldpc);
+if (debug || cur_inst == 8'hed || cpu_addr == 32'h00000238 || cpu_addr == 32'h0000023c) $fdisplay(32'h80000002, "S_READMEM2: addr %x dat %x pc %x\r", cpu_addr, CPU_DAT_I, oldpc);
 			if (notrash == 0)
 				OA <= CPU_DAT_I;
-			OP <= CPU_DAT_I;
+//			OP <= CPU_DAT_I;
 			rmem_dat <= CPU_DAT_I;
 			cpu_stb <= 0;
 			case (rmemstate)
