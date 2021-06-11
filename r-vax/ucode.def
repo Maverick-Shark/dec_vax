@@ -53,6 +53,7 @@
 78	ASHL
 79	ASHQ
 #
+7B	EDIV
 7C	CLRQ
 7D	MOVQ
 #
@@ -634,28 +635,9 @@ ashl_ret:
 # ASHQ  arg1,argp0,argp1
 # Read in value in arg3/arg4 first, shift it, then 
 ashq:
-	shr argp0 1E	arg3			# 324 fetch two high bit
-	minus arg3 3	nzcond goto ashq_mem	# 325 jump if mem
-# from reg
-	plus argp0 0	crn			# 326
-	plus crv 0	argd0			# 327
-	plus argp0 1	crn			# 328
-	plus crv 0	argd1 goto ashq_s2	# 329
-ashq_mem:
-	plus argp0 0	cpuaddr rmem
-	plus rmemdat 0	argd0
-	plus argp0 4	cpuaddr rmem
-	plus rmemdat 0	argd1
+	plus arg2 0	argd0
+	plus arg3 0	argd1
 
-# set argp0/argp1
-ashq_s2:
-	plus argp1 0	argp0			# 334
-	plus argp1 1	argp1			# 335
-	shr argp1 1E	arg3			# 336
-	minus arg3 3	zcond goto ashq_cmn	# 337
-	plus argp1 3	argp1			# 338
-
-ashq_cmn:
 # do shifts
 	bic 2 psl	psl			# 339 clear V
 	plus argd1 0	arg4			# 340 remember high word
@@ -702,7 +684,10 @@ cvtlw:	bic 2 psl	psl
 	bis psl 2	psl
 cvtlw_1f:
 	plus 0 0	eoi
-	
+#
+# EDIV divr,divd,quo,rem (arg1,arg2/3,argp0,argp1)
+ediv:
+	div arg2 arg1	argd0 eoi
 #
 !INSTRUCTIONS
 #
@@ -734,8 +719,9 @@ CVTWL	rw,wl		lbl=mov setnz clv clc clv wback		# 32
 MOVZWL	rw,wl		lbl=zwl setnz clv wback			# 3c
 #
 ASHL	rb,rl,wl	lbl=ashl setnz clc wback		# 78
-#ASHQ	rb,wq,wq	lbl=ashq setnz clc wback wback2		# 79
+ASHQ	rb,rq,wq	lbl=ashq setnz clc wback wback2		# 79
 #
+EDIV	rl,rq,wl,wl	lbl=ediv setnz clc wback wback2		# 7b
 CLRQ	wq		lbl=clrq setnz clv wback wback2		# 7c
 MOVQ	rq,wq		lbl=movq setnz clv wback wback2		# 7d
 #

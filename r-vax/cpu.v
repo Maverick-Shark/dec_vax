@@ -491,14 +491,14 @@ initial psl_ipl = 5'h1f;
 	assign pc_plus_1 = curpc + 1;
 
 `ifdef DBGCNT
-`ifndef notdef
+`ifdef notdef
 wire debug;
 assign debug = 0;
 `else
 reg debug;
 initial debug = 0;
 	always @(posedge clk)
-		if (curpc == 32'h650a)
+		if (curpc == 32'h904d)
 			debug <= 1;
 `endif
 `else
