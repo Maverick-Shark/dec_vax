@@ -491,14 +491,14 @@ initial psl_ipl = 5'h1f;
 	assign pc_plus_1 = curpc + 1;
 
 `ifdef DBGCNT
-`ifndef notdef
+`ifdef notdef
 wire debug;
 assign debug = 0;
 `else
 reg debug;
 initial debug = 0;
 	always @(posedge clk)
-		if (curpc == 32'h904d)
+		if (curpc == 32'h917d)
 			debug <= 1;
 `endif
 `else
@@ -518,8 +518,8 @@ initial debug = 0;
 	 */
 	
 	wire		alu_cry, alu_zero, alu_stb, alu_ack, alu_neg, alu_ovf;
-	wire [31:0]	alu_res;
-	reg [31:0]	alu_right, alu_left;
+	wire [31:0]	alu_res, alu_ures;
+	reg [31:0]	alu_right, alu_left, alu_upper_res;
 	assign alu_stb = (state == `EXEC);
 
 	alu alu(
@@ -537,6 +537,7 @@ initial debug = 0;
 		.use16(s_use16|i_use16),
 		.cry(alu_cry),
 		.zero(alu_zero),
+		.ures(alu_ures),
 		.result(alu_res)
 	);
 
@@ -819,6 +820,7 @@ if (debug) $fdisplay(32'h80000002, "ARGEND: a_rargno %d a_wargno %d arg_aR %d ar
 //if (cur_inst == 8'hed) $fdisplay(32'h80000002, "CMPZV pos %x size %x base %x dest %x pc %x\r", arg[0], arg[1], argp[0], argp[1], oldpc);
 //if (cur_inst == 8'hd8) $fdisplay(32'h80000002, "ADWC arg1 %x arg2 %x psl %x dest %x pc %x\r", arg[0], arg[1], psl, argp[0], oldpc);
 //if (cur_inst == 8'h7b) $fdisplay(32'h80000002, "EDIV arg1 %x arg2 %x arg3 %x psl %x", arg[0], arg[1], arg[2], psl);
+if (cur_inst == 8'h7a) $fdisplay(32'h80000002, "EMUL arg1 %x arg2 %x arg3 %x psl %x", arg[0], arg[1], arg[2], psl);
 			end
 			arg_read_step1 <= 0;
 			arg_read_step2 <= 0;
@@ -841,6 +843,7 @@ if (debug) $fdisplay(32'h80000002, "PREEXEC: op %d sleft %d sright %d scounter %
 			4'b1011: alu_left <= cur_reg_val;
 			4'b1100: alu_left <= rmem_dat;
 			4'b1101: alu_left <= { 28'b0, Ntmp, Ztmp, Vtmp, Ctmp };
+			4'b1110: alu_left <= alu_upper_res;
 			default: alu_left <= 0;
 			endcase
 
@@ -904,6 +907,8 @@ if (debug & alu_ack) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d ste
 			end
 			default: ;
 			endcase
+
+			alu_upper_res <= alu_ures; // used by EMUL
 
 			if ((wr_cond_ok && s_wback) || i_wback) begin
 				writeback <= 1;
@@ -982,6 +987,7 @@ if (debug) $fdisplay(32'h80000002, "ENDINST: pc %x argd[1] %x argpsz[1] %d arg2p
 //if (cur_inst == 8'hed) $fdisplay(32'h80000002, "CMPZV END: argd0 %x argd1 %x pc %x\r", argd[0], argd[1], oldpc);
 //if (cur_inst == 8'hd8) $fdisplay(32'h80000002, "ADWC END: argd0 %x tmpV %d pc %x\r", argd[0], Vtmp, oldpc);
 //if (cur_inst == 8'h7b) $fdisplay(32'h80000002, "EDIV END: argd0 %x argd1 %x psl %x", argd[0], argd[1], psl);
+if (cur_inst == 8'h7a) $fdisplay(32'h80000002, "EMUL END: argd0 %x argd1 %x psl %x", argd[0], argd[1], psl);
 			state <= `S_FETCH;
 
 			if (resopflt) begin

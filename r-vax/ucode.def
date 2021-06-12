@@ -52,7 +52,7 @@
 #
 78	ASHL
 79	ASHQ
-#
+7A	EMUL
 7B	EDIV
 7C	CLRQ
 7D	MOVQ
@@ -111,7 +111,7 @@ B1	CMPW
 B3	BITW
 #
 B5	TSTW
-#
+B6	INCW
 B7	DECW
 B8	BISPSW
 B9	BICPSW
@@ -793,6 +793,28 @@ ediv_end:
 	minus 0 argd1	argd1
 ediv_f18:
 	and argd0 argd0	savnz eoi
+#
+# EMUL f1,f2,add,wq (arg1, arg2, arg3, argp0/p1)
+emul:
+	mul arg1 arg2	argd0		# 382 do mult
+	plus ures 0	argd1		# 383 fetch upper
+	plus argd0 arg3	argd0		# 384 addend
+	# sign extension...
+	asr arg3 31	arg4		# 385
+	plus argd1 arg4	argd1		# 386
+	# ...if sum is less than either
+	minus argd0 arg3 savc		# 387
+	and savpsw 1	zcond goto emul_3f # 388
+	plus 1 argd1	argd1		# 389
+emul_3f:
+	bic F psl	psl		# 390 clear all bits
+	and argd1 argd1	nncond goto emul_1f	# negative?
+	bis 8 psl	psl		# yes, set N flag
+emul_1f:
+	bis argd0 argd1	nzcond goto emul_2f	# zero?
+	bis 4 psl	psl		# yes, set Z flag
+emul_2f:
+	plus 0 0 	eoi
 
 #
 !INSTRUCTIONS
@@ -826,7 +848,7 @@ MOVZWL	rw,wl		lbl=zwl setnz clv wback			# 3c
 #
 ASHL	rb,rl,wl	lbl=ashl setnz clc wback		# 78
 ASHQ	rb,rq,wq	lbl=ashq setnz clc wback wback2		# 79
-#
+EMUL	rl,rl,rl,wq	lbl=emul wback wback2			# 7a
 EDIV	rl,rq,wl,wl	lbl=ediv setnz clc wback wback2		# 7b
 CLRQ	wq		lbl=clrq setnz clv wback wback2		# 7c
 MOVQ	rq,wq		lbl=movq setnz clv wback wback2		# 7d
@@ -854,7 +876,7 @@ CMPB	rb,rb		lbl=sub setnz clv setc			# 91
 BITB	rb,rb		lbl=and setnz clv			# 93
 CLRB	wb		lbl=clr setnz clv wback			# 94
 TSTB	rb		lbl=tst setnz clv clc			# 95
-INCB	mb,rl#1		lbl=add setnz setc use8 wback		# 96
+INCB	mb,rl#1		lbl=add setnz setc setv use8 wback	# 96
 DECB	mb,rl#1		lbl=sub setnz setv setc use8 wback	# 97
 #
 CVTBL	rb,wl		lbl=mov setnz clv clc wback		# 99
@@ -884,7 +906,7 @@ CMPW	rw,rw		lbl=sub setnz clv setc			# b1
 BITW	rw,rw		lbl=and setnz clv			# b3
 #
 TSTW	rw		lbl=tst setnz clv clc			# b5
-#
+INCW	mw,rl#1		lbl=add setnz setc setv use16 wback	# b6
 DECW	mw,rl#1		lbl=sub setnz setv setc use16 wback	# b7
 BISPSW	rw		lbl=bispsw				# b8
 BICPSW	rw		lbl=bicpsw				# b9
@@ -912,7 +934,7 @@ CMPL	rl,rl		lbl=sub setcmpnz clv setc		# d1
 BITL	rl,rl		lbl=and setnz clv 			# d3
 CLRL	wl		lbl=clr setnz clv wback 		# d4
 TSTL	rl		lbl=tst setnz clv clc 			# d5
-INCL	ml,rl#1		lbl=add setnz setc wback		# d6
+INCL	ml,rl#1		lbl=add setnz setc setv wback		# d6
 DECL	ml,rl#1		lbl=sub setnz setv setc wback 		# d7
 #
 ADWC	rl,ml		lbl=adwc setnz wback			# d9

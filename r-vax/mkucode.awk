@@ -221,6 +221,7 @@ BEGIN {
 	leftop["crv"] = 11; # rightop["OPu"] = 10;
 	leftop["rmemdat"] = 12; # rightop["OPu"] = 10;
 	leftop["savpsw"] = 13; # rightop["OPu"] = 10;
+	leftop["ures"] = 14; # rightop["OPu"] = 10;
 
 	# args to microcode instructions
 	stepargs["wipr"] = 12;	# write to IPR

@@ -23,6 +23,7 @@ module alu(
 	output		ovf,
 	output		cry,
 	output		zero,
+	output [31:0]	ures,
 	output [31:0]	result
 );
 
@@ -134,6 +135,7 @@ parameter SHIFT=1;
 	assign isdone = op == `ALU_DIV ? divdone : done;
 	assign ack = stb ? (quick ? 1 : isdone) : 0;
 
+	assign ures = s_res[63:32];
 	assign result = op == `ALU_MUL ? s_res[31:0] : res;
 	assign cry = Ctmp;
 	assign mul_n = use8 ? s_res[7] : use16 ? s_res[15] : s_res[31];
