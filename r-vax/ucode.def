@@ -686,8 +686,114 @@ cvtlw_1f:
 	plus 0 0	eoi
 #
 # EDIV divr,divd,quo,rem (arg1,arg2/3,argp0,argp1)
+# Algorithm here comes from a NOVA programming book.
+# rem == divdu == arg3 == argd1
+# quo == divdl == arg2 == argd0
+#
 ediv:
-	div arg2 arg1	argd0 eoi
+	bic 3 psl	psl		# 326 clear C+V
+	plus 0 0	arg4		# 327 clear a4
+	and arg2 arg2	argd0		# 328 set d0 (future quotient)
+#
+# check if we need to flip signs
+# arg4 bit 0 is quot, bit 1 is rem sign.
+#
+	and arg3 arg3	argd1 nncond goto ediv_f1 # 329 set d1 (rem)
+	and 3 3		arg4		# save divd sign bit
+	minus 0 arg2	argd0
+	minus 0 arg3	argd1
+	minus argd0 1	ncond goto ediv_f1 # check if carry
+	minus argd1 1	argd1
+ediv_f1:
+# check divr negative
+	and arg1 arg1	nncond goto ediv_f2 # 335
+	minus 0 arg1	arg1
+	xor arg4 1	arg4		# low bit whether to flip quot sign
+ediv_f2:
+#
+# Check for overflow (special handling)
+#
+	minus argd1 arg1 nncond goto ediv_ovf # 338 divdh > rem then ovf
+	shl argd1 1	arg2	# 339 ...must also check the sign bit in divdl..
+	and argd0 argd0 nncond goto ediv_f3	# 340 
+	plus arg2 1	arg2			# 341
+ediv_f3:
+	minus arg2 arg1 ncond goto ediv_cmn	# 342
+
+# Overflow handling
+ediv_ovf:
+	and arg4 2	zcond goto ediv_f4	# 343 swap sign on quot?
+	minus 0 argd0	argd0			# 344 yes
+ediv_f4:
+	plus 0 0	argd1			# 345 clear rem
+	bis 2 psl	psl goto ediv_end	# 346 set V and getout
+
+#
+# The division itself.
+# divr in arg1, divd in argd0/argd1
+# arg2 is used for temporary carry
+#
+ediv_cmn:
+	and 20 20	arg3	# 347 loop count
+	shr argd0 1F	arg2	# get sign bit (as carry)
+	bis psl arg2	psl	# store carry in psl
+	shl argd0 1	argd0	# shift quot left
+
+ediv_loop:
+	# MOVL argd1,argd1
+	plus 0 0	arg2	# clear tcy
+	and argd1 argd1 nncond goto ediv_f5 # sign bit set in dvdh?
+	and 1 1		arg2	# set tcy
+ediv_f5:
+	shl argd1 1	argd1
+	and psl 1 	zcond goto ediv_f6
+	bis 1 argd1	argd1
+ediv_f6:
+	bic 1 psl	psl
+	bis arg2 psl	psl
+	# END MOVL
+
+	# SUBH arg1,argd1,SZC
+	plus 0 0	arg2
+	minus argd1 arg1 ncond goto ediv_f7
+	and 1 1		arg2
+ediv_f7:
+	xor psl arg2	arg2
+	and arg2 1	zcond goto ediv_f11
+	# END SUBH arg1,argd1,SZC
+
+	# SUB arg1,argd1
+	plus 0 0	arg2
+	minus argd1 arg1 argd1 ncond goto ediv_f8
+	and 1 1		arg2
+ediv_f8:
+	xor psl arg2	psl
+	# END SUB arg1,argd1
+
+ediv_f11:
+	# MOVL argd0,argd0
+	plus 0 0	arg2
+	and argd0 argd0	nncond goto ediv_f15
+	and 1 1		arg2
+ediv_f15:
+	shl argd0 1	argd0
+	and psl 1	zcond goto ediv_f16
+	bis argd0 1	argd0
+ediv_f16:
+	bic 1 psl	psl
+	bis psl arg2	psl
+	# END MOVL
+
+	minus arg3 1	arg3 nzcond goto ediv_loop
+
+	and arg4 1	zcond goto ediv_end
+	minus 0 argd0	argd0
+ediv_end:
+	and arg4 2	zcond goto ediv_f18
+	minus 0 argd1	argd1
+ediv_f18:
+	and argd0 argd0	savnz eoi
+
 #
 !INSTRUCTIONS
 #
