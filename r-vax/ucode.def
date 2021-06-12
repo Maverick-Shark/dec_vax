@@ -76,7 +76,7 @@
 #
 90	MOVB
 91	CMPB
-#
+92	MCOMB
 93	BITB
 94	CLRB
 95	TSTB
@@ -107,7 +107,7 @@ AF	CASEW
 #
 B0	MOVW
 B1	CMPW
-#
+B2	MCOMW
 B3	BITW
 #
 B5	TSTW
@@ -136,7 +136,7 @@ CE	MNEGL
 CF	CASEL
 D0	MOVL
 D1	CMPL
-#
+D2	MCOML
 D3	BITL
 D4	CLRL
 D5	TSTL
@@ -234,30 +234,27 @@ mtpr:
 
 mtpr_1:
 	minus 3 arg2	nncond goto mtpr_ok	# SSP, ESP, USP
-#	and arg3 arg3	nncond goto mtpr_ok	# SSP, ESP, USP
 # check if ISP
 	minus arg2 4	nzcond goto mtpr_2
-#	and arg3 arg3	nzcond goto mtpr_2
 	shr psl 1A	arg3
 	and arg3 1	zcond goto mtpr_ok	# not on ISP, get out
-#	and arg3 arg3	zcond goto mtpr_ok	# not on ISP, get out
 	and C000 C000	arg3			# create wback encoding
 	shl arg3 10	arg3
 	plus arg3 E	argp0 wback
 	and arg1 arg1	argd0 goto mtpr_ok
 mtpr_2:
 	minus arg2 11	zcond goto mtpr_ok	# Accept SCBB
-#	and arg3 arg3	zcond goto mtpr_ok	# Accept SCBB
 
-	minus arg2 23	nzcond goto mtpr_3	# jump if not TXDB
-#	and arg3 arg3	nzcond goto mtpr_3	# jump if not TXDB
+	minus arg2 23	nzcond goto mtpr_23	# jump if not TXDB
 	plus arg1 0	crw
 	and 2000 2000	arg3
 	shl arg3 10	arg3
 	plus arg3 1F76	cpuaddr wmem
 	plus 0 0	eoi
 
-mtpr_3:
+mtpr_23:
+	minus arg2 25	zcond goto mtpr_ok
+
 	plus 0 0	resopflt eoi
 
 # OK to write to IPR
@@ -288,6 +285,9 @@ mfpr_2:
 	plus arg3 1F70	cpuaddr rmem
 	plus rmemdat 0	argd0 eoi
 mfpr_3:
+	minus arg1 25	nzcond goto mfpr_25
+	plus 0 0	eoi
+mfpr_25:
 	plus 0 0	resopflt eoi
 
 #
@@ -815,7 +815,10 @@ emul_1f:
 	bis 4 psl	psl		# yes, set Z flag
 emul_2f:
 	plus 0 0 	eoi
-
+#
+mcom:
+	minus 0 arg2	arg2
+	xor arg2 arg1	argd0 savnz eoi
 #
 !INSTRUCTIONS
 #
@@ -867,12 +870,11 @@ BICB2	rb,mb		lbl=bic setnz clv use8 wback		# 8a
 BICB3	rb,rb,wb	lbl=bic setnz clv use8 wback		# 8b
 XORB2	rb,mb		lbl=xor setnz clv use8 wback		# 8c
 XORB3	rb,rb,wb	lbl=xor setnz clv use8 wback		# 8d
-#
+MNEGB	rl#0,rb,wb	lbl=sub setnz setc setv use8 wback	# 8e
 CASEB	rb,rb,rb,rl#pc,wl#pc	lbl=caseb setnz clv setc wback	# 8f
-#
 MOVB	rb,wb		lbl=mov setnz clv wback			# 90
 CMPB	rb,rb		lbl=sub setnz clv setc			# 91
-#
+MCOMB	rb,rl#1,wb	lbl=mcom setnz clv wback		# 92
 BITB	rb,rb		lbl=and setnz clv			# 93
 CLRB	wb		lbl=clr setnz clv wback			# 94
 TSTB	rb		lbl=tst setnz clv clc			# 95
@@ -898,11 +900,11 @@ BICW2	rw,mw		lbl=bic setnz clv use16 wback		# aa
 BICW3	rw,rw,ww	lbl=bic setnz clv use16 wback		# ab
 XORW2	rw,mw		lbl=xor setnz clv use16 wback		# ac
 XORW3	rw,rw,ww	lbl=xor setnz clv use16 wback		# ad
-#
+MNEGW	rl#0,rw,ww	lbl=sub setnz setc setv use16 wback	# ae
 CASEW	rw,rw,rw,rl#pc,wl#pc	lbl=casew setnz clv setc wback	# af
 MOVW	rw,ww		lbl=mov setnz clv wback			# b0
 CMPW	rw,rw		lbl=sub setnz clv setc			# b1
-#
+MCOMW	rw,rl#1,ww	lbl=mcom setnz clv use16 wback		# b2
 BITW	rw,rw		lbl=and setnz clv			# b3
 #
 TSTW	rw		lbl=tst setnz clv clc			# b5
@@ -930,7 +932,7 @@ MNEGL	rl#0,rl,wl	lbl=sub setnz setv setc wback		# ce
 CASEL	rl,rl,rl,rl#pc,wl#pc	lbl=casel setnz clv setc wback	# cf
 MOVL	rl,wl		lbl=mov setnz clv wback			# d0
 CMPL	rl,rl		lbl=sub setcmpnz clv setc		# d1
-#
+MCOML	rl,rl#1,wl	lbl=mcom setnz clv wback		# d2
 BITL	rl,rl		lbl=and setnz clv 			# d3
 CLRL	wl		lbl=clr setnz clv wback 		# d4
 TSTL	rl		lbl=tst setnz clv clc 			# d5
