@@ -163,7 +163,7 @@ module vcache(
 			in_ack <= 1;
 			state <= `SETTLE;
 		end
-		`SLOWRMEM: if (UT_ACK_I) begin
+		`SLOWRMEM: if (UT_ACK_I | in_mcheck) begin
 			/* got first word */
 			quad[31:0] <= UT_DAT_I;
 			ut_stb <= 0;

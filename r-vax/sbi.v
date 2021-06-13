@@ -237,6 +237,7 @@ defparam console.tto.CLKPERBIT = 2604;
 //		$fdisplay(32'h80000002, "ROM: adr %x ack %d data %x\r", sw_to_mem_addr, rom_to_pc_ack, rom_to_pc_rdata);
 //end
 
+`ifdef notdef
 	mcode mcode(
 		.clk(clk),
 
@@ -245,5 +246,6 @@ defparam console.tto.CLKPERBIT = 2604;
 		.DAT_O(rom_to_pc_rdata),
 		.ACK_O(rom_to_pc_ack)
 	);
+`endif
 
 endmodule
