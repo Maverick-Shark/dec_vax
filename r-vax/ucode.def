@@ -863,15 +863,12 @@ movc3:
 	and savpsw 1	zcond goto movc3_backw
 # forward copy
 movc3_f_loop:
-	and arg1 arg1	zcond goto movc3_f_done
+	and arg1 arg1	zcond goto movc3_done
 	# fixa r/w
 
 	minus arg1 1	arg1
 	plus arg2 1	arg2
 	plus arg3 1	arg3 goto movc3_f_loop
-movc3_f_done:
-	bic F psl	psl
-	bis 4 psl	psl goto movc3_done
 
 movc3_backw:
 	and arg1 FFFF	arg1	# ZEXT arg1
@@ -893,7 +890,7 @@ movc3_b_done:
 # Write R0,R2,R4,R5 == 0, R1=tmp2, R3=tmp3
 #
 movc3_done:
-	and 0 0		crn
+	and 0 0		crn savnz	# Z flag set
 	and 0 0		crw wreg
 	and 2 2		crn
 	and 0 0		crw wreg
@@ -931,7 +928,7 @@ BVS	ab#b^d(pc),rl#2,wl#pc	lbl=bset 			# 1d
 BGEQU	ab#b^d(pc),rl#1,wl#pc	lbl=bclr			# 1e
 BLSSU	ab#b^d(pc),rl#1,wl#pc	lbl=bset			# 1f
 #
-MOVC3	rw,ab,ab	lbl=movc3				# 28
+MOVC3	rw,ab,ab	lbl=movc3 setnz clc clv			# 28
 #
 BSBW	0aw#w^d(pc),2rl#pc,wl#pc,wl#-(sp)	lbl=mov move2 wback wback2 
 BRW	aw#w^d(pc),wl#pc	lbl=mov wback 			# 31
