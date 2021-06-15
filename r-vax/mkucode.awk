@@ -242,6 +242,7 @@ BEGIN {
 	stepargs["use8"] = 31;	# Use 8-bit for alu
 	stepargs["resopflt"] = 32; # generate resopflt
 	stepargs["use16"] = 33;	# Use 16-bit for alu
+	stepargs["phys"] = 34;	# Address physical memory
 
 	# destination for alu result
 	alures["psl"] = 1;

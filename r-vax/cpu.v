@@ -271,7 +271,7 @@ initial psl_ipl = 5'h1f;
 	wire isvalid, anyfault;
 	assign halted = (state == `S_HALT) || manhalt;
 	assign isvalid = (itag[31:2] == curpc[31:2]) && ivalid;
-	assign anyfault = resinflt | resadflt | resopflt;
+	assign anyfault = resinflt | resadflt | resopflt | mcheck;
 
 	always @(posedge clk) begin
 		if (CPU_STB_O == 0) begin
@@ -334,16 +334,16 @@ initial psl_ipl = 5'h1f;
 	wire		a_wargno;
 	reg [7:0]	acounter, curarg;
 
-	wire		s_enable, s_eoi;
+	wire		s_eoi;
 	wire		s_nzcond, s_zcond, s_wback, s_savc, s_savnz, s_savv;
-	wire		s_nncond, s_ncond, s_wback2, s_goto, s_rmem;
+	wire		s_nncond, s_ncond, s_wback2, s_goto, s_rmem, s_phys;
 	wire		s_resopflt, s_wipr, s_wmem, s_wreg, s_use8, s_use16;
 	wire [3:0]	s_dest;
-	wire [8:0]	s_stepoff, i_stepoff;
+	wire [8:0]	i_stepoff;
 	wire [3:0]	s_op, s_left, s_right;
 	wire [15:0]	s_const, s_addr;
-	reg [8:0]	scounter;
-	
+	reg [8:0]	scounter, s_stepoff;
+	reg		s_enable;
 
 	assign i_enable = (state == `S_FETCH) && isvalid;
 	assign a_enable = (state == `S_DECODE) || (state == `ARGEND);
@@ -408,6 +408,7 @@ initial psl_ipl = 5'h1f;
 		.s_use8(s_use8),
 		.s_use16(s_use16),
 		.s_resopflt(s_resopflt),
+		.s_phys(s_phys),
 
 		.s_const(s_const),
 		.s_addr(s_addr),
@@ -547,10 +548,40 @@ initial debug = 0;
 	    (s_nzcond == 0 && s_zcond == 0 && s_ncond == 0 && s_nncond == 0) ||
 	    (s_zcond && alu_zero) || (s_nzcond && alu_zero == 0) ||
 	    (s_ncond && alu_neg) || (s_nncond && alu_neg == 0);
-	assign s_stepoff = (state == `S_DECODE) ? i_stepoff : 
-	    wr_cond_ok && s_goto ? s_addr[8:0] : scounter;
-	assign s_enable = (state == `S_DECODE) || 
+`ifdef notdef
+	assign s_stepoff =
+	    (state == `S_DECODE) ? i_stepoff : 
+	    (state == `ENDINST && anyfault) ? (mcheck ? 1 : resopflt ? 2 : 0) :
+	    (state == `EXEC && wr_cond_ok && s_goto) ? s_addr[8:0] : scounter;
+	assign s_enable = (state == `S_DECODE) ||
+	    (state == `ENDINST && anyfault) ||
 	    ((state == `EXEC) && alu_ack);
+`else
+	wire [3:0]	vecoff;
+	assign vecoff = mcheck ? 1 : resopflt ? 2 : 0;
+
+	always @* begin
+		case (state)
+		`S_DECODE: begin
+			s_stepoff = i_stepoff;
+			s_enable = 1;
+		end
+		`ENDINST: begin
+			s_stepoff = { 5'b0, vecoff };
+			s_enable = anyfault;
+		end
+		`EXEC: begin
+			s_stepoff = (wr_cond_ok && s_goto) ?
+			    s_addr[8:0] : scounter;
+			s_enable = alu_ack;
+		end
+		default: begin
+			s_stepoff = 9'b0;
+			s_enable = 0;
+		end
+		endcase
+	end
+`endif
 
 	always @(posedge clk) begin
 		if (rst)
@@ -815,7 +846,7 @@ if (debug) $fdisplay(32'h80000002, "ARGEND: a_rargno %d a_wargno %d arg_aR %d ar
 				cur_reg_num_save <= `REG_SP;
 			end else /* if (|scounter) */ begin
 				state <= `PREEXEC;
-//if (cur_inst == 8'hf0) $fdisplay(32'h80000002, "INSV pos %x size %x base %x src %x pc %x\r", arg[0], arg[1], arg[2], arg[3], oldpc);
+if (cur_inst == 8'hf0) $fdisplay(32'h80000002, "INSV pos %x size %x base %x src %x pc %x\r", arg[0], arg[1], arg[2], arg[3], oldpc);
 //if (cur_inst == 8'hef) $fdisplay(32'h80000002, "EXTZV pos %x size %x base %x dest %x pc %x\r", arg[0], arg[1], argp[0], argp[1], oldpc);
 //if (cur_inst == 8'hed) $fdisplay(32'h80000002, "CMPZV pos %x size %x base %x dest %x pc %x\r", arg[0], arg[1], argp[0], argp[1], oldpc);
 //if (cur_inst == 8'hd8) $fdisplay(32'h80000002, "ADWC arg1 %x arg2 %x psl %x dest %x pc %x\r", arg[0], arg[1], psl, argp[0], oldpc);
@@ -866,7 +897,7 @@ if (debug) $fdisplay(32'h80000002, "PREEXEC: op %d sleft %d sright %d scounter %
 		end
 
 		`EXEC: begin
-if (debug & alu_ack) $fdisplay(32'h80000002, "EXEC: left %x right %x dest %d eoi %d ", alu_left, alu_right, s_dest, s_eoi);
+if (debug & alu_ack) $fdisplay(32'h80000002, "EXEC: left %x right %x dest %d eoi %d goto %d", alu_left, alu_right, s_dest, s_eoi, s_goto);
 if (debug & alu_ack) $fdisplay(32'h80000002, "wb %d iwb %d wb2 %d iwb2 %d wrok %d aluz %d alun %d AN %d AZ %d AV %d AC %d", s_wback, i_wback, s_wback2, i_wback2, wr_cond_ok, alu_zero, alu_neg, alu_neg, alu_zero, alu_ovf, alu_cry);
 if (debug & alu_ack) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d stepoff %d wrcond %d wipr %d res %x\r", alu_stb, alu_ack, s_enable, s_stepoff, wr_cond_ok, s_wipr, alu_res);
 //if (cur_inst == 8'hf0) $fdisplay(32'h80000002, "EXECSTEP: sc %d left %x right %x res %x xres %x\r", scounter-8'h01, alu_left, alu_right, alu_res, xxres);
@@ -953,7 +984,7 @@ if (debug & alu_ack) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d ste
 				end else if (s_wmem) begin
 					state <= `S_WRITEMEM;
 					wmemstate <= `WMEM_PREEXEC;
-					cpu_pmem <= 1; // XXX
+					cpu_pmem <= s_phys;
 				end else if (s_wipr) begin
 					state <= `WRITEIPR;
 				end else if (s_rmem) begin
@@ -975,6 +1006,7 @@ if (debug & alu_ack) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d ste
 			/* copy third arg XXX */
 			if (i_move2)
 				argd[1] <= arg[2];
+if (resopflt)$fdisplay(32'h80000002, "EXEC: resopflt\r");
 		end
 
 		/*
@@ -984,7 +1016,7 @@ if (debug & alu_ack) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d ste
 		`ENDINST: begin
 if (debug) $fdisplay(32'h80000002, "ENDINST: pc %x argd[0] %x argpsz[0] %d arg1p %x isreg %d regno %d wb %d\r", curpc, argd[0], argp_size[0], argp[0], argp_isreg[0], argp_regnum[0], writeback);
 if (debug) $fdisplay(32'h80000002, "ENDINST: pc %x argd[1] %x argpsz[1] %d arg2p %x isreg %d regno %d wb %d\r", curpc, argd[1], argp_size[1], argp[1], argp_isreg[1], argp_regnum[1], writeback2);
-//if (cur_inst == 8'hf0) $fdisplay(32'h80000002, "INSV END: argd0 %x argd1 %x\r", argd[0], argd[1]);
+if (cur_inst == 8'hf0) $fdisplay(32'h80000002, "INSV END: argd0 %x argd1 %x\r", argd[0], argd[1]);
 //if (cur_inst == 8'hef) $fdisplay(32'h80000002, "EXTZV END: argd0 %x argp0 %x pc %x\r", argd[0], argp[0], oldpc);
 //if (cur_inst == 8'hed) $fdisplay(32'h80000002, "CMPZV END: argd0 %x argd1 %x pc %x\r", argd[0], argd[1], oldpc);
 //if (cur_inst == 8'hd8) $fdisplay(32'h80000002, "ADWC END: argd0 %x tmpV %d pc %x\r", argd[0], Vtmp, oldpc);
@@ -993,8 +1025,9 @@ if (debug) $fdisplay(32'h80000002, "ENDINST: pc %x argd[1] %x argpsz[1] %d arg2p
 if (cur_inst == 8'h28) $fdisplay(32'h80000002, "MOVC3 END: R1 %x R3 %x psl %x", general_reg[1], general_reg[3], psl);
 			state <= `S_FETCH;
 
-			if (resopflt) begin
-				scounter <= 0;
+			if (resopflt|mcheck) begin
+				scounter <= { 5'b0, vecoff };
+$fdisplay(32'h80000002, "ENDINST: sc %d anyfault %d s_enable %d s_stepoff %d\r", mcheck ? 1 : resopflt ? 2 : 0, anyfault, s_enable, s_stepoff);
 				state <= `PREEXEC;
 				resopflt <= 0;
 			end else if (anyfault) begin
@@ -1069,7 +1102,6 @@ if (debug) $fdisplay(32'h80000002, "WB1: argd1 %x size %d addr %x\r", argd[1], a
 				psw[`PSL_C] <= Ctmp;
 			if (step)
 				delay_halt <= 1;
-			cpu_pmem <= 0;
 		end
 
 		/*
@@ -1150,6 +1182,7 @@ $fdisplay(32'h80000002, "MCODE: ctr %d mc_rv %x\r", mcodectr, mc_rv);
 		`S_WRITEMEM2: if (cpu_acki) begin
 			cpu_write <= 0;
 			cpu_stb <= 0;
+			cpu_pmem <= 0;
 // if (debug || cur_inst == 8'hed || cpu_addr == 32'h00000238 || cpu_addr == 32'h0000023c) $fdisplay(32'h80000002, "S_WRITEMEM2: addr %x dat %x pc %x\r", cpu_addr, CPU_DAT_O, oldpc);
 			case (wmemstate)
 			`WMEM_MCODE: state <= `MCODE;
@@ -1157,8 +1190,10 @@ $fdisplay(32'h80000002, "MCODE: ctr %d mc_rv %x\r", mcodectr, mc_rv);
 			`WMEM_xENDINST: state <= `ENDINST;
 			default: state <= `S_HALT;
 			endcase
-			if (mcheck)
+			if (mcheck) begin
 				state <= `S_HALT;
+				haltpos <= `HALT_MCHECK;
+			end
 		end
 
 		`S_READMEM: begin
@@ -1172,6 +1207,7 @@ if (debug || cur_inst == 8'hed || cpu_addr == 32'h00000238 || cpu_addr == 32'h00
 //if (cpu_addr > 32'h00ffffff && cpu_addr[31:4] != 28'h20001f7) $display("S_READMEM2: addr %x pc %x", cpu_addr, curpc);
 			rmem_dat <= CPU_DAT_I;
 			cpu_stb <= 0;
+			cpu_pmem <= 0;
 			case (rmemstate)
 			`RMEM_ARG_INDIR: state <= `ARG_INDIR;
 			`RMEM_PREEXEC: state <= `PREEXEC;
@@ -1181,8 +1217,9 @@ if (debug || cur_inst == 8'hed || cpu_addr == 32'h00000238 || cpu_addr == 32'h00
 			default: state <= `S_HALT;
 			endcase
 			if (mcheck) begin
-				state <= `S_HALT;
-				haltpos <= `HALT_MCHECK;
+				state <= `ENDINST;
+//				state <= `S_HALT;
+//				haltpos <= `HALT_MCHECK;
 			end
 		end
 

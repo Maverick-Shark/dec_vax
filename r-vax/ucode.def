@@ -184,7 +184,33 @@ F7	CVTLW
 # [label:] op left right	[args...]
 #
 # First entries for exceptions, get numbers from 0
-	plus 0 0	goto resop	# entry 0
+	plus 0 0			# entry 0, unused
+	plus 0 0	goto mcheck	# entry 1
+	plus 0 0	goto resop	# entry 2
+
+#
+# Machine check.  Frame has pc+psl+argcnt, argcnt is 0.
+# Ignore stack change for now.
+#
+mcheck:
+	and E E		crn		# 3 fetch stack pointer
+	minus crv 4	argp0		# 4 save stack address
+	plus psl 0	crw		# 5 psl to write
+	minus argp0 4	cpuaddr wmem	# 6 save psl on stack
+	and F F		crn		# 7
+	plus crv 0	crw		# 8
+	minus argp0 8	cpuaddr wmem	# 9 save pc on stack
+	plus 0 0	crw		# 10
+	minus argp0 C	cpuaddr wmem	# 11 byte count (0)
+	and E E		crn		# 12
+	minus argp0 C	crw wreg	# 13 restore stack pointer
+
+	and 11 11	crn		# 14  SCBB offset
+	plus civ 4	cpuaddr rmem phys # 15  fetch vector
+	and F F		crn		# 16
+	plus rmemdat 0	crw wreg	# 17 new pc
+	plus 0 0	eoi		# 18
+	
 
 resop:	
 # create stack frame
@@ -198,7 +224,7 @@ resop:
 # fetch resop vector (18) and store in pc
 
 	and 11 11	crn		# 8  SCBB offset
-	plus civ 18	cpuaddr rmem	# 9  fetch vector
+	plus civ 18	cpuaddr rmem phys	# 9  fetch vector
 	and F F		crn		# 10
 	plus rmemdat 0	crw wreg	# 11 new pc
 	plus 0 0	eoi
@@ -253,11 +279,12 @@ mtpr_2:
 	plus arg1 0	crw
 	and 2000 2000	arg3
 	shl arg3 10	arg3
-	plus arg3 1F76	cpuaddr wmem
+	plus arg3 1F76	cpuaddr wmem phys
 	plus 0 0	eoi
 
 mtpr_23:
-	minus arg2 25	zcond goto mtpr_ok
+	minus arg2 25	zcond goto mtpr_ok	# 11/750 CADR
+	minus arg2 26	zcond goto mtpr_ok	# 11/750 MCESR
 
 	plus 0 0	resopflt eoi
 
@@ -279,14 +306,14 @@ mfpr_1:
 	minus arg1 22	nzcond goto mfpr_2	# TXCS
 	and 2000 2000	arg3
 	shl arg3 10	arg3
-	plus arg3 1F74	cpuaddr rmem
+	plus arg3 1F74	cpuaddr rmem phys
 	plus rmemdat 0	argd0 eoi
 mfpr_2:
 #	and 20 20	arg3
 	minus arg1 20	nzcond goto mfpr_3	# RXCS
 	and 2000 2000	arg3
 	shl arg3 10	arg3
-	plus arg3 1F70	cpuaddr rmem
+	plus arg3 1F70	cpuaddr rmem phys
 	plus rmemdat 0	argd0 eoi
 mfpr_3:
 	minus arg1 25	nzcond goto mfpr_25

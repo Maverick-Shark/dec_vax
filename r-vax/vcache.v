@@ -181,7 +181,7 @@ module vcache(
 			ut_stb <= 1; /* start next word */
 			state <= `SLOWRMEM3;
 		end
-		`SLOWRMEM3: if (UT_ACK_I) begin
+		`SLOWRMEM3: if (UT_ACK_I || in_mcheck) begin
 			quad[63:32] <= UT_DAT_I;
 			ut_stb <= 0;
 			if (IN_WE_I == 0)
