@@ -989,6 +989,7 @@ if (debug & alu_ack) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d ste
 					state <= `WRITEIPR;
 				end else if (s_rmem) begin
 					state <= `S_READMEM;
+					cpu_pmem <= s_phys;
 					rmemstate <= `RMEM_PREEXEC;
 				end else if (s_eoi) begin
 					state <= `ENDINST;

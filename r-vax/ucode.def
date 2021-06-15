@@ -851,6 +851,12 @@ mcom:
 	minus 0 arg2	arg2
 	xor arg2 arg1	argd0 savnz eoi
 #
+# REI pc=arg1, psl=arg2
+rei:
+	# Need a lot of checks here...
+	plus arg2 0	psl
+	plus arg1 0	argd0 eoi
+#
 # code from the vax arch manual
 movc3:
 	minus arg3 arg2	savc	# copy from back or forward?
@@ -868,9 +874,21 @@ movc3_f_done:
 	bis 4 psl	psl goto movc3_done
 
 movc3_backw:
-	plus 0 0	resopflt eoi
+	and arg1 FFFF	arg1	# ZEXT arg1
+	plus arg1 0	arg4	# save arg1 in arg4
+	plus arg2 arg1	arg2	# arg2 to end
+	plus arg3 arg1	arg3	# arg3 to end
+movc3_b_loop:
+	and arg1 arg1	zcond goto movc3_b_done
+	minus arg1 1	arg1
+	minus arg2 1	arg2
+	minus arg3 1	arg3
 
-
+	# fixa r/w
+	plus 0 0	goto movc3_b_loop
+movc3_b_done:
+	plus arg2 arg4	arg2
+	plus arg3 arg4	arg3
 #
 # Write R0,R2,R4,R5 == 0, R1=tmp2, R3=tmp3
 #
@@ -891,7 +909,8 @@ movc3_done:
 #
 !INSTRUCTIONS
 #
-NOP	rl#0,rl#0		lbl=add				# 02
+NOP	rl#0,rl#0		lbl=add				# 01
+REI	rl#(sp)+,rl#(sp)+,wl#pc	lbl=rei wback			# 02
 #
 RSB	rl#(sp)+,wl#pc	lbl=mov wback				# 05
 #
@@ -912,7 +931,7 @@ BVS	ab#b^d(pc),rl#2,wl#pc	lbl=bset 			# 1d
 BGEQU	ab#b^d(pc),rl#1,wl#pc	lbl=bclr			# 1e
 BLSSU	ab#b^d(pc),rl#1,wl#pc	lbl=bset			# 1f
 #
-#MOVC3	rw,ab,ab	lbl=movc3				# 28
+MOVC3	rw,ab,ab	lbl=movc3				# 28
 #
 BSBW	0aw#w^d(pc),2rl#pc,wl#pc,wl#-(sp)	lbl=mov move2 wback wback2 
 BRW	aw#w^d(pc),wl#pc	lbl=mov wback 			# 31
