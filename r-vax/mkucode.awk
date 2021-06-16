@@ -243,6 +243,13 @@ BEGIN {
 	stepargs["resopflt"] = 32; # generate resopflt
 	stepargs["use16"] = 33;	# Use 16-bit for alu
 	stepargs["phys"] = 34;	# Address physical memory
+	# 35-36 are size
+
+	# sizes
+	sizeres["byte"] = 0;
+	sizeres["word"] = 1;
+	sizeres["long"] = 2;
+	sizeres["quad"] = 3;
 
 	# destination for alu result
 	alures["psl"] = 1;
@@ -320,6 +327,7 @@ BEGIN {
 
 			# bit 0-11 are input and op of the ALU.
 			# 
+			gotsize = 0;
 			for (i = shiftoff; i <= NF; i++) {
 				if ($i == "#")
 					break;
@@ -332,6 +340,14 @@ BEGIN {
 					    substr(s,47);
 					continue;
 				}
+				if ($i in sizeres) {
+					s = ucstep[stepoff];
+					ucstep[stepoff] = substr(s,1,35) \
+					    num2bit(sizeres[$i], 2) \
+					    substr(s,38);
+					gotsize = 1;
+					continue;
+				}
 				if (!($i in stepargs))
 					err($i " not in stepargs");
 				ucstep[stepoff] = \
@@ -341,6 +357,12 @@ BEGIN {
 			#		resolve[$i] = stepoff;
 					resolve[stepoff] = $i;
 				}
+			}
+			# compat
+			if (gotsize == 0) {
+				s = ucstep[stepoff];
+				ucstep[stepoff] = substr(s,1,35) \
+				    "10" substr(s,38);
 			}
 			stepoff++;
 			continue;

@@ -121,7 +121,10 @@ sdramexec(Vnvax *tb)
 void
 loadfile(char *fn, int off)
 {
-	int fd, s;
+	int fd, s, i;
+
+//	for (i = 0; i < SDRAMSZ/2; i++)
+//		sdramet[i] = 0xA55A;
 
 	if ((fd = open(fn, O_RDONLY)) < 0)
 		err(1, "open");

@@ -85,6 +85,7 @@ module ucode(
 	output			s_use16,
 	output			s_resopflt,
 	output			s_phys,
+	output [1:0]		s_size,
 
 	output [15:0]		s_const,
 	output [15:0]		s_addr,
@@ -157,6 +158,7 @@ parameter	S_ROM_ADDRS = 512;
 	assign s_resopflt = ucstep_data[32];
 	assign s_use16 = ucstep_data[33];
 	assign s_phys = ucstep_data[34];
+	assign s_size = ucstep_data[36:35];
 	assign s_addr = ucstep_data[55:40];
 	assign s_const = ucstep_data[71:56];
 
