@@ -24,6 +24,7 @@
 01	NOP
 02	REI
 #
+04	RET
 05	RSB
 #
 10	BSBB
@@ -180,6 +181,9 @@ F4	SOBGEQ
 F5	SOBGTR
 F6	CVTLB
 F7	CVTLW
+#
+FA	CALLG
+FB	CALLS
 #
 !MICROCODE
 #
@@ -1013,6 +1017,69 @@ cmpc5_exit:
 	and 3 3			crn
 	plus arg4 0		crw wreg
 	minus argd0 argd1	savnz savc eoi
+#
+# CALLG arg1,arg2,arg3 (arglist, dst, sp(fake))
+#
+callg:
+	and arg3 3		argp1	# 527 stack align bits
+	bic 3 arg3		arg3	# arg3 now aligned stack
+	and arg2 arg2		cpuaddr rmem word # reg mask
+
+	and rmemdat FFFF	argd1	# 530 save entry word
+	shl rmemdat 14		arg4	# entry mask left shifted
+	and B B			argd0	# 11 regs
+# save regs
+callg_rloop:
+	and arg4 arg4		nncond goto callg_rloop1 # 533 skip if no save
+
+	plus argd0 0		crn	# set cur_reg_num
+	plus crv 0		crw	# put cur_reg_val in wdata
+	minus arg3 4		cpuaddr wmem long # write to stack
+	minus arg3 4		arg3 		# write to stack
+
+callg_rloop1:
+	shl arg4 1		arg4 zcond goto callg_sreg # getout if empty
+	minus argd0 1		argd0 goto callg_rloop	# sub 539 reg num
+
+# save PC/FP/AP
+callg_sreg:
+	and F F			crn	# 540 PC
+	plus crv 0		crw	# put cur_reg_val in wdata
+	minus arg3 4		cpuaddr wmem long	 # write to stack
+	and D D			crn	# FP
+	plus crv 0		crw	# 544 put cur_reg_val in wdata
+	minus arg3 8		cpuaddr wmem long	 # write to stack
+	and C C			crn	# 546 AP
+	plus crv 0		crw	# put cur_reg_val in wdata
+	minus arg3 C		cpuaddr wmem long	 # 548 write to stack
+
+# create next words to save
+	shl argp1 E		argd0	# 550 stack align in bit 15-14
+	and argd1 FFF		arg4	# only reg mask bit 0-11
+	bis argd0 arg4		argd0	# merge
+	shl argd0 10		argd0	# put in bit 31-16
+	and psl FFE0		arg4
+	bis arg4 argd0		crw	# mask finished
+	minus arg3 10		cpuaddr wmem long # 556
+	and 0 0			crw	# zero longword
+	minus arg3 14		cpuaddr wmem long
+#  give regs new values
+	and D D			crn	# 559
+	minus arg3 14		crw wreg # set FP to SP
+	and E E			crn
+	minus arg3 14		crw wreg # set SP to SP
+	and C C			crn
+	and arg1 arg1		crw wreg # set AP to arglist
+	bic EF psl		psl	# clear psw except T
+	and argd1 8000		zcond goto callg_2 # 566
+	bis psl 80		psl	# set DV
+callg_2:
+	and argd1 4000		zcond goto callg_3
+	bis psl 20		psl	# set IV
+callg_3:
+	and F F			crn
+	plus arg2 2		crw wreg # set PC
+	plus 0 0		eoi	# DONE
 
 #
 !INSTRUCTIONS
@@ -1173,3 +1240,6 @@ SOBGEQ	ml,ab#b^d(pc),wl#pc lbl=sobgeq setnz setv wback		# f4
 SOBGTR	ml,ab#b^d(pc),wl#pc lbl=sobgtr setnz setv wback		# f5
 #
 CVTLW	rl,ww	lbl=cvtlw setnz clc wback			# f7
+#
+CALLG	ab,ab,rl#sp	lbl=callg 				# fa
+#CALLS	rl,ab		lbl=calls 				# fb

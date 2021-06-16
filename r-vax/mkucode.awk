@@ -199,6 +199,7 @@ BEGIN {
 	fakearg["5"] = "00000101";
 	fakearg["8"] = "00001000";
 	fakearg["C"] = "00001100";
+	fakearg["sp"] = "01011110";
 	fakearg["pc"] = "01011111";
 	fakearg["(sp)+"] = "10001110";
 	fakearg["-(sp)"] = "01111110";
@@ -460,11 +461,11 @@ BEGIN {
 				lbl = substr($i,5);
 				if (lbl in steplbl) {
 #printf "lbl %s step %s insl1 %s\n", lbl, steplbl[lbl], inslist[insnr];
-					lbbits = num2bit(steplbl[lbl], 9);
+					lbbits = num2bit(steplbl[lbl], 10);
 #printf "1: %s %s %s\n", substr(inslist[insnr], 1, 64-56), num2bit(steplbl[lbl], 9), substr(inslist[insnr], 1, 64-46);
 					inslist[insnr] = \
-					    substr(inslist[insnr], 1, 64-56) \
-					    num2bit(steplbl[lbl], 9) \
+					    substr(inslist[insnr], 1, 64-57) \
+					    num2bit(steplbl[lbl], 10) \
 					    substr(inslist[insnr], 64-46);
 #printf "lbl2 %s step %s insl1 %s\n", lbl, steplbl[lbl], inslist[insnr];
 				} else
