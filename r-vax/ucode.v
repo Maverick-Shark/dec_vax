@@ -55,11 +55,11 @@ module ucode(
 	output			i_move2,
 	output			i_wback2,
 
-	output [8:0]		i_stepoff,
+	output [9:0]		i_stepoff,
 
 	/* Microcode step ROM */
 	input			s_enable,
-	input [8:0]		s_stepoff,
+	input [9:0]		s_stepoff,
 
 	output [3:0]		s_left,
 	output [3:0]		s_right,
@@ -109,7 +109,7 @@ parameter	I_ROM_ADDRS = 256;
 parameter	A_ROM_WIDTH = 64;
 parameter	A_ROM_ADDRS = 256;
 parameter	S_ROM_WIDTH = 72;
-parameter	S_ROM_ADDRS = 512;
+parameter	S_ROM_ADDRS = 1024;
 
 	reg [I_ROM_WIDTH-1:0] ucinsn_rom [I_ROM_ADDRS-1:0];
 	reg [I_ROM_WIDTH-1:0] ucinsn_data;
@@ -180,7 +180,7 @@ parameter	S_ROM_ADDRS = 512;
 	assign i_move2 = ucinsn_data[`MOVE2];
 	assign i_wback2 = ucinsn_data[`WBACK2];
 
-	assign i_stepoff = ucinsn_data[55:47];
+	assign i_stepoff = ucinsn_data[56:47];
 
 	assign a_argcode = ucargs_data[2:0];
 	assign a_argsz = ucargs_data[4:3];

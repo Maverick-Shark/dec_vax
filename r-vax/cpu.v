@@ -232,7 +232,7 @@ initial psl_ipl = 5'h1f;
 	reg [3:0] cur_reg_num_save;
 /* verilator lint_on UNUSED */
 	assign cur_reg_num = cur_byte[3:0];
-	assign arg_read_add = indir_OA + IA + { arg_read_step1 ? 4 : 0 };
+	assign arg_read_add = indir_OA + IA + { arg_read_step1 ? 32'h4 : 32'b0 };
 
 	/*
 	 * get current instruction byte based on pc.
@@ -340,10 +340,10 @@ initial psl_ipl = 5'h1f;
 	wire		s_resopflt, s_wipr, s_wmem, s_wreg, s_use8, s_use16;
 	wire [1:0]	s_size;
 	wire [3:0]	s_dest;
-	wire [8:0]	i_stepoff;
+	wire [9:0]	i_stepoff;
 	wire [3:0]	s_op, s_left, s_right;
 	wire [15:0]	s_const, s_addr;
-	reg [8:0]	scounter, s_stepoff;
+	reg [9:0]	scounter, s_stepoff;
 	reg		s_enable;
 
 	assign i_enable = (state == `S_FETCH) && isvalid;
@@ -496,7 +496,7 @@ initial psl_ipl = 5'h1f;
 `ifdef DBGCNT
 `ifndef notdef
 wire debug;
-assign debug = 1;
+assign debug = 0;
 `else
 reg debug;
 initial debug = 0;
@@ -569,16 +569,16 @@ initial debug = 0;
 			s_enable = 1;
 		end
 		`ENDINST: begin
-			s_stepoff = { 5'b0, vecoff };
+			s_stepoff = { 6'b0, vecoff };
 			s_enable = anyfault;
 		end
 		`EXEC: begin
 			s_stepoff = (wr_cond_ok && s_goto) ?
-			    s_addr[8:0] : scounter;
+			    s_addr[9:0] : scounter;
 			s_enable = alu_ack;
 		end
 		default: begin
-			s_stepoff = 9'b0;
+			s_stepoff = 10'b0;
 			s_enable = 0;
 		end
 		endcase
@@ -859,7 +859,8 @@ if (cur_inst == 8'hf0) $fdisplay(32'h80000002, "INSV pos %x size %x base %x src 
 //if (cur_inst == 8'h7a) $fdisplay(32'h80000002, "EMUL arg1 %x arg2 %x arg3 %x psl %x", arg[0], arg[1], arg[2], psl);
 //if (cur_inst == 8'h28) $fdisplay(32'h80000002, "MOVC3 arg1 %x arg2 %x arg3 %x psl %x", arg[0], arg[1], arg[2], psl);
 //if (cur_inst == 8'h28) $fdisplay(32'h80000002, "MOVC3 R8 %x", general_reg[8]);
-if (cur_inst == 8'h2c) $fdisplay(32'h80000002, "MOVC5 arg1 %x arg2 %x arg3 %x arg4 %x argd0 %x psl %x", arg[0], arg[1], arg[2], arg_rv, argd[0], psl);
+//if (cur_inst == 8'h2c) $fdisplay(32'h80000002, "MOVC5 arg1 %x arg2 %x arg3 %x arg4 %x argd0 %x psl %x", arg[0], arg[1], arg[2], arg_rv, argd[0], psl);
+if (cur_inst == 8'h2d) $fdisplay(32'h80000002, "CMPC5 arg1 %x arg2 %x arg3 %x arg4 %x argd0 %x psl %x", arg[0], arg[1], arg[2], arg_rv, argd[0], psl);
 			end
 			arg_read_step1 <= 0;
 			arg_read_step2 <= 0;
@@ -1008,7 +1009,7 @@ if (debug & alu_ack) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d ste
 			end
 
 			if (wr_cond_ok && s_goto)
-				scounter <= s_addr[8:0];
+				scounter <= s_addr[9:0];
 			if (wr_cond_ok && s_resopflt)
 				resopflt <= 1;
 
@@ -1032,11 +1033,12 @@ if (cur_inst == 8'hf0) $fdisplay(32'h80000002, "INSV END: argd0 %x argd1 %x\r", 
 //if (cur_inst == 8'h7b) $fdisplay(32'h80000002, "EDIV END: argd0 %x argd1 %x psl %x", argd[0], argd[1], psl);
 //if (cur_inst == 8'h7a) $fdisplay(32'h80000002, "EMUL END: argd0 %x argd1 %x psl %x", argd[0], argd[1], psl);
 //if (cur_inst == 8'h28) $fdisplay(32'h80000002, "MOVC3 END: R1 %x R3 %x psl %x", general_reg[1], general_reg[3], psl);
-if (cur_inst == 8'h2c) $fdisplay(32'h80000002, "MOVC5 END: R0 %x R1 %x R3 %x psl %x", general_reg[0], general_reg[1], general_reg[3], psl);
+//if (cur_inst == 8'h2c) $fdisplay(32'h80000002, "MOVC5 END: R0 %x R1 %x R3 %x psl %x", general_reg[0], general_reg[1], general_reg[3], psl);
+if (cur_inst == 8'h2d) $fdisplay(32'h80000002, "CMPC5 END: R0 %x R1 %x R2 %x R3 %x psl %x", general_reg[0], general_reg[1], general_reg[2], general_reg[3], psl);
 			state <= `S_FETCH;
 
 			if (resopflt|mcheck) begin
-				scounter <= { 5'b0, vecoff };
+				scounter <= { 6'b0, vecoff };
 $fdisplay(32'h80000002, "ENDINST: sc %d anyfault %d s_enable %d s_stepoff %d\r", mcheck ? 1 : resopflt ? 2 : 0, anyfault, s_enable, s_stepoff);
 				state <= `PREEXEC;
 				resopflt <= 0;

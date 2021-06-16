@@ -519,7 +519,7 @@ print "resolving " resolve[i] " pos " i " as " steplbl[resolve[i]];
 	# print out microcode steps
 	FN="uc-step.hex";
 	system("rm -f " FN);
-	for (i = 0; i < 512; i++) {
+	for (i = 0; i < 1024; i++) {
 		if (i in ucstep) {
 			print line2hex(i, ucstep[i], 72) >> FN;
 			numstep++;

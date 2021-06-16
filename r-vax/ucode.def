@@ -44,8 +44,10 @@
 1F	BLSSU
 #
 28	MOVC3
+29	CMPC3
 #
 2C	MOVC5
+2D	CMPC5
 #
 30	BSBW
 31	BRW
@@ -147,11 +149,11 @@ D5	TSTL
 D6	INCL
 D7	DECL
 D8	ADWC
-#
+D9	SBWC
 DA	MTPR
 DB	MFPR
 DC	MOVPSL
-#
+DD	PUSHL
 DE	MOVAL
 #
 E0	BBS
@@ -249,6 +251,15 @@ adwc:	plus arg1 arg2	argd0 savc savv	# save C and V
 	and psl 1	arg3		# fetch old C
 	and savpsw 3	arg4		# store them
 	plus arg3 argd0	argd0 savc savv savnz	# save all status bits
+	bis savpsw arg4	arg4		# or them into saved bits
+	and arg4 3	arg4		# clean all other bits
+	bic 3 psl	psl		# clean CV  from psl
+	bis psl arg4	psl eoi		# replace with newly calculated
+
+sbwc:	minus arg2 arg1	argd0 savc savv	# save C and V
+	and psl 1	arg3		# fetch old C
+	and savpsw 3	arg4		# store calc CV
+	minus argd0 arg3 argd0 savc savv savnz	# save all status bits
 	bis savpsw arg4	arg4		# or them into saved bits
 	and arg4 3	arg4		# clean all other bits
 	bic 3 psl	psl		# clean CV  from psl
@@ -858,6 +869,7 @@ rei:
 	plus arg1 0	argd0 eoi
 #
 # code from the vax arch manual
+# XXX merge with movc5
 movc3:
 	minus arg3 arg2	savc	# copy from back or forward?
 	and savpsw 1	zcond goto movc3_backw
@@ -948,6 +960,61 @@ movc5_done:
 	and 0 0		crn
 	and arg1 arg1	crw wreg goto movc3_donex
 #
+# 
+cmpc5:
+	and argd0 FF		argp0	# save fill byte
+
+	# while {tmp1 NEQU 0 } and {tmp3 NEQU 0}
+cmpc5_loop1:
+	and arg1 arg1		zcond goto cmpc5_loop2
+	and arg3 arg3		zcond goto cmpc5_loop2
+
+	and arg2 arg2		cpuaddr rmem byte
+	and rmemdat FF		argd0			# mask byte
+	and arg4 arg4		cpuaddr rmem byte
+	and rmemdat FF		argd1
+	minus argd0 argd1	nzcond goto cmpc5_exit	# not equal
+	minus arg1 1	arg1
+	plus arg2 1	arg2
+	minus arg3 1	arg3
+	plus arg4 1	arg4	goto cmpc5_loop1
+
+	# while {tmp1 NEQU 0 } and {tmp3 EQU 0}
+cmpc5_loop2:
+	and arg1 arg1	zcond goto cmpc5_loop3
+	and arg3 arg3	nzcond goto cmpc5_loop3
+
+	and arg2 arg2		cpuaddr rmem byte
+	and rmemdat FF		argd0
+	and argp0 FF		argd1
+	minus argd0 argd1	nzcond goto cmpc5_exit
+	minus arg1 1		arg1
+	plus arg2 1		arg2 goto cmpc5_loop2
+
+	# while {tmp3 NEQU 0 } and {tmp1 EQU 0}
+cmpc5_loop3:
+	and arg1 arg1	nzcond goto cmpc5_exit
+	and arg3 arg3	zcond goto cmpc5_exit
+
+	and arg2 arg2		cpuaddr rmem byte
+	and rmemdat FF		argd1
+	and argp0 FF		argd0
+	minus argd0 argd1	nzcond goto cmpc5_exit
+	minus arg3 1		arg3
+	plus arg4 1		arg4 goto cmpc5_loop3
+
+cmpc5_exit:
+	and 0 0			crn
+	plus arg1 0		crw wreg
+	and 1 1			crn
+	plus arg2 0		crw wreg
+	and 2 2			crn
+	plus arg3 0		crw wreg
+	and 3 3			crn
+	plus arg4 0		crw wreg
+	minus argd0 argd1	savnz savc eoi
+
+#
 !INSTRUCTIONS
 #
 NOP	rl#0,rl#0		lbl=add				# 01
@@ -973,8 +1040,10 @@ BGEQU	ab#b^d(pc),rl#1,wl#pc	lbl=bclr			# 1e
 BLSSU	ab#b^d(pc),rl#1,wl#pc	lbl=bset			# 1f
 #
 MOVC3	rw,ab,ab	lbl=movc3 setnz clc clv			# 28
+#CMPC3	rw,ab,ab						# 29
 #
 MOVC5	0rw,1ab,4rb,2rw,3ab	lbl=movc5			# 2c
+CMPC5	0rw,1ab,4rb,2rw,3ab	lbl=cmpc5 setnz setc clv	# 2d
 #
 BSBW	0aw#w^d(pc),2rl#pc,wl#pc,wl#-(sp)	lbl=mov move2 wback wback2 
 BRW	aw#w^d(pc),wl#pc	lbl=mov wback 			# 31
@@ -1071,13 +1140,12 @@ CLRL	wl		lbl=clr setnz clv wback 		# d4
 TSTL	rl		lbl=tst setnz clv clc 			# d5
 INCL	ml,rl#1		lbl=add setnz setc setv wback		# d6
 DECL	ml,rl#1		lbl=sub setnz setv setc wback 		# d7
-#
-ADWC	rl,ml		lbl=adwc setnz wback			# d9
-#
+ADWC	rl,ml		lbl=adwc setnz wback			# d8
+SBWC	rl,ml		lbl=sbwc setnz wback			# d9
 MTPR	rl,rl		lbl=mtpr 				# da
 MFPR	rl,wl		lbl=mfpr wback				# db
 MOVPSL	wl		lbl=movpsl wback			# dc
-#
+PUSHL	rl,wl#-(sp)	lbl=mov setnz clv wback			# dd
 MOVAL	al,wl		lbl=mov setnz clv wback			# de
 #
 BBS	rl,rl,ab#b^d(pc),wl#pc,wl#pc lbl=bbs 			# e0
