@@ -1146,6 +1146,42 @@ ret_2:
 	and arg1 FFFF	arg1
 	bis arg1 psl	arg1 eoi	# 615
 #
+# PUSHR arg1=mask, arg2=sp
+pushr:
+	and E E		arg3		# reg count
+	shl arg1 11	arg1
+pushr_1f:
+	and arg1 arg1	zcond goto pushr_end
+	and arg1 arg1	nncond goto pushr_2
+	plus arg3 0	crn
+	minus arg2 4	arg2
+	plus crv 0	crw
+	plus arg2 0	cpuaddr wmem
+pushr_2:
+	minus arg3 1	arg3
+	shl arg1 1	arg1 goto pushr_1f
+pushr_end:
+	and E E		crn
+	plus arg2 0	crw wreg
+popr_end:
+	plus 0 0	eoi
+#
+# POPR arg1=mask, arg2=sp
+popr:
+	and 0 0		arg3		# reg 0 first
+popr_loop:
+	and arg1 7FFF	arg1 zcond goto popr_end # no more regs to pop
+	and arg1 1	zcond goto popr_1f	# no pop
+
+	plus arg2 0	cpuaddr rmem
+	plus arg3 0	crn
+	plus rmemdat 0	crw wreg
+	plus arg2 4	arg2
+
+popr_1f:
+	shr arg1 1	arg1
+	plus arg3 1	arg3 goto popr_loop
+#
 !INSTRUCTIONS
 #
 NOP	rl#0,rl#0		lbl=add				# 01
@@ -1246,6 +1282,8 @@ INCW	mw,rl#1		lbl=add setnz setc setv use16 wback	# b6
 DECW	mw,rl#1		lbl=sub setnz setv setc use16 wback	# b7
 BISPSW	rw		lbl=bispsw				# b8
 BICPSW	rw		lbl=bicpsw				# b9
+POPR	rw,rl#sp	lbl=popr				# ba
+PUSHR	rw,rl#sp	lbl=pushr				# bb
 # 
 ADDL2	rl,ml		lbl=add setnz setc setv wback 		# c0
 ADDL3	rl,rl,wl	lbl=add setnz setc setv wback 		# c1
