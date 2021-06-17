@@ -1018,9 +1018,21 @@ cmpc5_exit:
 	plus arg4 0		crw wreg
 	minus argd0 argd1	savnz savc eoi
 #
+# CALLS arg1,arg2,arg3 (numarg, dst, sp(fake))
+#
+calls:
+	and 2000 2000		argp0	# CALLS
+	plus arg1 0		crw
+	minus arg3 4		cpuaddr wmem long # store numarg on stack
+	minus arg3 4		arg3		# push on stack
+	plus arg3 0		arg1 goto callg_1 # stack pos as AP
+
+#
 # CALLG arg1,arg2,arg3 (arglist, dst, sp(fake))
 #
 callg:
+	and 0 0			argp0	# CALLG
+callg_1:
 	and arg3 3		argp1	# 527 stack align bits
 	bic 3 arg3		arg3	# arg3 now aligned stack
 	and arg2 arg2		cpuaddr rmem word # reg mask
@@ -1057,6 +1069,7 @@ callg_sreg:
 	shl argp1 E		argd0	# 550 stack align in bit 15-14
 	and argd1 FFF		arg4	# only reg mask bit 0-11
 	bis argd0 arg4		argd0	# merge
+	bis argp0 argd0		argd0	# set CALLS/CALLG bit
 	shl argd0 10		argd0	# put in bit 31-16
 	and psl FFE0		arg4
 	bis arg4 argd0		crw	# mask finished
@@ -1080,13 +1093,65 @@ callg_3:
 	and F F			crn
 	plus arg2 2		crw wreg # set PC
 	plus 0 0		eoi	# DONE
+#
+# arg1 is fp on entry
+ret:
+	plus arg1 4	argd1		# 579 SP now in argd1
+	plus argd1 0	cpuaddr rmem
+	plus rmemdat 0	arg1		# 581 tmp1
 
+	plus argd1 4	cpuaddr rmem	# 582 fetch AP val from stack
+	and C C		crn		# set AP as dest reg
+	plus rmemdat 0	crw wreg	# write to reg
+
+	plus argd1 8	cpuaddr rmem	# 585 fetch FP val from stack
+	and D D		crn		# set FP as dest reg
+	plus rmemdat 0	crw wreg	# write to reg
+
+	plus argd1 C	cpuaddr rmem	# 588 fetch PC val from stack
+	and F F		crn		# set PC as dest reg
+	plus rmemdat 0	crw wreg	# write to reg
+	plus argd1 10	argd1		# 591 adjust SP
+
+# restore regs
+	shr arg1 10	arg2		# 592 get reg bitmask
+	and arg2 FFF	arg2		# mask out mask
+	and 0 0		arg3		# 594 reg counter
+ret_regs:
+	and arg2 arg2	zcond goto ret_regs1	# getout if no more regs
+	and arg2 1	zcond goto ret_regs2	# more regs but not this
+
+	plus argd1 0	cpuaddr rmem	# 597 fetch val from stack
+	plus arg3 0	crn		# set next reg num
+	plus rmemdat 0	crw wreg	# write to reg
+	plus argd1 4	argd1		# 600 pop from stack
+ret_regs2:
+	plus arg3 1	arg3
+	shr arg2 1	arg2 goto ret_regs
+
+ret_regs1:
+# adjust stack alignment
+	shr arg1 1E	arg2		# 603 stack adj
+	plus argd1 arg2	argd1		# add!
+	shl arg1 2	nncond goto ret_2 # CALLS?
+	plus argd1 0	cpuaddr rmem	# 606 get nargs from stack
+	and rmemdat FF	arg4		# zero extend
+	shl arg4 2	arg4		# get bytes
+	plus argd1 arg4	argd1		# adj stack
+	plus argd1 4	argd1		# pop word
+ret_2:
+	and E E		crn		# 611
+	plus argd1 0	crw wreg
+	bic FFFF psl	psl
+	and arg1 FFFF	arg1
+	bis arg1 psl	arg1 eoi	# 615
 #
 !INSTRUCTIONS
 #
 NOP	rl#0,rl#0		lbl=add				# 01
 REI	rl#(sp)+,rl#(sp)+,wl#pc	lbl=rei wback			# 02
 #
+RET	rl#fp			lbl=ret				# 04
 RSB	rl#(sp)+,wl#pc	lbl=mov wback				# 05
 #
 BSBB	0ab#b^d(pc),2rl#pc,wl#pc,wl#-(sp)	lbl=mov move2 wback wback2
@@ -1242,4 +1307,4 @@ SOBGTR	ml,ab#b^d(pc),wl#pc lbl=sobgtr setnz setv wback		# f5
 CVTLW	rl,ww	lbl=cvtlw setnz clc wback			# f7
 #
 CALLG	ab,ab,rl#sp	lbl=callg 				# fa
-#CALLS	rl,ab		lbl=calls 				# fb
+CALLS	rl,ab,rl#sp	lbl=calls 				# fb

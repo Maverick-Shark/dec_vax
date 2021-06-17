@@ -199,6 +199,7 @@ BEGIN {
 	fakearg["5"] = "00000101";
 	fakearg["8"] = "00001000";
 	fakearg["C"] = "00001100";
+	fakearg["fp"] = "01011101";
 	fakearg["sp"] = "01011110";
 	fakearg["pc"] = "01011111";
 	fakearg["(sp)+"] = "10001110";

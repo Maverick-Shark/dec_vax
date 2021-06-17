@@ -546,10 +546,10 @@ initial debug = 0;
 
 	/* OK to do conditional in microcode? */
 	wire		wr_cond_ok;
-	assign wr_cond_ok =
-	    (s_nzcond == 0 && s_zcond == 0 && s_ncond == 0 && s_nncond == 0) ||
+	assign wr_cond_ok = alu_ack && 
+	    ((s_nzcond == 0 && s_zcond == 0 && s_ncond == 0 && s_nncond == 0) ||
 	    (s_zcond && alu_zero) || (s_nzcond && alu_zero == 0) ||
-	    (s_ncond && alu_neg) || (s_nncond && alu_neg == 0);
+	    (s_ncond && alu_neg) || (s_nncond && alu_neg == 0));
 `ifdef notdef
 	assign s_stepoff =
 	    (state == `S_DECODE) ? i_stepoff : 
