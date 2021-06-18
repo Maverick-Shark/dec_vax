@@ -861,6 +861,7 @@ if (cur_inst == 8'hf0) $fdisplay(32'h80000002, "INSV pos %x size %x base %x src 
 //if (cur_inst == 8'h28) $fdisplay(32'h80000002, "MOVC3 R8 %x", general_reg[8]);
 //if (cur_inst == 8'h2c) $fdisplay(32'h80000002, "MOVC5 arg1 %x arg2 %x arg3 %x arg4 %x argd0 %x psl %x", arg[0], arg[1], arg[2], arg_rv, argd[0], psl);
 if (cur_inst == 8'h2d) $fdisplay(32'h80000002, "CMPC5 arg1 %x arg2 %x arg3 %x arg4 %x argd0 %x psl %x", arg[0], arg[1], arg[2], arg_rv, argd[0], psl);
+if (cur_inst == 8'heb) $fdisplay(32'h80000002, "FFC arg1 %x arg2 %x argp0 %x argp1 %x isreg %d psl %x", arg[0], arg[1], argp[0], arg_rv, argp_isreg[0], psl);
 			end
 			arg_read_step1 <= 0;
 			arg_read_step2 <= 0;
@@ -1035,6 +1036,7 @@ if (cur_inst == 8'hf0) $fdisplay(32'h80000002, "INSV END: argd0 %x argd1 %x\r", 
 //if (cur_inst == 8'h28) $fdisplay(32'h80000002, "MOVC3 END: R1 %x R3 %x psl %x", general_reg[1], general_reg[3], psl);
 //if (cur_inst == 8'h2c) $fdisplay(32'h80000002, "MOVC5 END: R0 %x R1 %x R3 %x psl %x", general_reg[0], general_reg[1], general_reg[3], psl);
 if (cur_inst == 8'h2d) $fdisplay(32'h80000002, "CMPC5 END: R0 %x R1 %x R2 %x R3 %x psl %x", general_reg[0], general_reg[1], general_reg[2], general_reg[3], psl);
+if (cur_inst == 8'heb) $fdisplay(32'h80000002, "FFC END: argd1 %x psl %x", argd[1], psl);
 			state <= `S_FETCH;
 
 			if (resopflt|mcheck) begin

@@ -167,7 +167,8 @@ E6	BBSSI
 E7	BBCCI
 E8	BLBS
 E9	BLBC
-#
+EA	FFS
+EB	FFC
 EC	CMPV
 ED	CMPZV
 EE	EXTV
@@ -498,7 +499,7 @@ insv_sz:
 
 #
 # extract bitfield based on (pos,size,base) in (arg1,arg2,argp0)
-# return field in argd0. Trashes arg3+arg4.
+# return field in argd0, return addr in argp1. Trashes arg1+arg3.
 #
 bfield:
 # sanity: size > 32?
@@ -509,8 +510,8 @@ bfield:
 # Check whether read from mem or reg?
 	shr argp0 1E	argd0			# 181
 	minus argd0 3	argd0 nzcond goto bf_mem	# 182
-#	plus argd0 argd0 nzcond goto bf_mem	# 183
 # Ok, get from reg.  
+	minus arg1 20	nncond resopflt	# resopflt if pos > 31
 	plus argp0 0	crn		# 59 set cur reg num
 	plus crv 0	argd0		# 60 move val to dest
 	plus argp0 1	crn		# if two regs
@@ -532,8 +533,8 @@ bf_mem:
 bf_common:
 # create long in argd0
 	shr argd0 arg1	argd0		# 200 right-adjust low bits
-	minus 20 arg1	arg4		# 201
-	shl arg3 arg4	arg3		# 202
+	minus 20 arg1	arg1		# 201
+	shl arg3 arg1	arg3		# 202
 	bis arg3 argd0	argd0		# 203
 
 bf_done:
@@ -541,11 +542,10 @@ bf_done:
 
 	and arg3 arg3	zcond goto extzv_1 # 205 value 0
 	minus arg3 1	arg3 zcond goto extv_1		# 206
-#	and arg3 arg3	zcond goto extv_1	# 207 value 1
 	minus arg3 1	arg3 zcond goto cmpv_1		# 208
-#	and arg3 arg3	zcond goto cmpv_1	# 209 value 2
 	minus arg3 1	arg3		# 208
 	and arg3 arg3	zcond goto cmpzv_1	# 209 value 3
+	minus arg3 1	arg3 zcond goto ffc_1	# val 4
 	plus 0 0	resopflt eoi	# 210
 
 # EXTZV	rl,rb,wb,wl (arg1,arg2,argp0,argp1)
@@ -1182,6 +1182,35 @@ popr_1f:
 	shr arg1 1	arg1
 	plus arg3 1	arg3 goto popr_loop
 #
+# FFC/FFS	rl,rb,wb,wl (arg1,arg2,argp0,argp1)
+ffs:	bis 1 psl	psl goto ff_in
+ffc:	bic 1 psl	psl		# 639 use C bit for searching
+ff_in:
+	plus argp1 0	argd1			# 640 save findpos
+	plus arg1 0	arg4			# 641 save startpos
+	and arg2 arg2	zcond goto ff_zero	# exit if size zero
+	and 4 4		argp1 goto bfield	# 643 ret 4
+ffc_1:	
+# bitfield in argd0, size in arg2
+	plus argd1 0	argp1	# 644 restore findpos
+	plus arg4 0	arg1	# restore startpos
+	and 0 0		argd1	# reset pos counter
+ff_2:
+	minus argd1 arg2	zcond goto ff_notfound savnz # 645 NZ=01
+	xor psl argd0	arg4
+	and arg4 1	zcond goto ff_found	# 647
+	shr argd0 1	argd0
+	plus argd1 1 	argd1 goto ff_2		# 649
+ff_found:
+	plus arg1 argd1	argd1
+	and 1 1		savnz eoi	# NZ=00
+ff_notfound:
+	plus arg1 argd1	argd1 eoi	# 651
+#
+# field size 0
+ff_zero:
+	plus arg1 0	argd1 savnz eoi
+#
 !INSTRUCTIONS
 #
 NOP	rl#0,rl#0		lbl=add				# 01
@@ -1328,7 +1357,8 @@ BBSSI	rl,ml,ab#b^d(pc),wl#pc lbl=bbss wback			# e6
 BBCCI	rl,ml,ab#b^d(pc),wl#pc lbl=bbcc wback			# e7
 BLBS	rl#0,rl,ab#b^d(pc),wl#pc,wl#pc lbl=bbs 			# e8
 BLBC	rl#0,rl,ab#b^d(pc),wl#pc,wl#pc lbl=bbc 			# e9
-#
+FFS	rl,rb,wb,wl lbl=ffs setnz clv clc wback2		# ea
+FFC	rl,rb,wb,wl lbl=ffc setnz clv clc wback2		# eb
 CMPV	rl,rb,wb,rl lbl=cmpv setcmpnz clv setc			# ec
 CMPZV	rl,rb,wb,rl lbl=cmpzv setcmpnz clv setc			# ed
 EXTV	rl,rb,wb,wl lbl=extv setnz clv wback			# ee
