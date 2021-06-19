@@ -57,6 +57,8 @@
 #
 3C	MOVZWL
 #
+3F	PUSHAW
+#
 78	ASHL
 79	ASHQ
 7A	EMUL
@@ -64,6 +66,7 @@
 7C	CLRQ
 7D	MOVQ
 #
+7F	PUSHAQ
 80	ADDB2
 81	ADDB3
 82	SUBB2
@@ -95,6 +98,7 @@
 9B	MOVZBW
 9C	ROTL
 #
+9F	PUSHAB
 A0	ADDW2
 A1	ADDW3
 A2	SUBW2
@@ -156,7 +160,7 @@ DB	MFPR
 DC	MOVPSL
 DD	PUSHL
 DE	MOVAL
-#
+DF	PUSHAL
 E0	BBS
 E1	BBC
 E2	BBSS
@@ -1248,6 +1252,8 @@ CVTWL	rw,wl		lbl=mov setnz clv clc clv wback		# 32
 #
 MOVZWL	rw,wl		lbl=zwl setnz clv wback			# 3c
 #
+PUSHAW	aw,wl#-(sp)	lbl=mov setnz clv wback			# 3f
+#
 ASHL	rb,rl,wl	lbl=ashl setnz clc wback		# 78
 ASHQ	rb,rq,wq	lbl=ashq setnz clc wback wback2		# 79
 EMUL	rl,rl,rl,wq	lbl=emul wback wback2			# 7a
@@ -1255,6 +1261,7 @@ EDIV	rl,rq,wl,wl	lbl=ediv setnz clc wback wback2		# 7b
 CLRQ	wq		lbl=clrq setnz clv wback wback2		# 7c
 MOVQ	rq,wq		lbl=movq setnz clv wback wback2		# 7d
 #
+PUSHAQ	aq,wl#-(sp)	lbl=mov setnz clv wback			# 7f
 ADDB2	rb,mb		lbl=add setnz setc setv use8 wback 	# 80
 ADDB3	rb,rb,wb	lbl=add setnz setc setv use8 wback 	# 81
 SUBB2	1rb,0mb		lbl=sub setnz setc setv use8 wback	# 82
@@ -1285,6 +1292,7 @@ MOVZBL	rb,wl		lbl=zbl setnz clv wback			# 9a
 MOVZBW	rb,ww		lbl=zbl setnz clv wback			# 9b
 ROTL	rb,rl,wl	lbl=rot setnz clv wback			# 9c
 #
+PUSHAB	ab,wl#-(sp)	lbl=mov setnz clv wback			# 9f
 ADDW2	rw,mw		lbl=add setnz setc setv use16 wback	# a0
 ADDW3	rw,rw,ww	lbl=add setnz setc setv use16 wback	# a1
 SUBW2	1rw,0mw		lbl=sub setnz setc setv use16 wback	# a2
@@ -1346,7 +1354,7 @@ MFPR	rl,wl		lbl=mfpr wback				# db
 MOVPSL	wl		lbl=movpsl wback			# dc
 PUSHL	rl,wl#-(sp)	lbl=mov setnz clv wback			# dd
 MOVAL	al,wl		lbl=mov setnz clv wback			# de
-#
+PUSHAL	al,wl#-(sp)	lbl=mov setnz clv wback			# df
 BBS	rl,rl,ab#b^d(pc),wl#pc,wl#pc lbl=bbs 			# e0
 BBC	rl,rl,ab#b^d(pc),wl#pc,wl#pc lbl=bbc 			# e1
 BBSS	rl,ml,ab#b^d(pc),wl#pc lbl=bbss wback			# e2

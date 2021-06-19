@@ -804,7 +804,10 @@ if (debug)$fdisplay(32'h80000002, "ARG_READ: OA %x IA %x cur_byte %x curarg %x s
 				cpu_size <= a_argsz;
 				rmemstate <= `RMEM_ARG_READ;
 			end else begin
-				OP <= arg_read_add;
+				if (arg_read_step1 == 0)
+					OP <= arg_read_add;
+				else
+					OPu <= arg_read_add;
 				if (a_argsz == `O_QUAD && arg_read_step1 == 0)
 					state <= `ARG_READ; // OAu set
 			end
