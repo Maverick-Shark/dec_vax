@@ -55,8 +55,11 @@
 32	CVTWL
 33	CVTWB
 #
+3A	LOCC
+#
 3C	MOVZWL
 #
+3E	MOVAW
 3F	PUSHAW
 #
 78	ASHL
@@ -66,6 +69,7 @@
 7C	CLRQ
 7D	MOVQ
 #
+7E	MOVAQ
 7F	PUSHAQ
 80	ADDB2
 81	ADDB3
@@ -98,6 +102,7 @@
 9B	MOVZBW
 9C	ROTL
 #
+9E	MOVAB
 9F	PUSHAB
 A0	ADDW2
 A1	ADDW3
@@ -1215,6 +1220,24 @@ ff_notfound:
 ff_zero:
 	plus arg1 0	argd1 savnz eoi
 #
+# LOCC arg3,arg1,arg2
+locc:
+	and arg3 FF	arg3	# ensure zero-extended
+locc_2:
+	and arg1 arg1	zcond goto locc_1	# zero len
+	plus arg2 0	cpuaddr rmem byte
+	and rmemdat FF	arg4			# zero-extend read byte
+	minus arg4 arg3	zcond goto locc_1	# equality?
+	minus arg1 1	arg1
+	plus arg2 1	arg2 goto locc_2
+
+locc_1:
+	and 0 0		crn
+	plus arg1 0	crw wreg savnz	# save final len
+	and 1 1		crn
+	plus arg2 0	crw wreg	# save final addr
+	plus 0 0	eoi
+#
 !INSTRUCTIONS
 #
 NOP	rl#0,rl#0		lbl=add				# 01
@@ -1250,8 +1273,11 @@ BSBW	0aw#w^d(pc),2rl#pc,wl#pc,wl#-(sp)	lbl=mov move2 wback wback2
 BRW	aw#w^d(pc),wl#pc	lbl=mov wback 			# 31
 CVTWL	rw,wl		lbl=mov setnz clv clc clv wback		# 32
 #
+LOCC	2rb,0rw,1ab	lbl=locc clv clc setnz			# 3a
+#
 MOVZWL	rw,wl		lbl=zwl setnz clv wback			# 3c
 #
+MOVAW	aw,wl		lbl=mov setnz clv wback			# 3e
 PUSHAW	aw,wl#-(sp)	lbl=mov setnz clv wback			# 3f
 #
 ASHL	rb,rl,wl	lbl=ashl setnz clc wback		# 78
@@ -1260,7 +1286,7 @@ EMUL	rl,rl,rl,wq	lbl=emul wback wback2			# 7a
 EDIV	rl,rq,wl,wl	lbl=ediv setnz clc wback wback2		# 7b
 CLRQ	wq		lbl=clrq setnz clv wback wback2		# 7c
 MOVQ	rq,wq		lbl=movq setnz clv wback wback2		# 7d
-#
+MOVAQ	aq,wl		lbl=mov setnz clv wback			# 7e
 PUSHAQ	aq,wl#-(sp)	lbl=mov setnz clv wback			# 7f
 ADDB2	rb,mb		lbl=add setnz setc setv use8 wback 	# 80
 ADDB3	rb,rb,wb	lbl=add setnz setc setv use8 wback 	# 81
@@ -1292,6 +1318,7 @@ MOVZBL	rb,wl		lbl=zbl setnz clv wback			# 9a
 MOVZBW	rb,ww		lbl=zbl setnz clv wback			# 9b
 ROTL	rb,rl,wl	lbl=rot setnz clv wback			# 9c
 #
+MOVAB	ab,wl		lbl=mov setnz clv wback			# 93
 PUSHAB	ab,wl#-(sp)	lbl=mov setnz clv wback			# 9f
 ADDW2	rw,mw		lbl=add setnz setc setv use16 wback	# a0
 ADDW3	rw,rw,ww	lbl=add setnz setc setv use16 wback	# a1
