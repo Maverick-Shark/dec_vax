@@ -195,6 +195,8 @@ F7	CVTLW
 FA	CALLG
 FB	CALLS
 #
+FF	RESIN
+#
 !MICROCODE
 #
 # [label:] op left right	[args...]
@@ -203,7 +205,7 @@ FB	CALLS
 	plus 0 0			# entry 0, unused
 	plus 0 0	goto mcheck	# entry 1
 	plus 0 0	goto resop	# entry 2
-
+#
 #
 # Machine check.  Frame has pc+psl+argcnt, argcnt is 0.
 # Ignore stack change for now.
@@ -227,22 +229,59 @@ mcheck:
 	plus rmemdat 0	crw wreg	# 17 new pc
 	plus 0 0	eoi		# 18
 	
-
-resop:	
-# create stack frame
-	and E E		crn		# 1  set reg to sp
-	minus crv 4	argp0		# 2  sub 4 from sp and save in p0
-	plus psl 0	argd0 wback	# 3  save in d0
-	minus argp0 4	argp1		# 4  sub 4 more
-	plus argp1 0	crw wreg	# 5  write back to sp
-	and F F		crn		# 6  set PC
-	plus crv 0	argd1 wback2	# 7  store on stack
-# fetch resop vector (18) and store in pc
-
-	and 11 11	crn		# 8  SCBB offset
-	plus civ 18	cpuaddr rmem phys	# 9  fetch vector
-	and F F		crn		# 10
-	plus rmemdat 0	crw wreg	# 11 new pc
+# Reserved operand
+resop:
+	shr psl 10	argd0		# 19 no change to PSL
+	and 18 18	argd1 goto scb_common # 20
+#
+# Reserved instruction, handled entirely in microcode.
+# No parameters are pushed.
+resinflt:
+	shr psl 10	argd0		# 21 no change to PSL
+	and F F		crn		# 22 set PC
+	minus crv 1	crw wreg	# 23 sub one from PC
+	and 10 10	argd1 goto scb_common	# 24 vector 10
+#
+# Vector in argd1
+# upper word in IPL in argd0.
+# arg4 (and argd1) are scratched.
+#
+scb_common:
+# begin with saving old SP in IPR.
+	and E E		crn		# 25 SP
+	plus crv 0	crw		# 26 save to write in IPR
+	shr psl 18	arg4		# 27 Fetch IS+CURMOD from PSL
+	and arg4 7	crn wipr	# 28 write old stack to IPR
+# set new stack
+# unless vector bit0==0 and psl.is==0 it will be on the interrupt stack.
+	and 11 11	crn		# 29
+	plus civ argd1	cpuaddr rmem phys # 30 fetch vector
+	shr psl 1A	arg4		# 31 get IS bit in pos0
+	bis rmemdat arg4 arg4		# 32 merge with stack bit in vector
+	plus arg4 0	argd1		# 33 remember new PC address
+	and arg4 1	arg4		# 34
+	and arg4 1	crn zcond goto scb_1 # 35 KSP
+	and 4 4		crn		# 36 nope, ISP
+scb_1:
+# save old PC+PSL.  new SP in civ
+	bis arg4 argd1	argd1		# 37 save IS flag as low bit.
+	plus civ 0	arg4		# 38
+	minus arg4 4	cpuaddr		# 39 prepare to push
+	plus psl 0	crw wmem	# 40 push PSL
+	minus arg4 8	cpuaddr		# 41 sub 4 more
+	and F F		crn		# 42 fetch PC
+	plus crv 0	crw wmem	# 43 push PC
+	and E E		crn		# 44
+	minus arg4 8	crw wreg	# 45 write back stack
+# update new PC.
+	and F F		crn		# 46
+	bic 3 argd1	crw wreg	# 47 write new PC
+# update PSL.
+	and argd1 1	arg4		# 48 get stack bit
+	shl arg4 A	arg4
+	bis arg4 argd0	arg4
+	shl arg4 10	psl		
+#	and argp1 argp1	nzcond goto scb_2
 	plus 0 0	eoi
 
 #
@@ -877,9 +916,34 @@ mcom:
 #
 # REI pc=arg1, psl=arg2
 rei:
-	# Need a lot of checks here...
+	# validity checks
+	# if (arg2.is == 1 && arg2.ipl == 0) resopflt();
+	# if (arg2.ipl > 0 && arg2.cur_mod != 0) resopflt();
+	# if (arg2.prv_mod < arg2.cur_mod) resopflt();
+	# if (arg2 & IPL_MBZ) resopflt();
+	# if (arg2.cm) resopflt();
+	# if (arg2.cur_mod < psl.cur_mod) resopflt();
+	# if (arg2.is == 1 && psl.is == 0) resopflt();
+	# if (arg2.ipl > psl.ipl) resopflt();
+
+	# save old SP
+	and E E		crn
+	plus crv 0	crw
+	shr psl 18	arg4
+	and arg4 7	crn wipr
+
+	# Write PC+PSL
 	plus arg2 0	psl
-	plus arg1 0	argd0 eoi
+	plus arg1 0	argd0
+
+	# stack change
+	shl psl 5	ncond goto rei_2 # can only change stack if !IS
+	shr psl 18	arg4
+	and arg4 3	crn
+	plus civ 0	crw
+	and E E		crn wreg
+rei_2:
+	plus 0 0	eoi
 #
 # code from the vax arch manual
 # XXX merge with movc5
@@ -1411,3 +1475,6 @@ CVTLW	rl,ww	lbl=cvtlw setnz clc wback			# f7
 #
 CALLG	ab,ab,rl#sp	lbl=callg 				# fa
 CALLS	rl,ab,rl#sp	lbl=calls 				# fb
+#
+RESIN	rl#0	lbl=resinflt					# ff
+#

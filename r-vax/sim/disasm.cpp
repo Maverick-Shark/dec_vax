@@ -64,7 +64,11 @@ itracedump(Vnvax *tb)
 	psl = (tb->sbi__DOT__cpu__DOT__psl_is << 26) |
 	    (tb->sbi__DOT__cpu__DOT__psl_ipl << 16);
 #endif
-	psl = 0x041f0000 | tb->sbi__DOT__cpu__DOT__psw;
+	psl = tb->sbi__DOT__cpu__DOT__psw |
+	    (tb->sbi__DOT__cpu__DOT__psl_is << 26) |
+	    (tb->sbi__DOT__cpu__DOT__cur_mod << 24) |
+	    (tb->sbi__DOT__cpu__DOT__prv_mod << 22) |
+	    (tb->sbi__DOT__cpu__DOT__psl_ipl << 16);
 	F("%08X %08X| ", tb->sbi__DOT__cpu__DOT__curpc, psl);
 
 	if (vax_inst[cur_inst].name)

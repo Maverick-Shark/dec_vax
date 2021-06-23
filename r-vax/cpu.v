@@ -496,7 +496,7 @@ initial psl_ipl = 5'h1f;
 `ifdef DBGCNT
 `ifndef notdef
 wire debug;
-assign debug = 0;
+assign debug = 1;
 `else
 reg debug;
 initial debug = 0;
@@ -665,7 +665,7 @@ if (debug) $fdisplay(32'h80000002, "S_DECODE: i_hasargs %d i_emul %d pc %x\r", i
 			if (i_dohalt) begin
 				state <= `S_HALT;
 				haltpos <= `HALT_INSN;
-			end else if (i_hasargs == 0) // XXX emul
+			end else if (i_hasargs == 0)
 				state <= `S_HALT;
 			else
 				state <= `ASETUP;
@@ -1047,6 +1047,8 @@ if (cur_inst == 8'heb) $fdisplay(32'h80000002, "FFC END: argd1 %x psl %x", argd[
 $fdisplay(32'h80000002, "ENDINST: sc %d anyfault %d s_enable %d s_stepoff %d\r", mcheck ? 1 : resopflt ? 2 : 0, anyfault, s_enable, s_stepoff);
 				state <= `PREEXEC;
 				resopflt <= 0;
+				writeback <= 0;
+				writeback2 <= 0;
 			end else if (anyfault) begin
 				haltpos <= 5;
 				state <= `S_HALT;
