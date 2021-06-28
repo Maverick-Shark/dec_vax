@@ -205,7 +205,23 @@ FF	RESIN
 	plus 0 0			# entry 0, unused
 	plus 0 0	goto mcheck	# entry 1
 	plus 0 0	goto resop	# entry 2
+	plus 0 0	goto intrq	# entry 3
 #
+# Interrupt.  Interrupt level tells which vector to use, is in savpsw.
+#
+intrq:
+	shr savpsw 10	argd0		# get IPL which is upper word in PSL
+	shl savpsw B	ncond goto intrq_hw # skip is hardware interrupt
+	and 15 15	crn		# set ipr SISR
+	shl 1 argd0	arg1		# fix bit for masking
+	plus civ 0	arg2		# XXX civ in right
+	bic arg1 arg2	crw wipr	# clear bit in SISR
+	shl argd0 2	arg1		# make longword offset
+	plus arg1 80	argd1 goto scb_common # make SCB vector
+
+intrq_hw:
+	plus 0 0	resopflt eoi
+	
 #
 # Machine check.  Frame has pc+psl+argcnt, argcnt is 0.
 # Ignore stack change for now.
@@ -349,8 +365,28 @@ mtpr_2:
 mtpr_23:
 	minus arg2 25	zcond goto mtpr_ok	# 11/750 CADR
 	minus arg2 26	zcond goto mtpr_ok	# 11/750 MCESR
+	minus arg2 18	zcond goto mtpr_ok	# ICCS
 
+	minus arg2 12	nzcond goto mtpr_12	# skip if not IPRIPL
+	and 1F 1F	arg4
+	and arg4 arg1	arg1
+	shl arg4 10	arg4
+	bic arg4 psl	psl
+	shl arg1 10	arg3
+	bis arg3 psl	psl goto mtpr_ok
+
+mtpr_12:
+	minus arg2 14	nzcond goto mtpr_14	# SIRR
+	and 15 15	crn			# fetch SISR
+	and arg1 F	arg1			# only soft bits
+	shl 1 arg1	arg1			# make mask
+	bis civ arg1	crw wipr		# write back SISR
+	plus 0 0	eoi
+	
+
+mtpr_14:
 	plus 0 0	resopflt eoi
+
 
 # OK to write to IPR
 mtpr_ok:
@@ -360,30 +396,38 @@ mtpr_ok:
 
 # mfpr arg1=ipr,arg2=dest
 mfpr:
-#	and 3E 3E	arg3		# SID
+	plus arg1 0	crn			# for access
+
 	minus arg1 3E	nzcond goto mfpr_1	# SID
 	and 0A00 0A00	arg2
 	shl arg2 10	arg2
-	plus arg2 6	argd0 eoi
+	plus arg2 6	argd0 eoi savnz
 mfpr_1:
-#	and 22 22	arg3		# TXCS
 	minus arg1 22	nzcond goto mfpr_2	# TXCS
 	and 2000 2000	arg3
 	shl arg3 10	arg3
 	plus arg3 1F74	cpuaddr rmem phys
-	plus rmemdat 0	argd0 eoi
+	plus rmemdat 0	argd0 eoi savnz
 mfpr_2:
-#	and 20 20	arg3
 	minus arg1 20	nzcond goto mfpr_3	# RXCS
 	and 2000 2000	arg3
 	shl arg3 10	arg3
 	plus arg3 1F70	cpuaddr rmem phys
-	plus rmemdat 0	argd0 eoi
+	plus rmemdat 0	argd0 eoi savnz
 mfpr_3:
-	minus arg1 25	nzcond goto mfpr_25
-	plus 0 0	eoi
-mfpr_25:
+	minus arg1 25	zcond goto mfpr_ok	# CADR
+	minus arg1 15	zcond goto mfpr_ok	# SISR
+	minus arg1 12	nzcond goto mfpr_12	# IPL
+
+	shr psl 10	argd0
+	and argd0 1F	argd0 savnz eoi
+
+
+mfpr_12:
 	plus 0 0	resopflt eoi
+
+mfpr_ok:
+	plus civ 0	argd0 eoi savnz
 
 #
 # Move quad word. First long is already read, extract addr for the
@@ -927,10 +971,10 @@ rei:
 	# if (arg2.ipl > psl.ipl) resopflt();
 
 	# save old SP
-	and E E		crn
-	plus crv 0	crw
-	shr psl 18	arg4
-	and arg4 7	crn wipr
+	and E E		crn		# 480
+	plus crv 0	crw		# 481
+	shr psl 18	arg4		# 482
+	and arg4 7	crn wipr	# 483
 
 	# Write PC+PSL
 	plus arg2 0	psl
@@ -1441,7 +1485,7 @@ DECL	ml,rl#1		lbl=sub setnz setv setc wback 		# d7
 ADWC	rl,ml		lbl=adwc setnz wback			# d8
 SBWC	rl,ml		lbl=sbwc setnz wback			# d9
 MTPR	rl,rl		lbl=mtpr 				# da
-MFPR	rl,wl		lbl=mfpr wback				# db
+MFPR	rl,wl		lbl=mfpr wback setnz clv		# db
 MOVPSL	wl		lbl=movpsl wback			# dc
 PUSHL	rl,wl#-(sp)	lbl=mov setnz clv wback			# dd
 MOVAL	al,wl		lbl=mov setnz clv wback			# de

@@ -496,7 +496,7 @@ initial psl_ipl = 5'h1f;
 `ifdef DBGCNT
 `ifndef notdef
 wire debug;
-assign debug = 1;
+assign debug = 0;
 `else
 reg debug;
 initial debug = 0;
@@ -550,17 +550,14 @@ initial debug = 0;
 	    ((s_nzcond == 0 && s_zcond == 0 && s_ncond == 0 && s_nncond == 0) ||
 	    (s_zcond && alu_zero) || (s_nzcond && alu_zero == 0) ||
 	    (s_ncond && alu_neg) || (s_nncond && alu_neg == 0));
-`ifdef notdef
-	assign s_stepoff =
-	    (state == `S_DECODE) ? i_stepoff : 
-	    (state == `ENDINST && anyfault) ? (mcheck ? 1 : resopflt ? 2 : 0) :
-	    (state == `EXEC && wr_cond_ok && s_goto) ? s_addr[8:0] : scounter;
-	assign s_enable = (state == `S_DECODE) ||
-	    (state == `ENDINST && anyfault) ||
-	    ((state == `EXEC) && alu_ack);
-`else
+
 	wire [3:0]	vecoff;
-	assign vecoff = mcheck ? 1 : resopflt ? 2 : 0;
+	wire		intrq;
+	assign vecoff =
+		mcheck ? 1 :
+		resopflt ? 2 :
+		intrq ? 3 :
+		0;
 
 	always @* begin
 		case (state)
@@ -570,7 +567,7 @@ initial debug = 0;
 		end
 		`ENDINST: begin
 			s_stepoff = { 6'b0, vecoff };
-			s_enable = anyfault;
+			s_enable = anyfault | intrq;
 		end
 		`EXEC: begin
 			s_stepoff = (wr_cond_ok && s_goto) ?
@@ -583,7 +580,28 @@ initial debug = 0;
 		end
 		endcase
 	end
-`endif
+
+	/*
+	 * Deal with interrupt priority.
+	 * Load the interrupt request lines into FFs here as well.
+	 */
+	reg [15:0]	hwint, swint;
+	wire [4:0]	intlvl;
+
+	always @(posedge clk)
+		hwint <= 16'b0;	// from outside
+	always @(posedge clk)
+		if ((ipr_write || state == `WRITEIPR) &&
+		    (ipr_regaddr == `IPR_SISR))	// listen to IPR writes
+			swint <= { ipr_regwdata[15:1], 1'b0 };
+
+	intrpt intrpt(
+		.intl({ hwint, swint }),
+		.ipl(psl_ipl),
+		.intrq(intrq),
+		.intlvl(intlvl)
+	);
+
 
 	always @(posedge clk) begin
 		if (rst)
@@ -886,7 +904,8 @@ if (debug) $fdisplay(32'h80000002, "PREEXEC: op %d sleft %d sright %d scounter %
 			4'b1010: alu_left <= ipr_val;
 			4'b1011: alu_left <= cur_reg_val;
 			4'b1100: alu_left <= rmem_dat;
-			4'b1101: alu_left <= { 28'b0, Ntmp, Ztmp, Vtmp, Ctmp };
+			4'b1101: alu_left <=
+			    { 11'b0, intlvl, 12'b0, Ntmp, Ztmp, Vtmp, Ctmp };
 			4'b1110: alu_left <= alu_upper_res;
 			default: alu_left <= 0;
 			endcase
@@ -899,7 +918,7 @@ if (debug) $fdisplay(32'h80000002, "PREEXEC: op %d sleft %d sright %d scounter %
 //				argp[s_right[0]];
 			4'b1000: alu_right <= psl;
 			4'b1001: alu_right <= { 16'b0, s_const };
-//			4'b1010: alu_right <= OPu;
+//			4'b1010: alu_right <= { 27'b0, intlvl };
 			default: alu_right <= 0;
 			endcase
 
@@ -1102,6 +1121,10 @@ if (debug) $fdisplay(32'h80000002, "WB1: argd1 %x size %d addr %x\r", argd[1], a
 					wmemstate <= `WMEM_xENDINST;
 				end
 				writeback2 <= 0;
+			end else if (intrq) begin
+$fdisplay(32'h80000002, "INTR: pc %x psl %x intlvl %x", oldpc, psl, intlvl);
+				scounter <= { 6'b0, vecoff };
+				state <= `PREEXEC;
 			end
 			if (i_setcmpnz) begin
 				psw[`PSL_N] <= argd[0][31] ^ Vtmp;
@@ -1189,7 +1212,7 @@ $fdisplay(32'h80000002, "MCODE: ctr %d mc_rv %x\r", mcodectr, mc_rv);
 
 		`WRITEIPR: begin
 			state <= `PREEXEC;
-// $fdisplay(32'h80000002, "WIPR: wdata %x ipr %d\r", ipr_wdata, ipr_addr);
+$fdisplay(32'h80000002, "WIPR: wdata %x ipr 0x%x pc %x", ipr_wdata, ipr_addr, oldpc);
 		end
 
 		`S_WRITEMEM: begin
