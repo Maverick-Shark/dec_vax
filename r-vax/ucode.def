@@ -365,8 +365,17 @@ mtpr_2:
 mtpr_23:
 	minus arg2 25	zcond goto mtpr_ok	# 11/750 CADR
 	minus arg2 26	zcond goto mtpr_ok	# 11/750 MCESR
+	minus arg2 19	zcond goto mtpr_ok	# NICR
 	minus arg2 18	zcond goto mtpr_ok	# ICCS
+#	and arg1 10	zcond goto mtpr_18_10	# load ICR?
+#	and 19 19	crn			# set NICR
+#	plus civ 0	arg3			# fetch val
+#	and 1A 1A	crn			# set ICR
+#	plus arg3 0	crw wipr		# load ICR from NICR
+#mtpr_18_10:
+#	plus 0 0	eoi
 
+#mtpr_18:
 	minus arg2 12	nzcond goto mtpr_12	# skip if not IPRIPL
 	and 1F 1F	arg4
 	and arg4 arg1	arg1
@@ -417,6 +426,9 @@ mfpr_2:
 mfpr_3:
 	minus arg1 25	zcond goto mfpr_ok	# CADR
 	minus arg1 15	zcond goto mfpr_ok	# SISR
+	minus arg1 1A	zcond goto mfpr_ok	# ICR
+	minus arg1 18	zcond goto mfpr_ok	# ICCS
+
 	minus arg1 12	nzcond goto mfpr_12	# IPL
 
 	shr psl 10	argd0

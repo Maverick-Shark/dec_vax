@@ -165,7 +165,7 @@ module cpu(
 	reg [31:0]	ipr_reg[63:0];
 
 	wire [5:0]	ipr_regaddr;
-	wire [31:0]	ipr_val, ipr_regwdata;
+	wire [31:0]	ipr_regwdata;
 	reg [5:0]	ipr_addr;
 	reg [31:0]	ipr_wdata;
 	reg		ipr_write;
@@ -174,8 +174,22 @@ module cpu(
 	always @(posedge clk)
 		if (ipr_write || state == `WRITEIPR)
 			ipr_reg[ipr_regaddr] <= ipr_regwdata;
+`ifdef notdef
 	assign ipr_val = ipr_reg[ipr_regaddr];
+`else
+	reg [31:0]	ipr_val;
+	wire [31:0]	icr;
+	wire		iccs_err, iccs_int, iccs_ie, iccs_run;
 
+	always @(ipr_regaddr, icr, ipr_reg,
+	    iccs_err, iccs_int, iccs_ie, iccs_run)
+		case (ipr_regaddr)
+		`IPR_ICR: ipr_val = icr;
+		`IPR_ICCS: ipr_val =
+		    { iccs_err, 23'b0, iccs_int, iccs_ie, 5'b0, iccs_run };
+		default: ipr_val = ipr_reg[ipr_regaddr];
+		endcase
+`endif
 
 	/*
 	 * arg1/2 are arg value read. (if R|A)
@@ -587,9 +601,10 @@ initial debug = 0;
 	 */
 	reg [15:0]	hwint, swint;
 	wire [4:0]	intlvl;
+	wire		intrq22;
 
 	always @(posedge clk)
-		hwint <= 16'b0;	// from outside
+		hwint <= { 9'b0, intrq22, 6'b0 };// from outside
 	always @(posedge clk)
 		if ((ipr_write || state == `WRITEIPR) &&
 		    (ipr_regaddr == `IPR_SISR))	// listen to IPR writes
@@ -600,6 +615,31 @@ initial debug = 0;
 		.ipl(psl_ipl),
 		.intrq(intrq),
 		.intlvl(intlvl)
+	);
+
+	/*
+	 * The interval clock.
+	 */
+	wire	wrnicr, wriccs;
+	assign wrnicr = (ipr_write || state == `WRITEIPR) &&
+	    (ipr_regaddr == `IPR_NICR);
+	assign wriccs = (ipr_write || state == `WRITEIPR) &&
+	    (ipr_regaddr == `IPR_ICCS);
+
+	intclk intclk(
+		.clk(clk),
+		.intrq(intrq22),
+
+		.icr(icr),
+		.wrnicr(wrnicr),
+		.wriccs(wriccs),
+		.iprdb(ipr_regwdata),
+
+		.err_o(iccs_err),
+		.int_o(iccs_int),
+		.ie_o(iccs_ie),
+		.run_o(iccs_run)
+
 	);
 
 

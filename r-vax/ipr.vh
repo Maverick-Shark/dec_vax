@@ -14,6 +14,10 @@
 `define IPR_SIRR	6'h14
 `define IPR_SISR	6'h15
 
+`define IPR_ICCS	6'h18
+`define IPR_NICR	6'h19
+`define IPR_ICR		6'h1a
+
 `define IPR_RXCS	6'h20
 `define IPR_RXDB	6'h21
 `define IPR_TXCS	6'h22
