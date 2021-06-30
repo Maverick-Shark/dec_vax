@@ -18,7 +18,7 @@ VFLAGS=-Wno-fatal -Wall -DDBGCNT
 TOP=sbi.v
 SRCS=console.v cpu.v decode.v opspec.v sbi.v sdram.v vcache.v \
 	ipr.v qbus.v dl11_tto.v ucode.v argdecode.v mcode.v negate.v \
-	alu.v div.v intrpt.v
+	alu.v div.v intrpt.v intclk.v
 
 all:  ${DEST} # ${TDEST}
 

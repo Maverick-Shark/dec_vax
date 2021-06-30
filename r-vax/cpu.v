@@ -181,7 +181,7 @@ module cpu(
 	wire [31:0]	icr;
 	wire		iccs_err, iccs_int, iccs_ie, iccs_run;
 
-	always @(ipr_regaddr, icr, ipr_reg,
+	always @(ipr_regaddr, icr, // ipr_reg,
 	    iccs_err, iccs_int, iccs_ie, iccs_run)
 		case (ipr_regaddr)
 		`IPR_ICR: ipr_val = icr;
@@ -601,14 +601,21 @@ initial debug = 0;
 	 */
 	reg [15:0]	hwint, swint;
 	wire [4:0]	intlvl;
-	wire		intrq22;
+	wire		intrq24;
 
 	always @(posedge clk)
-		hwint <= { 9'b0, intrq22, 6'b0 };// from outside
+		hwint <= { 7'b0, intrq24, 8'b0 };// from outside
 	always @(posedge clk)
 		if ((ipr_write || state == `WRITEIPR) &&
 		    (ipr_regaddr == `IPR_SISR))	// listen to IPR writes
 			swint <= { ipr_regwdata[15:1], 1'b0 };
+
+reg lastintrq;
+always @(posedge clk) begin
+	if (lastintrq != intrq24)
+$fdisplay(32'h80000002, "INTRQ changed: last %x intr %x\n", lastintrq, intrq24);
+	lastintrq <= intrq24;
+end
 
 	intrpt intrpt(
 		.intl({ hwint, swint }),
@@ -617,6 +624,12 @@ initial debug = 0;
 		.intlvl(intlvl)
 	);
 
+reg intrqplain;
+always @(posedge clk) begin
+	if (intrqplain != intrq)
+$fdisplay(32'h80000002, "INTRQ plain: plain %x intr %x ipl %x\n", intrqplain, intrq, psl_ipl);
+	intrqplain <= intrq;
+end
 	/*
 	 * The interval clock.
 	 */
@@ -628,7 +641,7 @@ initial debug = 0;
 
 	intclk intclk(
 		.clk(clk),
-		.intrq(intrq22),
+		.intrq(intrq24),
 
 		.icr(icr),
 		.wrnicr(wrnicr),
@@ -1123,10 +1136,10 @@ if (debug) $fdisplay(32'h80000002, "WB0: argd0 %x size %d curreg %x curval %x\r"
 					endcase
 					greg_wregnum <= argp_regnum[0];
 					cur_reg_num_save <= argp_regnum[0];
-					if (writeback2)
+	//				if (writeback2)
 						wregstate <= `WREG_xENDINST;
-					else
-						wregstate <= `WREG_FETCH;
+	//				else
+	//					wregstate <= `WREG_FETCH;
 					cur_reg_num_save <= argp_regnum[1];
 					state <= `S_WREG;
 				end else begin
@@ -1150,7 +1163,8 @@ if (debug) $fdisplay(32'h80000002, "WB0: argd0 %x size %d curreg %x curval %x\r"
 					endcase
 					greg_wregnum <= argp_regnum[1];
 					cur_reg_num_save <= argp_regnum[1];
-					wregstate <= `WREG_FETCH;
+	//				wregstate <= `WREG_FETCH;
+					wregstate <= `WREG_xENDINST;
 					state <= `S_WREG;
 				end else begin
 if (debug) $fdisplay(32'h80000002, "WB1: argd1 %x size %d addr %x\r", argd[1], argp_size[1], argp[1]);
