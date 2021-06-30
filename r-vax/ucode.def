@@ -1388,6 +1388,32 @@ insque:
 	# Set flags, arg4 < arg2
 	minus arg4 arg2		argd0 savc savnz eoi
 #
+# REMQUE arg1,arg1p (entry,addr)
+remque:
+	# **(entry+4) = *entry
+	plus arg1 0	cpuaddr rmem long
+	plus rmemdat 0	arg4
+	plus arg1 4	cpuaddr rmem long
+	plus arg4 0	crw
+	plus rmemdat 0	cpuaddr wmem long
+
+	# *(*entry+4) = *(entry+4)
+	plus arg1 4	cpuaddr rmem long
+	plus rmemdat 0	arg4
+	plus arg1 0	cpuaddr rmem long
+	plus arg4 0	crw
+	plus rmemdat 4	cpuaddr wmem long
+
+	# addr = entry
+	bic 2 psl	psl
+	plus arg1 4	cpuaddr rmem long
+	plus rmemdat 0	arg3
+	minus rmemdat arg1 nzcond goto remque_1
+	bis 2 psl	psl
+remque_1:
+	plus arg1 0	argd0
+	minus arg1 arg3	savc savnz eoi
+#
 !INSTRUCTIONS
 #
 NOP	rl#0,rl#0		lbl=add				# 01
@@ -1397,7 +1423,7 @@ RET	rl#fp			lbl=ret				# 04
 RSB	rl#(sp)+,wl#pc	lbl=mov wback				# 05
 #
 INSQUE	ab,ab		lbl=insque setcmpnz clv setc		# 0e
-#
+REMQUE	ab,wl		lbl=remque setcmpnz setc		# 0f
 BSBB	0ab#b^d(pc),2rl#pc,wl#pc,wl#-(sp)	lbl=mov move2 wback wback2
 BRB	aw#b^d(pc),wl#pc	lbl=mov wback			# 11
 BNEQ	ab#b^d(pc),rl#4,wl#pc	lbl=bclr			# 12

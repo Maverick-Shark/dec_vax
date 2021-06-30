@@ -174,22 +174,20 @@ module cpu(
 	always @(posedge clk)
 		if (ipr_write || state == `WRITEIPR)
 			ipr_reg[ipr_regaddr] <= ipr_regwdata;
-`ifdef notdef
-	assign ipr_val = ipr_reg[ipr_regaddr];
-`else
-	reg [31:0]	ipr_val;
-	wire [31:0]	icr;
-	wire		iccs_err, iccs_int, iccs_ie, iccs_run;
 
-	always @(ipr_regaddr, icr, // ipr_reg,
+	reg [31:0]	ipr_val;
+	wire [31:0]	icr, ipr_val_tmp;
+	wire		iccs_err, iccs_int, iccs_ie, iccs_run;
+	assign ipr_val_tmp = ipr_reg[ipr_regaddr];
+
+	always @(ipr_regaddr, icr, ipr_val_tmp,
 	    iccs_err, iccs_int, iccs_ie, iccs_run)
 		case (ipr_regaddr)
 		`IPR_ICR: ipr_val = icr;
 		`IPR_ICCS: ipr_val =
 		    { iccs_err, 23'b0, iccs_int, iccs_ie, 5'b0, iccs_run };
-		default: ipr_val = ipr_reg[ipr_regaddr];
+		default: ipr_val = ipr_val_tmp;
 		endcase
-`endif
 
 	/*
 	 * arg1/2 are arg value read. (if R|A)
@@ -263,13 +261,18 @@ initial psl_ipl = 5'h1f;
 
 	reg [3:0]	mcodectr;
 	reg [31:0]	mc_rv;
-	always @(mcodectr, psl, curpc, oldpc, cur_inst)
+	wire [31:0]	mc_rv_tmp, mc_rv_tmp2;
+	assign mc_rv_tmp = argp_isreg[mcodectr[0]] ?
+	    ~{ 28'b0, argp_regnum[mcodectr[0]] } : argp[mcodectr[0]];
+	assign mc_rv_tmp2 = arg[mcodectr[1:0]];
+
+	always @(mcodectr, psl, curpc, oldpc, cur_inst,
+	    mc_rv_tmp, mc_rv_tmp2)
 		casez (mcodectr)
 		4'd13: mc_rv = psl;
 		4'd12: mc_rv = curpc;
-		4'b101?: mc_rv = argp_isreg[mcodectr[0]] ?
-		    ~{ 28'b0, argp_regnum[mcodectr[0]] } : argp[mcodectr[0]];
-		4'b01??: mc_rv = arg[mcodectr[1:0]];
+		4'b101?: mc_rv = mc_rv_tmp;
+		4'b01??: mc_rv = mc_rv_tmp2;
 		4'b0011: mc_rv = oldpc;
 		4'b0010: mc_rv = { 24'b0, cur_inst };
 		default: mc_rv = 0;
@@ -324,16 +327,18 @@ initial psl_ipl = 5'h1f;
 	always @(posedge clk)
 		if (state == `S_WREG)
 			general_reg[greg_wregnum] <= greg_wbdata;
-`ifdef notdef
+	wire [31:0] cur_reg_val;
 	assign cur_reg_val =
 	    (greg_addr == `REG_PC ? curpc : general_reg[greg_addr]);
-`endif
-	reg [31:0] cur_reg_val;
-	always @(greg_addr, curpc)
-		case (greg_addr)
-		`REG_PC: cur_reg_val = curpc;
-		default: cur_reg_val = general_reg[greg_addr];
-		endcase
+
+//	reg [31:0] cur_reg_val, cur_reg_val_tmp;
+
+//	cur_reg_val_tmp = general_reg[greg_addr];
+//	always @(greg_addr, curpc)
+//		case (greg_addr)
+//		`REG_PC: cur_reg_val = curpc;
+//		default: cur_reg_val = general_reg[greg_addr];
+//		endcase
 
 	/* "microcode" */
 	wire [7:0]	i_argoff, a_argoff, a_arg, cur_mux;

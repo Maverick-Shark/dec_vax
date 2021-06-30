@@ -28,7 +28,6 @@ module alu(
 );
 
 	reg [31:0]	res;
-	reg		Ctmp;
 	reg [5:0]	shlcnt;
 	reg		state, done, quick, dstate;
 	reg [31:0]	shldata;
@@ -37,7 +36,7 @@ module alu(
 	wire		isdone;
 
 	wire signed [31:0] s_left, s_right;
-	reg signed [63:0] s_res;
+	wire signed [63:0] s_res;
 
 	assign s_left = left;
 	assign s_right = right;
@@ -80,16 +79,22 @@ parameter SHIFT=1;
 		endcase
 	end
 
+	wire Ctmp_p, Ctmp_m;
+	wire [31:0] res_p, res_m;
+	assign s_res = s_left * s_right;
+	assign { Ctmp_p, res_p } = { 1'b0, left } + { 1'b0, right };
+	assign { Ctmp_m, res_m } = { 1'b0, left } - { 1'b0, right };
+	
 	always @(*)
 		case (op)
-		`ALU_PLUS: { Ctmp, res } = { 1'b0, left } + { 1'b0, right };
-		`ALU_MINUS: { Ctmp, res } = { 1'b0, left } - { 1'b0, right };
+		`ALU_PLUS: res = res_p;
+		`ALU_MINUS: res = res_m;
 		`ALU_BIS: res = left | right;
 		`ALU_BIC: res = ~left & right;
 		`ALU_AND: res = left & right;
 		`ALU_XOR: res = left ^ right;
 		`ALU_SHL, `ALU_SHR, `ALU_ASR: res = shldata;
-		`ALU_MUL: s_res = s_left * s_right;
+		`ALU_MUL: res = s_res[31:0];
 		`ALU_DIV: res = q;
 		default: res = 0;
 		endcase
@@ -136,8 +141,8 @@ parameter SHIFT=1;
 	assign ack = stb ? (quick ? 1 : isdone) : 0;
 
 	assign ures = s_res[63:32];
-	assign result = op == `ALU_MUL ? s_res[31:0] : res;
-	assign cry = Ctmp;
+	assign result = res;
+	assign cry = op == `ALU_PLUS ? Ctmp_p : Ctmp_m;
 	assign mul_n = use8 ? s_res[7] : use16 ? s_res[15] : s_res[31];
 	assign neg = op == `ALU_MUL ? mul_n :
 		use8 ? res[7] : use16 ? res[15] : res[31];
