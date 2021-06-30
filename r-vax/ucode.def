@@ -27,6 +27,8 @@
 04	RET
 05	RSB
 #
+0E	INSQUE
+0F	REMQUE
 10	BSBB
 11	BRB
 12	BNEQ
@@ -1362,6 +1364,30 @@ locc_1:
 	plus arg2 0	crw wreg	# save final addr
 	plus 0 0	eoi
 #
+# INSQUE arg1,arg2 (entry,pred)
+insque:
+	# *entry = *pred
+	plus arg2 0	cpuaddr rmem long	# fetch *pred
+	plus rmemdat 0	arg4			# save for later
+	plus rmemdat 0	crw
+	plus arg1 0	cpuaddr wmem long	# write to *entry
+
+	# *(entry+4) = pred
+	plus arg2 0	crw
+	plus arg1 4	cpuaddr wmem long
+
+	# *(*pred + 4) = entry
+	plus arg2 0	cpuaddr rmem long
+	plus arg1 0	crw
+	plus rmemdat 4	cpuaddr wmem long
+
+	# *pred = entry
+	plus arg1 0	crw
+	plus arg2 0	cpuaddr wmem long
+
+	# Set flags, arg4 < arg2
+	minus arg4 arg2		argd0 savc savnz eoi
+#
 !INSTRUCTIONS
 #
 NOP	rl#0,rl#0		lbl=add				# 01
@@ -1369,6 +1395,8 @@ REI	rl#(sp)+,rl#(sp)+,wl#pc	lbl=rei wback			# 02
 #
 RET	rl#fp			lbl=ret				# 04
 RSB	rl#(sp)+,wl#pc	lbl=mov wback				# 05
+#
+INSQUE	ab,ab		lbl=insque setcmpnz clv setc		# 0e
 #
 BSBB	0ab#b^d(pc),2rl#pc,wl#pc,wl#-(sp)	lbl=mov move2 wback wback2
 BRB	aw#b^d(pc),wl#pc	lbl=mov wback			# 11
