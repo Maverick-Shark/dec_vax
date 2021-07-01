@@ -36,7 +36,6 @@ module alu(
 	wire		isdone;
 
 	wire signed [31:0] s_left, s_right;
-	wire signed [63:0] s_res;
 
 	assign s_left = left;
 	assign s_right = right;
@@ -46,6 +45,7 @@ parameter SHIFT=1;
 	wire [31:0]	q, r;
 	wire		divbusy;
 	reg		divstart, divdone;
+	reg		muldone;
 
 	div div(
 		.clock(clk),
@@ -79,9 +79,18 @@ parameter SHIFT=1;
 		endcase
 	end
 
+	reg signed [63:0] s_res;
+	always @(posedge clk) begin
+		if (stb == 0) begin
+			muldone <= 0;
+		end else if (muldone == 0) begin
+			s_res <= s_left * s_right;
+			muldone <= 1;
+		end
+	end
+
 	wire Ctmp_p, Ctmp_m;
 	wire [31:0] res_p, res_m;
-	assign s_res = s_left * s_right;
 	assign { Ctmp_p, res_p } = { 1'b0, left } + { 1'b0, right };
 	assign { Ctmp_m, res_m } = { 1'b0, left } - { 1'b0, right };
 	
@@ -132,12 +141,13 @@ parameter SHIFT=1;
 		case (op)
 		`ALU_PLUS, `ALU_MINUS, `ALU_BIS, `ALU_BIC, `ALU_AND,
 		    `ALU_XOR: quick = 1;
-		`ALU_SHL, `ALU_SHR, `ALU_ASR, `ALU_DIV: quick = 0;
+		`ALU_SHL, `ALU_SHR, `ALU_ASR, `ALU_DIV, `ALU_MUL: quick = 0;
 		default: quick = 1;
 		endcase
 
 	
-	assign isdone = op == `ALU_DIV ? divdone : done;
+	assign isdone = op == `ALU_DIV ? divdone :
+	    op == `ALU_MUL ? muldone : done;
 	assign ack = stb ? (quick ? 1 : isdone) : 0;
 
 	assign ures = s_res[63:32];
