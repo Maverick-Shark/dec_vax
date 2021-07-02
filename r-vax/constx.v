@@ -34,11 +34,13 @@ module constx(
 	reg [NCYC-1:0] shiftreg;
 	reg shce, inten, cntbit, xmit_rdy;
 
+`ifdef notdef
 	always @(posedge clk)
 		if (wrtxcs | wrtxdb)
 		$fdisplay(32'h80000002,
 		    "txcs %x txdb %x txd %x txdb %x clkcnt %x ready %d tto_tx %d",
 		    wrtxcs, wrtxdb, iprdb, txdb, clkcnt, xmit_rdy, tto_tx);
+`endif
 
 
 	initial clkcnt = 32768-`CLKPERBIT;
