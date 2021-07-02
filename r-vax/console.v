@@ -313,16 +313,17 @@ if (debug)$fdisplay(32'h80000002, "CONSOLE0: haltpos %x \r", haltpos);
 			tmp <= DAT_I[7:0];
 			STB_O <= 0;
 			state <= `READNUM2;
+			con_pmem <= 0;
 		end
 
 		/*
 		 * Print out char in tmp
 		 */
 		`PUTCHAR: begin
-			ADR_O <= 32'h20001f74;
+			ADR_O <= 32'h22;
 			WE_O <= 0;
 			STB_O <= 1;
-			con_pmem <= 1;
+			con_ipr <= 1;
 			state <= `PUTCHAR2;
 		end
 		`PUTCHAR2: if (ACK_I) begin
@@ -333,7 +334,7 @@ if (debug)$fdisplay(32'h80000002, "CONSOLE0: haltpos %x \r", haltpos);
 				state <= `PUTCHAR;
 		end
 		`PUTCHAR21: begin
-			ADR_O <= 32'h20001f76;
+			ADR_O <= 32'h23;
 			DAT_O <= {24'b0, tmp };
 			WE_O <= 1;
 			STB_O <= 1;
@@ -341,7 +342,7 @@ if (debug)$fdisplay(32'h80000002, "CONSOLE0: haltpos %x \r", haltpos);
 		end
 		`PUTCHAR3: if (ACK_I) begin
 			STB_O <= 0;
-			con_pmem <= 0;
+			con_ipr <= 0;
 			case (putchar_next)
 			`PUTCHAR_NEXT_C2: state <= `CONSOLE2;
 			`PUTCHAR_NEXT_M3: state <= `MEMREFS3;

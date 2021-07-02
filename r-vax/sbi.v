@@ -92,7 +92,7 @@ defparam console.tto.CLKPERBIT = 2604;
 	wire mcheck;
 	wire [31:0] cpu_addr, cpu_wdata, cpu_rdata;
 	wire cpu_write, cpu_stb, cpu_ack;
-	wire cpu_pmem;
+	wire cpu_pmem, cpu_tto_tx;
 	wire [1:0] cpu_size;
 
 	cpu cpu(
@@ -113,6 +113,7 @@ defparam console.tto.CLKPERBIT = 2604;
 `ifdef DBGCNT
 		.dcount(dcount),
 `endif
+		.tto_tx(cpu_tto_tx),
 		.cpu_mcheck(mcheck)
 	);
 
@@ -151,7 +152,7 @@ defparam console.tto.CLKPERBIT = 2604;
 		.UT_ACK_I(pc_to_mmu_ack)
 	);
 
-	wire		qbus_stb, qbus_ack;
+	wire		qbus_stb, qbus_ack, qb_tto_tx;
 	wire [31:0]	qbus_wdata;
 	assign	qbus_stb = (mmu_to_sw_addr[31:28] == 4'h2)  & mmu_to_sw_stb;
 
@@ -170,8 +171,9 @@ defparam console.tto.CLKPERBIT = 2604;
 		.ACK_O(qbus_ack),
 
 		.tti_rx(tti_rx),
-		.tto_tx(tto_tx)
+		.tto_tx(qb_tto_tx)
 	);
+	assign tto_tx = /* qb_tto_tx& */ cpu_tto_tx;
 
 
 	/* switch pcache input between console and mmu */

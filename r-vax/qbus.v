@@ -42,6 +42,7 @@ module qbus(
 	reg		tto_start;
 	reg [7:0]	txdb;
 
+`ifdef notdef
 	dl11_tto dl11_tto(
 		.clk(clk),
 		.rst(rst),
@@ -52,6 +53,7 @@ module qbus(
 
 		.tto_tx(tto_tx)
 	);
+`endif
 
 	/*
 	 * DL11 receiver.

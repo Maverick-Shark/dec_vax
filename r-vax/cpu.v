@@ -85,6 +85,7 @@ module cpu(
 	input [7:0]	dcount,
 `endif
 
+	output		tto_tx,
 	output		cpu_mcheck
 
 
@@ -178,6 +179,10 @@ module cpu(
 	reg [31:0]	ipr_val;
 	wire [31:0]	icr, ipr_val_tmp;
 	wire		iccs_err, iccs_int, iccs_ie, iccs_run;
+	wire		txcs_rdy, txcs_ie;
+	wire		rxcs_rdy, rxcs_ie;
+	wire [7:0]	rxdb;
+
 	assign ipr_val_tmp = ipr_reg[ipr_regaddr];
 
 	always @(ipr_regaddr, icr, ipr_val_tmp,
@@ -186,6 +191,9 @@ module cpu(
 		`IPR_ICR: ipr_val = icr;
 		`IPR_ICCS: ipr_val =
 		    { iccs_err, 23'b0, iccs_int, iccs_ie, 5'b0, iccs_run };
+		`IPR_TXCS: ipr_val = { 24'b0, txcs_rdy, txcs_ie, 6'b0 };
+		`IPR_RXCS: ipr_val = { 24'b0, rxcs_rdy, rxcs_ie, 6'b0 };
+		`IPR_RXDB: ipr_val = { 24'b0, rxdb };
 		default: ipr_val = ipr_val_tmp;
 		endcase
 
@@ -330,15 +338,6 @@ initial psl_ipl = 5'h1f;
 	wire [31:0] cur_reg_val;
 	assign cur_reg_val =
 	    (greg_addr == `REG_PC ? curpc : general_reg[greg_addr]);
-
-//	reg [31:0] cur_reg_val, cur_reg_val_tmp;
-
-//	cur_reg_val_tmp = general_reg[greg_addr];
-//	always @(greg_addr, curpc)
-//		case (greg_addr)
-//		`REG_PC: cur_reg_val = curpc;
-//		default: cur_reg_val = general_reg[greg_addr];
-//		endcase
 
 	/* "microcode" */
 	wire [7:0]	i_argoff, a_argoff, a_arg, cur_mux;
@@ -660,6 +659,48 @@ end
 
 	);
 
+	/*
+	 * Write to console
+	 */
+	wire wrtxcs, wrtxdb;
+	assign wrtxdb = (ipr_write || state == `WRITEIPR) &&
+	    (ipr_regaddr == `IPR_TXDB);	// WO
+	assign wrtxcs = (ipr_write || state == `WRITEIPR) &&
+	    (ipr_regaddr == `IPR_TXCS); // RW
+
+	constx constx(
+		.clk(clk),
+
+		.iprdb(ipr_regwdata[7:0]),
+		.wrtxcs(wrtxcs),
+		.wrtxdb(wrtxdb),
+
+	/*	.intreq(tx_ireq), */
+
+		.rdy(txcs_rdy),
+		.ie(txcs_ie),
+
+		.tto_tx(tto_tx)
+	);
+
+	/*
+	 * Read from console.
+	 */
+	wire wrrxcs;
+	assign wrrxcs = (ipr_write || state == `WRITEIPR) &&
+	    (ipr_regaddr == `IPR_RXCS); // RW
+	consrx consrx(
+		.clk(clk),
+
+		.wrie(ipr_regwdata[6]),	// write interrupt enable
+		.wrrxcs(wrrxcs),
+
+		.ie(rxcs_ie),		// read interrupt enable
+		.rdy(rxcs_rdy),		// read ready
+		.data(rxdb),		// read data
+
+		.tti_rx(tti_rx)
+	);
 
 	always @(posedge clk) begin
 		if (rst)

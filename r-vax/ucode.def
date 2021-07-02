@@ -361,12 +361,13 @@ mtpr_1:
 mtpr_2:
 	minus arg2 11	zcond goto mtpr_ok	# Accept SCBB
 
-	minus arg2 23	nzcond goto mtpr_23	# jump if not TXDB
-	plus arg1 0	crw
-	and 2000 2000	arg3
-	shl arg3 10	arg3
-	plus arg3 1F76	cpuaddr wmem phys
-	plus 0 0	eoi
+	minus arg2 23	zcond goto mtpr_ok
+#	minus arg2 23	nzcond goto mtpr_23	# jump if not TXDB
+#	plus arg1 0	crw
+#	and 2000 2000	arg3
+#	shl arg3 10	arg3
+#	plus arg3 1F76	cpuaddr wmem phys
+#	plus 0 0	eoi
 
 mtpr_23:
 	minus arg2 25	zcond goto mtpr_ok	# 11/750 CADR
@@ -418,11 +419,12 @@ mfpr:
 	shl arg2 10	arg2
 	plus arg2 6	argd0 eoi savnz
 mfpr_1:
-	minus arg1 22	nzcond goto mfpr_2	# TXCS
-	and 2000 2000	arg3
-	shl arg3 10	arg3
-	plus arg3 1F74	cpuaddr rmem phys
-	plus rmemdat 0	argd0 eoi savnz
+	minus arg1 22	zcond goto mfpr_ok
+#	minus arg1 22	nzcond goto mfpr_2	# TXCS
+#	and 2000 2000	arg3
+#	shl arg3 10	arg3
+#	plus arg3 1F74	cpuaddr rmem phys
+#	plus rmemdat 0	argd0 eoi savnz
 mfpr_2:
 	minus arg1 20	nzcond goto mfpr_3	# RXCS
 	and 2000 2000	arg3
