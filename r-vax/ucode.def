@@ -426,11 +426,12 @@ mfpr_1:
 #	plus arg3 1F74	cpuaddr rmem phys
 #	plus rmemdat 0	argd0 eoi savnz
 mfpr_2:
-	minus arg1 20	nzcond goto mfpr_3	# RXCS
-	and 2000 2000	arg3
-	shl arg3 10	arg3
-	plus arg3 1F70	cpuaddr rmem phys
-	plus rmemdat 0	argd0 eoi savnz
+	minus arg1 20	zcond goto mfpr_ok	# RXCS
+#	minus arg1 20	nzcond goto mfpr_3	# RXCS
+#	and 2000 2000	arg3
+#	shl arg3 10	arg3
+#	plus arg3 1F70	cpuaddr rmem phys
+#	plus rmemdat 0	argd0 eoi savnz
 mfpr_3:
 	minus arg1 25	zcond goto mfpr_ok	# CADR
 	minus arg1 15	zcond goto mfpr_ok	# SISR

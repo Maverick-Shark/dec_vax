@@ -86,6 +86,7 @@ module cpu(
 `endif
 
 	output		tto_tx,
+	input		tti_rx,
 	output		cpu_mcheck
 
 
@@ -686,18 +687,21 @@ end
 	/*
 	 * Read from console.
 	 */
-	wire wrrxcs;
+	wire wrrxcs, rdrxdb;
 	assign wrrxcs = (ipr_write || state == `WRITEIPR) &&
 	    (ipr_regaddr == `IPR_RXCS); // RW
+	assign rdrxdb = !(ipr_write || state == `WRITEIPR) &&
+	    (ipr_regaddr == `IPR_RXDB); // RO
 	consrx consrx(
 		.clk(clk),
 
 		.wrie(ipr_regwdata[6]),	// write interrupt enable
 		.wrrxcs(wrrxcs),
+		.rdrxdb(rdrxdb),
 
 		.ie(rxcs_ie),		// read interrupt enable
 		.rdy(rxcs_rdy),		// read ready
-		.data(rxdb),		// read data
+		.rxdb(rxdb),		// read data
 
 		.tti_rx(tti_rx)
 	);

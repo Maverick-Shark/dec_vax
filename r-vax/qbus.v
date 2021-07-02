@@ -62,6 +62,7 @@ module qbus(
 	wire [7:0]	tti_data;
 	reg		tti_clr;
 
+`ifdef notdef
 	dl11_tti dl11_tti(
 		.clk(clk),
 		.rst(rst),
@@ -72,7 +73,7 @@ module qbus(
 
 		.tti_rx(tti_rx)
 	);
-
+`endif
 
 	/*
 	 * Qbus I/O space.

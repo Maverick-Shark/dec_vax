@@ -114,6 +114,7 @@ defparam console.tto.CLKPERBIT = 2604;
 		.dcount(dcount),
 `endif
 		.tto_tx(cpu_tto_tx),
+		.tti_rx(tti_rx),
 		.cpu_mcheck(mcheck)
 	);
 

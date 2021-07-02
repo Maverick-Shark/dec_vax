@@ -291,10 +291,11 @@ if (debug)$fdisplay(32'h80000002, "CONSOLE0: haltpos %x \r", haltpos);
 		 * Get char and put in tmp
 		 */
 		`GETCHAR: begin
-			ADR_O <= 32'h20001f70;
+	//		ADR_O <= 32'h20001f70;
+			ADR_O <= 32'h20;
 			WE_O <= 0;
 			STB_O <= 1;
-			con_pmem <= 1;
+			con_ipr <= 1;
 			state <= `GETCHAR2;
 		end
 		`GETCHAR2: if (ACK_I) begin
@@ -305,7 +306,8 @@ if (debug)$fdisplay(32'h80000002, "CONSOLE0: haltpos %x \r", haltpos);
 				state <= `GETCHAR;
 		end
 		`GETCHAR3: begin
-			ADR_O <= 32'h20001f72;
+	//		ADR_O <= 32'h20001f72;
+			ADR_O <= 32'h21;
 			STB_O <= 1;
 			state <= `GETCHAR4;
 		end
@@ -313,7 +315,7 @@ if (debug)$fdisplay(32'h80000002, "CONSOLE0: haltpos %x \r", haltpos);
 			tmp <= DAT_I[7:0];
 			STB_O <= 0;
 			state <= `READNUM2;
-			con_pmem <= 0;
+			con_ipr <= 0;
 		end
 
 		/*
