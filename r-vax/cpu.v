@@ -520,7 +520,7 @@ assign debug = 0;
 reg debug;
 initial debug = 0;
 	always @(posedge clk)
-		if (curpc == 32'h917d)
+		if (curpc == 32'hb8bc)
 			debug <= 1;
 `endif
 `else
@@ -564,8 +564,9 @@ initial debug = 0;
 	);
 
 	/* OK to do conditional in microcode? */
+	reg		doing_intr;
 	wire		wr_cond_ok;
-	assign wr_cond_ok = alu_ack && 
+	assign wr_cond_ok = alu_ack &&
 	    ((s_nzcond == 0 && s_zcond == 0 && s_ncond == 0 && s_nncond == 0) ||
 	    (s_zcond && alu_zero) || (s_nzcond && alu_zero == 0) ||
 	    (s_ncond && alu_neg) || (s_nncond && alu_neg == 0));
@@ -606,10 +607,13 @@ initial debug = 0;
 	 */
 	reg [15:0]	hwint, swint;
 	wire [4:0]	intlvl;
-	wire		intrq24;
+	wire		intrq18, intrq14;
+	wire		tx_intreq, rx_intreq;
+
+	assign intrq14 = tx_intreq | rx_intreq;
 
 	always @(posedge clk)
-		hwint <= { 7'b0, intrq24, 8'b0 };// from outside
+		hwint <= { 7'b0, intrq18, 3'b0, intrq14, 4'b0 };
 	always @(posedge clk)
 		if ((ipr_write || state == `WRITEIPR) &&
 		    (ipr_regaddr == `IPR_SISR))	// listen to IPR writes
@@ -617,9 +621,9 @@ initial debug = 0;
 
 reg lastintrq;
 always @(posedge clk) begin
-	if (lastintrq != intrq24)
-$fdisplay(32'h80000002, "INTRQ changed: last %x intr %x\n", lastintrq, intrq24);
-	lastintrq <= intrq24;
+	if (lastintrq != intrq18)
+$fdisplay(32'h80000002, "INTRQ changed: last %x intr %x\n", lastintrq, intrq18);
+	lastintrq <= intrq18;
 end
 
 	intrpt intrpt(
@@ -646,7 +650,7 @@ end
 
 	intclk intclk(
 		.clk(clk),
-		.intrq(intrq24),
+		.intrq(intrq18),
 
 		.icr(icr),
 		.wrnicr(wrnicr),
@@ -664,6 +668,7 @@ end
 	 * Write to console
 	 */
 	wire wrtxcs, wrtxdb;
+	reg tx_intack;
 	assign wrtxdb = (ipr_write || state == `WRITEIPR) &&
 	    (ipr_regaddr == `IPR_TXDB);	// WO
 	assign wrtxcs = (ipr_write || state == `WRITEIPR) &&
@@ -676,7 +681,8 @@ end
 		.wrtxcs(wrtxcs),
 		.wrtxdb(wrtxdb),
 
-	/*	.intreq(tx_ireq), */
+		.intack(tx_intack),
+		.intreq(tx_intreq),
 
 		.rdy(txcs_rdy),
 		.ie(txcs_ie),
@@ -688,6 +694,7 @@ end
 	 * Read from console.
 	 */
 	wire wrrxcs, rdrxdb;
+	reg rx_intack;
 	assign wrrxcs = (ipr_write || state == `WRITEIPR) &&
 	    (ipr_regaddr == `IPR_RXCS); // RW
 	assign rdrxdb = !(ipr_write || state == `WRITEIPR) &&
@@ -698,6 +705,9 @@ end
 		.wrie(ipr_regwdata[6]),	// write interrupt enable
 		.wrrxcs(wrrxcs),
 		.rdrxdb(rdrxdb),
+
+		.intack(rx_intack),
+		.intreq(rx_intreq),
 
 		.ie(rxcs_ie),		// read interrupt enable
 		.rdy(rxcs_rdy),		// read ready
@@ -1008,7 +1018,8 @@ if (debug) $fdisplay(32'h80000002, "PREEXEC: op %d sleft %d sright %d scounter %
 			4'b1011: alu_left <= cur_reg_val;
 			4'b1100: alu_left <= rmem_dat;
 			4'b1101: alu_left <=
-			    { 11'b0, intlvl, 12'b0, Ntmp, Ztmp, Vtmp, Ctmp };
+			    { 11'b0, intlvl, tx_intreq, rx_intreq,
+			      10'b0, Ntmp, Ztmp, Vtmp, Ctmp };
 			4'b1110: alu_left <= alu_upper_res;
 			default: alu_left <= 0;
 			endcase
@@ -1037,10 +1048,11 @@ if (debug & alu_ack) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d ste
 
 			case (s_dest)
 			0: ;
-			1: { psl_is, cur_mod, prv_mod, psl_ipl, psw } <=
+			1: { psl_is, cur_mod, prv_mod, psl_ipl, 
+			     tx_intack, rx_intack, psw } <=
 			    { alu_res[26], alu_res[25:24], 
 			      alu_res[23:22], alu_res[20:16],
-			      alu_res[7:0] };
+			      alu_res[15:14], alu_res[7:0] };
 			2: argd[0] <= alu_res;
 			3: argd[1] <= alu_res;
 			4: arg[0] <= alu_res;
@@ -1079,10 +1091,10 @@ if (debug & alu_ack) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d ste
 			alu_upper_res <= alu_ures; // used by EMUL
 
 			if ((wr_cond_ok && s_wback) || i_wback) begin
-				writeback <= 1;
+				writeback <= ~doing_intr;
 			end
 			if ((wr_cond_ok && s_wback2) || i_wback2) begin
-				writeback2 <= 1;
+				writeback2 <= ~doing_intr;
 			end
 			if (s_savv)
 				Vtmp <= alu_ovf;
@@ -1163,6 +1175,7 @@ if (cur_inst == 8'hf0) $fdisplay(32'h80000002, "INSV END: argd0 %x argd1 %x\r", 
 if (cur_inst == 8'h2d) $fdisplay(32'h80000002, "CMPC5 END: R0 %x R1 %x R2 %x R3 %x psl %x", general_reg[0], general_reg[1], general_reg[2], general_reg[3], psl);
 if (cur_inst == 8'heb) $fdisplay(32'h80000002, "FFC END: argd1 %x psl %x", argd[1], psl);
 			state <= `S_FETCH;
+			doing_intr <= 0;
 
 			if (resopflt|mcheck) begin
 				scounter <= { 6'b0, vecoff };
@@ -1171,6 +1184,7 @@ $fdisplay(32'h80000002, "ENDINST: sc %d anyfault %d s_enable %d s_stepoff %d\r",
 				resopflt <= 0;
 				writeback <= 0;
 				writeback2 <= 0;
+				doing_intr <= 1;
 			end else if (anyfault) begin
 				haltpos <= 5;
 				state <= `S_HALT;
@@ -1227,6 +1241,8 @@ if (debug) $fdisplay(32'h80000002, "WB1: argd1 %x size %d addr %x\r", argd[1], a
 				writeback2 <= 0;
 			end else if (intrq) begin
 $fdisplay(32'h80000002, "INTR: pc %x psl %x intlvl %x", oldpc, psl, intlvl);
+//$display("INTR: pc %x psl %x intlvl %x\r", oldpc, psl, intlvl);
+				doing_intr <= 1;
 				scounter <= { 6'b0, vecoff };
 				state <= `PREEXEC;
 			end

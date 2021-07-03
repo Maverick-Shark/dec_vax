@@ -222,11 +222,28 @@ intrq:
 	plus arg1 80	argd1 goto scb_common # make SCB vector
 
 intrq_hw:
-	and argd0 1F	argd0		# make vector.  Set mod as 0.
+	and argd0 1F	argd0		# 12 make vector.  Set mod as 0.
 	minus argd0 18	zcond goto intrq_hw18 # skip if timer
+	minus argd0 14	zcond goto intrq_14	# skip if timer
 	plus 0 0	resopflt eoi
 
 intrq_hw18: and C0 C0	argd1 goto scb_common	# interval timer
+
+#
+# console also interrupts on level14, but with different vectors.
+#
+intrq_14:
+	and savpsw 8000	zcond goto intrq_14_1 # 17 check for tx intr
+	bis psl 8000	psl		# set clear interrupt request
+	bis psl 0	psl		# reset clear bit
+	and FC FC	argd1 goto scb_common # console TX interrupt
+intrq_14_1:
+	and savpsw 4000	zcond goto intrq_14_2 # 21 check for rx intr
+	bis psl 4000	psl		# set clear interrupt request
+	bis psl 0	psl		# reset clear bit
+	and F8 F8	argd1 goto scb_common # console RX interrupt
+intrq_14_2:
+	plus 0 0	resopflt eoi
 
 #
 # Machine check.  Frame has pc+psl+argcnt, argcnt is 0.
@@ -270,41 +287,41 @@ resinflt:
 #
 scb_common:
 # begin with saving old SP in IPR.
-	and E E		crn		# 25 SP
-	plus crv 0	crw		# 26 save to write in IPR
-	shr psl 18	arg4		# 27 Fetch IS+CURMOD from PSL
-	and arg4 7	crn wipr	# 28 write old stack to IPR
+	and E E		crn		# 48 SP
+	plus crv 0	crw		# 49 save to write in IPR
+	shr psl 18	arg4		# 50 Fetch IS+CURMOD from PSL
+	and arg4 7	crn wipr	# 51 write old stack to IPR
 # set new stack
 # unless vector bit0==0 and psl.is==0 it will be on the interrupt stack.
-	and 11 11	crn		# 29
-	plus civ argd1	cpuaddr rmem phys # 30 fetch vector
-	shr psl 1A	arg4		# 31 get IS bit in pos0
-	bis rmemdat arg4 arg4		# 32 merge with stack bit in vector
-	plus arg4 0	argd1		# 33 remember new PC address
-	and arg4 1	arg4		# 34
-	and arg4 1	crn zcond goto scb_1 # 35 KSP
-	and 4 4		crn		# 36 nope, ISP
+	and 11 11	crn		# 52
+	plus civ argd1	cpuaddr rmem phys # 53 fetch vector
+	shr psl 1A	arg4		# 54 get IS bit in pos0
+	bis rmemdat arg4 arg4		# 55 merge with stack bit in vector
+	plus arg4 0	argd1		# 56 remember new PC address
+	and arg4 1	arg4		# 57
+	and arg4 1	crn zcond goto scb_1 # 58 KSP
+	and 4 4		crn		# 59 nope, ISP
 scb_1:
 # save old PC+PSL.  new SP in civ
-	bis arg4 argd1	argd1		# 37 save IS flag as low bit.
-	plus civ 0	arg4		# 38
-	minus arg4 4	cpuaddr		# 39 prepare to push
-	plus psl 0	crw wmem	# 40 push PSL
-	minus arg4 8	cpuaddr		# 41 sub 4 more
-	and F F		crn		# 42 fetch PC
-	plus crv 0	crw wmem	# 43 push PC
-	and E E		crn		# 44
-	minus arg4 8	crw wreg	# 45 write back stack
+	bis arg4 argd1	argd1		# 60 save IS flag as low bit.
+	plus civ 0	arg4		# 61
+	minus arg4 4	cpuaddr		# 62 prepare to push
+	plus psl 0	crw wmem	# 63 push PSL
+	minus arg4 8	cpuaddr		# 64 sub 4 more
+	and F F		crn		# 65 fetch PC
+	plus crv 0	crw wmem	# 66 push PC
+	and E E		crn		# 67
+	minus arg4 8	crw wreg	# 68 write back stack
 # update new PC.
-	and F F		crn		# 46
-	bic 3 argd1	crw wreg	# 47 write new PC
+	and F F		crn		# 69
+	bic 3 argd1	crw wreg	# 70 write new PC
 # update PSL.
-	and argd1 1	arg4		# 48 get stack bit
-	shl arg4 A	arg4
-	bis arg4 argd0	arg4
-	shl arg4 10	psl		
-#	and argp1 argp1	nzcond goto scb_2
-	plus 0 0	eoi
+	and argd1 1	arg4		# 71 get stack bit
+	shl arg4 A	arg4		# 72
+	bis arg4 argd0	arg4		# 73
+	shl arg4 10	psl		# 74
+#	and argp1 argp1	nzcond goto scb_2 # 
+	plus 0 0	eoi		# 75
 
 #
 mov:	plus arg1 0		argd0 savnz eoi
@@ -361,14 +378,13 @@ mtpr_1:
 mtpr_2:
 	minus arg2 11	zcond goto mtpr_ok	# Accept SCBB
 
-	minus arg2 22	zcond goto mtpr_ok	# TXCS
-	minus arg2 23	zcond goto mtpr_ok	# TXDB
-
-mtpr_23:
-	minus arg2 25	zcond goto mtpr_ok	# 11/750 CADR
-	minus arg2 26	zcond goto mtpr_ok	# 11/750 MCESR
 	minus arg2 19	zcond goto mtpr_ok	# NICR
 	minus arg2 18	zcond goto mtpr_ok	# ICCS
+	minus arg2 20	zcond goto mtpr_ok	# RXCS
+	minus arg2 22	zcond goto mtpr_ok	# TXCS
+	minus arg2 23	zcond goto mtpr_ok	# TXDB
+	minus arg2 25	zcond goto mtpr_ok	# 11/750 CADR
+	minus arg2 26	zcond goto mtpr_ok	# 11/750 MCESR
 
 	minus arg2 12	nzcond goto mtpr_12	# skip if not IPRIPL
 	and 1F 1F	arg4
@@ -406,12 +422,13 @@ mfpr:
 	shl arg2 10	arg2
 	plus arg2 6	argd0 eoi savnz
 mfpr_1:
-	minus arg1 22	zcond goto mfpr_ok
-	minus arg1 20	zcond goto mfpr_ok	# RXCS
-	minus arg1 25	zcond goto mfpr_ok	# CADR
 	minus arg1 15	zcond goto mfpr_ok	# SISR
-	minus arg1 1A	zcond goto mfpr_ok	# ICR
 	minus arg1 18	zcond goto mfpr_ok	# ICCS
+	minus arg1 1A	zcond goto mfpr_ok	# ICR
+	minus arg1 20	zcond goto mfpr_ok	# RXCS
+	minus arg1 21	zcond goto mfpr_ok	# RXDB
+	minus arg1 22	zcond goto mfpr_ok	# TXCS
+	minus arg1 25	zcond goto mfpr_ok	# CADR
 
 	minus arg1 12	nzcond goto mfpr_12	# IPL
 

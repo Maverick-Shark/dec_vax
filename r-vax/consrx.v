@@ -26,6 +26,9 @@ module consrx(
 	input		wrrxcs,
 	input		rdrxdb,
 
+	input		intack,
+	output reg	intreq,
+
 	output		ie,
 	output		rdy,
 	output [7:0]	rxdb,
@@ -37,7 +40,7 @@ module consrx(
 	reg [8:0]	rxraw;
 	reg [15:0]	clkcnt;
 	reg [NCYC-1:0] shiftreg;
-	reg shin, shce;
+	reg shin, shce, last_ie_rdy;
 	reg busy, inten, done, clear;
 
 	assign rxdb = rxraw[7:0];
@@ -50,6 +53,15 @@ module consrx(
 `endif
 	
 	initial clkcnt = 32768-`CLKPERBIT;
+
+	always @(posedge clk) begin
+		if (rdy & ie & last_ie_rdy == 0) begin
+			intreq <= 1;
+		end else if (intack) begin
+			intreq <= 0;
+		end
+		last_ie_rdy <= ie & rdy;
+	end
 
 	always @(posedge clk)
 		clear <= rdrxdb & done;

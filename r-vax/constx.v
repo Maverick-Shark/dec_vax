@@ -19,7 +19,8 @@ module constx(
 	input		wrtxcs,
 	input		wrtxdb,
 
-//	output		intreq,
+	input		intack,
+	output reg	intreq,
 
 	output		rdy,
 	output		ie,
@@ -32,7 +33,7 @@ module constx(
 	reg [8:0] txdb;
 
 	reg [NCYC-1:0] shiftreg;
-	reg shce, inten, cntbit, xmit_rdy;
+	reg shce, inten, cntbit, xmit_rdy, last_ie_rdy;
 
 `ifdef notdef
 	always @(posedge clk)
@@ -47,7 +48,14 @@ module constx(
 	initial txdb = 9'h1ff;
 	initial xmit_rdy = 1;
 
-	assign tto_tx = txdb[0];
+	always @(posedge clk) begin
+		if (rdy & ie & last_ie_rdy == 0)
+			intreq <= 1;
+		else if (intack)
+			intreq <= 0;
+		last_ie_rdy <= ie & rdy;
+	end
+
 
 	// int enable/disab only bit that can be changed
 	always @(posedge clk)
@@ -89,5 +97,6 @@ module constx(
 
 	assign rdy = xmit_rdy;
 	assign ie = inten;
+	assign tto_tx = txdb[0];
 
 endmodule
