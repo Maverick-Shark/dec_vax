@@ -619,12 +619,12 @@ initial debug = 0;
 		    (ipr_regaddr == `IPR_SISR))	// listen to IPR writes
 			swint <= { ipr_regwdata[15:1], 1'b0 };
 
-reg lastintrq;
-always @(posedge clk) begin
-	if (lastintrq != intrq18)
-$fdisplay(32'h80000002, "INTRQ changed: last %x intr %x\n", lastintrq, intrq18);
-	lastintrq <= intrq18;
-end
+//reg lastintrq;
+//always @(posedge clk) begin
+//	if (lastintrq != intrq18)
+//$fdisplay(32'h80000002, "INTRQ changed: last %x intr %x\n", lastintrq, intrq18);
+//	lastintrq <= intrq18;
+//end
 
 	intrpt intrpt(
 		.intl({ hwint, swint }),
@@ -633,12 +633,12 @@ end
 		.intlvl(intlvl)
 	);
 
-reg intrqplain;
-always @(posedge clk) begin
-	if (intrqplain != intrq)
-$fdisplay(32'h80000002, "INTRQ plain: plain %x intr %x ipl %x\n", intrqplain, intrq, psl_ipl);
-	intrqplain <= intrq;
-end
+//reg intrqplain;
+//always @(posedge clk) begin
+//	if (intrqplain != intrq)
+//$fdisplay(32'h80000002, "INTRQ plain: plain %x intr %x ipl %x\n", intrqplain, intrq, psl_ipl);
+//	intrqplain <= intrq;
+//end
 	/*
 	 * The interval clock.
 	 */
@@ -985,7 +985,7 @@ if (debug) $fdisplay(32'h80000002, "ARGEND: a_rargno %d a_wargno %d arg_aR %d ar
 				cur_reg_num_save <= `REG_SP;
 			end else /* if (|scounter) */ begin
 				state <= `PREEXEC;
-if (cur_inst == 8'hf0) $fdisplay(32'h80000002, "INSV pos %x size %x base %x src %x pc %x\r", arg[0], arg[1], arg[2], arg[3], oldpc);
+//if (cur_inst == 8'hf0) $fdisplay(32'h80000002, "INSV pos %x size %x base %x src %x pc %x\r", arg[0], arg[1], arg[2], arg[3], oldpc);
 //if (cur_inst == 8'hef) $fdisplay(32'h80000002, "EXTZV pos %x size %x base %x dest %x pc %x\r", arg[0], arg[1], argp[0], argp[1], oldpc);
 //if (cur_inst == 8'hed) $fdisplay(32'h80000002, "CMPZV pos %x size %x base %x dest %x pc %x\r", arg[0], arg[1], argp[0], argp[1], oldpc);
 //if (cur_inst == 8'hd8) $fdisplay(32'h80000002, "ADWC arg1 %x arg2 %x psl %x dest %x pc %x\r", arg[0], arg[1], psl, argp[0], oldpc);
@@ -994,8 +994,8 @@ if (cur_inst == 8'hf0) $fdisplay(32'h80000002, "INSV pos %x size %x base %x src 
 //if (cur_inst == 8'h28) $fdisplay(32'h80000002, "MOVC3 arg1 %x arg2 %x arg3 %x psl %x", arg[0], arg[1], arg[2], psl);
 //if (cur_inst == 8'h28) $fdisplay(32'h80000002, "MOVC3 R8 %x", general_reg[8]);
 //if (cur_inst == 8'h2c) $fdisplay(32'h80000002, "MOVC5 arg1 %x arg2 %x arg3 %x arg4 %x argd0 %x psl %x", arg[0], arg[1], arg[2], arg_rv, argd[0], psl);
-if (cur_inst == 8'h2d) $fdisplay(32'h80000002, "CMPC5 arg1 %x arg2 %x arg3 %x arg4 %x argd0 %x psl %x", arg[0], arg[1], arg[2], arg_rv, argd[0], psl);
-if (cur_inst == 8'heb) $fdisplay(32'h80000002, "FFC arg1 %x arg2 %x argp0 %x argp1 %x isreg %d psl %x", arg[0], arg[1], argp[0], arg_rv, argp_isreg[0], psl);
+//if (cur_inst == 8'h2d) $fdisplay(32'h80000002, "CMPC5 arg1 %x arg2 %x arg3 %x arg4 %x argd0 %x psl %x", arg[0], arg[1], arg[2], arg_rv, argd[0], psl);
+//if (cur_inst == 8'heb) $fdisplay(32'h80000002, "FFC arg1 %x arg2 %x argp0 %x argp1 %x isreg %d psl %x", arg[0], arg[1], argp[0], arg_rv, argp_isreg[0], psl);
 			end
 			arg_read_step1 <= 0;
 			arg_read_step2 <= 0;
@@ -1154,7 +1154,7 @@ if (debug & alu_ack) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d ste
 			/* copy third arg XXX */
 			if (i_move2)
 				argd[1] <= arg[2];
-if (resopflt)$fdisplay(32'h80000002, "EXEC: resopflt\r");
+//if (resopflt)$fdisplay(32'h80000002, "EXEC: resopflt\r");
 		end
 
 		/*
@@ -1164,7 +1164,7 @@ if (resopflt)$fdisplay(32'h80000002, "EXEC: resopflt\r");
 		`ENDINST: begin
 if (debug) $fdisplay(32'h80000002, "ENDINST: pc %x argd[0] %x argpsz[0] %d arg1p %x isreg %d regno %d wb %d\r", curpc, argd[0], argp_size[0], argp[0], argp_isreg[0], argp_regnum[0], writeback);
 if (debug) $fdisplay(32'h80000002, "ENDINST: pc %x argd[1] %x argpsz[1] %d arg2p %x isreg %d regno %d wb %d\r", curpc, argd[1], argp_size[1], argp[1], argp_isreg[1], argp_regnum[1], writeback2);
-if (cur_inst == 8'hf0) $fdisplay(32'h80000002, "INSV END: argd0 %x argd1 %x\r", argd[0], argd[1]);
+//if (cur_inst == 8'hf0) $fdisplay(32'h80000002, "INSV END: argd0 %x argd1 %x\r", argd[0], argd[1]);
 //if (cur_inst == 8'hef) $fdisplay(32'h80000002, "EXTZV END: argd0 %x argp0 %x pc %x\r", argd[0], argp[0], oldpc);
 //if (cur_inst == 8'hed) $fdisplay(32'h80000002, "CMPZV END: argd0 %x argd1 %x pc %x\r", argd[0], argd[1], oldpc);
 //if (cur_inst == 8'hd8) $fdisplay(32'h80000002, "ADWC END: argd0 %x tmpV %d pc %x\r", argd[0], Vtmp, oldpc);
@@ -1172,14 +1172,14 @@ if (cur_inst == 8'hf0) $fdisplay(32'h80000002, "INSV END: argd0 %x argd1 %x\r", 
 //if (cur_inst == 8'h7a) $fdisplay(32'h80000002, "EMUL END: argd0 %x argd1 %x psl %x", argd[0], argd[1], psl);
 //if (cur_inst == 8'h28) $fdisplay(32'h80000002, "MOVC3 END: R1 %x R3 %x psl %x", general_reg[1], general_reg[3], psl);
 //if (cur_inst == 8'h2c) $fdisplay(32'h80000002, "MOVC5 END: R0 %x R1 %x R3 %x psl %x", general_reg[0], general_reg[1], general_reg[3], psl);
-if (cur_inst == 8'h2d) $fdisplay(32'h80000002, "CMPC5 END: R0 %x R1 %x R2 %x R3 %x psl %x", general_reg[0], general_reg[1], general_reg[2], general_reg[3], psl);
-if (cur_inst == 8'heb) $fdisplay(32'h80000002, "FFC END: argd1 %x psl %x", argd[1], psl);
+//if (cur_inst == 8'h2d) $fdisplay(32'h80000002, "CMPC5 END: R0 %x R1 %x R2 %x R3 %x psl %x", general_reg[0], general_reg[1], general_reg[2], general_reg[3], psl);
+//if (cur_inst == 8'heb) $fdisplay(32'h80000002, "FFC END: argd1 %x psl %x", argd[1], psl);
 			state <= `S_FETCH;
 			doing_intr <= 0;
 
 			if (resopflt|mcheck) begin
 				scounter <= { 6'b0, vecoff };
-$fdisplay(32'h80000002, "ENDINST: sc %d anyfault %d s_enable %d s_stepoff %d\r", mcheck ? 1 : resopflt ? 2 : 0, anyfault, s_enable, s_stepoff);
+//$fdisplay(32'h80000002, "ENDINST: sc %d anyfault %d s_enable %d s_stepoff %d\r", mcheck ? 1 : resopflt ? 2 : 0, anyfault, s_enable, s_stepoff);
 				state <= `PREEXEC;
 				resopflt <= 0;
 				writeback <= 0;
@@ -1240,7 +1240,7 @@ if (debug) $fdisplay(32'h80000002, "WB1: argd1 %x size %d addr %x\r", argd[1], a
 				end
 				writeback2 <= 0;
 			end else if (intrq) begin
-$fdisplay(32'h80000002, "INTR: pc %x psl %x intlvl %x", oldpc, psl, intlvl);
+//$fdisplay(32'h80000002, "INTR: pc %x psl %x intlvl %x", oldpc, psl, intlvl);
 //$display("INTR: pc %x psl %x intlvl %x\r", oldpc, psl, intlvl);
 				doing_intr <= 1;
 				scounter <= { 6'b0, vecoff };
@@ -1332,7 +1332,7 @@ $fdisplay(32'h80000002, "MCODE: ctr %d mc_rv %x\r", mcodectr, mc_rv);
 
 		`WRITEIPR: begin
 			state <= `PREEXEC;
-$fdisplay(32'h80000002, "WIPR: wdata %x ipr 0x%x pc %x", ipr_wdata, ipr_addr, oldpc);
+// $fdisplay(32'h80000002, "WIPR: wdata %x ipr 0x%x pc %x", ipr_wdata, ipr_addr, oldpc);
 		end
 
 		`S_WRITEMEM: begin
@@ -1345,7 +1345,7 @@ $fdisplay(32'h80000002, "WIPR: wdata %x ipr 0x%x pc %x", ipr_wdata, ipr_addr, ol
 			cpu_write <= 0;
 			cpu_stb <= 0;
 			cpu_pmem <= 0;
-if (debug || cur_inst == 8'hed || cpu_addr == 32'h00000238 || cpu_addr == 32'h0000023c) $fdisplay(32'h80000002, "S_WRITEMEM2: addr %x dat %x pc %x size %d\r", cpu_addr, CPU_DAT_O, oldpc, cpu_size);
+//if (debug || cur_inst == 8'hed || cpu_addr == 32'h00000238 || cpu_addr == 32'h0000023c) $fdisplay(32'h80000002, "S_WRITEMEM2: addr %x dat %x pc %x size %d\r", cpu_addr, CPU_DAT_O, oldpc, cpu_size);
 			case (wmemstate)
 			`WMEM_MCODE: state <= `MCODE;
 			`WMEM_PREEXEC: state <= `PREEXEC;
@@ -1365,7 +1365,7 @@ if (debug || cur_inst == 8'hed || cpu_addr == 32'h00000238 || cpu_addr == 32'h00
 		end
 
 		`S_READMEM2: if (cpu_acki) begin
-if (debug || cur_inst == 8'hed || cpu_addr == 32'h00000238 || cpu_addr == 32'h0000023c) $fdisplay(32'h80000002, "S_READMEM2: addr %x dat %x pc %x size %d", cpu_addr, CPU_DAT_I, oldpc, cpu_size);
+//if (debug || cur_inst == 8'hed || cpu_addr == 32'h00000238 || cpu_addr == 32'h0000023c) $fdisplay(32'h80000002, "S_READMEM2: addr %x dat %x pc %x size %d", cpu_addr, CPU_DAT_I, oldpc, cpu_size);
 //if (cpu_addr > 32'h00ffffff && cpu_addr[31:4] != 28'h20001f7) $display("S_READMEM2: addr %x pc %x", cpu_addr, curpc);
 			rmem_dat <= CPU_DAT_I;
 			cpu_stb <= 0;

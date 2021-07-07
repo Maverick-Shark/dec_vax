@@ -127,7 +127,7 @@ B0	MOVW
 B1	CMPW
 B2	MCOMW
 B3	BITW
-#
+B4	CLRW
 B5	TSTW
 B6	INCW
 B7	DECW
@@ -1518,7 +1518,7 @@ MOVW	rw,ww		lbl=mov setnz clv wback			# b0
 CMPW	rw,rw		lbl=sub setnz clv setc			# b1
 MCOMW	rw,rl#1,ww	lbl=mcom setnz clv use16 wback		# b2
 BITW	rw,rw		lbl=and setnz clv			# b3
-#
+CLRW	ww		lbl=clr setnz clv wback use16		# b4
 TSTW	rw		lbl=tst setnz clv clc			# b5
 INCW	mw,rl#1		lbl=add setnz setc setv use16 wback	# b6
 DECW	mw,rl#1		lbl=sub setnz setv setc use16 wback	# b7

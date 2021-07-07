@@ -58,7 +58,7 @@ parameter CLKINIT =	8'h4e;	// 50MHz clock to microseconds. (128-50)
 		if (wriccs) begin
 			running <= iprdb[`RUN];
 			inten <= iprdb[`IE];
-$fdisplay(32'h80000002, "WRICCS: run %d ie %d xfr %d" , iprdb[`RUN], iprdb[`IE], iprdb[`XFR]);
+//$fdisplay(32'h80000002, "WRICCS: run %d ie %d xfr %d" , iprdb[`RUN], iprdb[`IE], iprdb[`XFR]);
 		end
 
 	end
@@ -99,7 +99,7 @@ $fdisplay(32'h80000002, "WRICCS: run %d ie %d xfr %d" , iprdb[`RUN], iprdb[`IE],
 		if (wriccs && iprdb[`INT])
 			intreq <= 0;
 		if (nexticr[32] && lastcry == 0) begin
-$fdisplay(32'h80000002, "NEXTICR: run %d ie %d xfr %d intreq %d error %d inten %d" , iprdb[`RUN], iprdb[`IE], iprdb[`XFR], intreq, error, inten);
+//$fdisplay(32'h80000002, "NEXTICR: run %d ie %d xfr %d intreq %d error %d inten %d" , iprdb[`RUN], iprdb[`IE], iprdb[`XFR], intreq, error, inten);
 			intreq <= 1;
 			if (intreq)
 				error <= 1;
