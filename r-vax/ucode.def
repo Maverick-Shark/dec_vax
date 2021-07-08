@@ -360,6 +360,8 @@ sbwc:	minus arg2 arg1	argd0 savc savv	# save C and V
 #
 # mtpr arg1=val,arg2=ipr
 mtpr:
+	plus arg1 0	savnz			# NZ flags
+	bic 2 psl	psl			# clear V
 	and arg2 arg2	nzcond goto mtpr_1	# KSP?
 	shr psl 1A	arg3			# IS set?
 	and arg3 1	nzcond goto mtpr_ok	# if so, fine
@@ -376,15 +378,18 @@ mtpr_1:
 	plus arg3 E	argp0 wback
 	and arg1 arg1	argd0 goto mtpr_ok
 mtpr_2:
-	minus arg2 11	zcond goto mtpr_ok	# Accept SCBB
+	minus arg2 10	zcond goto mtpr_ok	# PCBB
+	minus arg2 11	zcond goto mtpr_ok	# SCBB
 
-	minus arg2 19	zcond goto mtpr_ok	# NICR
 	minus arg2 18	zcond goto mtpr_ok	# ICCS
+	minus arg2 19	zcond goto mtpr_ok	# NICR
+	minus arg2 1B	zcond goto mtpr_ok	# TODR
 	minus arg2 20	zcond goto mtpr_ok	# RXCS
 	minus arg2 22	zcond goto mtpr_ok	# TXCS
 	minus arg2 23	zcond goto mtpr_ok	# TXDB
 	minus arg2 25	zcond goto mtpr_ok	# 11/750 CADR
 	minus arg2 26	zcond goto mtpr_ok	# 11/750 MCESR
+	minus arg2 41	zcond goto mtpr_ok	# 8600 PAMLOC
 
 	minus arg2 12	nzcond goto mtpr_12	# skip if not IPRIPL
 	and 1F 1F	arg4
@@ -418,17 +423,19 @@ mfpr:
 	plus arg1 0	crn			# for access
 
 	minus arg1 3E	nzcond goto mfpr_1	# SID
-	and 0A00 0A00	arg2
+	and 0400 0400	arg2
 	shl arg2 10	arg2
 	plus arg2 6	argd0 eoi savnz
 mfpr_1:
 	minus arg1 15	zcond goto mfpr_ok	# SISR
 	minus arg1 18	zcond goto mfpr_ok	# ICCS
 	minus arg1 1A	zcond goto mfpr_ok	# ICR
+	minus arg1 1B	zcond goto mfpr_ok	# TODR
 	minus arg1 20	zcond goto mfpr_ok	# RXCS
 	minus arg1 21	zcond goto mfpr_ok	# RXDB
 	minus arg1 22	zcond goto mfpr_ok	# TXCS
 	minus arg1 25	zcond goto mfpr_ok	# CADR
+	minus arg1 40	zcond goto mfpr_ok	# 8600 PAMACC
 
 	minus arg1 12	nzcond goto mfpr_12	# IPL
 
@@ -712,8 +719,12 @@ cmpzv_is20:
 # tmp = selector - base
 # if (tmp <= limit) PC += SEXT(displ[tmp]) else PC += 2 + 2 * ZEXT(limit)
 caseb:
-	minus arg1 arg2		argd1 savnz savc	# get numeric val
-	minus arg3 argd1	ncond goto caseb_end	# inside boundaries?
+	# fixup flags first
+	minus arg1 arg2		argd1			# 335 get numeric val
+	minus argd1 arg3	savnz savc
+
+	and argd1 FF		argd1			# ensure unsigned
+	minus arg3 argd1	ncond goto caseb_end	# 336 inside boundaries?
 case_off:
 	shl argd1 1		argd1			# word offset
 	plus argd1 arg4		cpuaddr rmem		# read word
@@ -728,12 +739,16 @@ case_ex:
 	plus arg3 arg4		argd0 eoi		# set pc
 #
 casew:
-	minus arg1 arg2		argd1 savnz savc	# get numeric val
+	minus arg1 arg2		argd1			# get numeric val
+	minus argd1 arg3	savnz savc
+
 	minus arg3 argd1	nncond goto case_off	# inside boundaries?
 	and arg3 FFFF		arg3 goto case_ex
 #
 casel:
-	minus arg1 arg2		argd1 savnz savc	# get numeric val
+	minus arg1 arg2		argd1			# get numeric val
+	minus argd1 arg3	savnz savc
+
 	minus arg3 argd1	nncond goto case_off	# inside boundaries?
 	plus 0 0		goto case_ex
 #
@@ -1554,7 +1569,7 @@ INCL	ml,rl#1		lbl=add setnz setc setv wback		# d6
 DECL	ml,rl#1		lbl=sub setnz setv setc wback 		# d7
 ADWC	rl,ml		lbl=adwc setnz wback			# d8
 SBWC	rl,ml		lbl=sbwc setnz wback			# d9
-MTPR	rl,rl		lbl=mtpr 				# da
+MTPR	rl,rl		lbl=mtpr setnz				# da
 MFPR	rl,wl		lbl=mfpr wback setnz clv		# db
 MOVPSL	wl		lbl=movpsl wback			# dc
 PUSHL	rl,wl#-(sp)	lbl=mov setnz clv wback			# dd

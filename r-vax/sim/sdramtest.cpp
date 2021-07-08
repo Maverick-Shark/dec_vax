@@ -129,7 +129,8 @@ loadfile(char *fn, int off)
 	if ((fd = open(fn, O_RDONLY)) < 0)
 		err(1, "open");
 
-	if ((s = read(fd, sdramet+off, SDRAMSZ-off)) < 0)
+printf("load off 0x%x\n", off);
+	if ((s = read(fd, sdramet+off/2, SDRAMSZ-off)) < 0)
 		err(1, "read");
 
 	fprintf(stderr, "read %d bytes\n", s);

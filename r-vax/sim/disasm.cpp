@@ -159,31 +159,50 @@ more:		curarg = memp[argpc++];
 
 		case 8:
 			if (regno == 15) {
+				int o = 0;
+				F("#");
 				n = memp[argpc++] & 255;
-				if (s[1] == 'w' || s[1] == 'l') 
+				if (s[1] == 'w' || s[1] == 'l' || s[1] == 'q') 
 					n |= ((memp[argpc++] & 255) << 8);
-				if (s[1] == 'l') {
+				if (s[1] == 'l' || s[1] == 'q') {
 					n |= ((memp[argpc++] & 255) << 16);
 					n |= ((memp[argpc++] & 255) << 24);
 				}
-				F("#%X", n);
+				if (s[1] == 'q') {
+					o = memp[argpc++] & 255;
+					o |= ((memp[argpc++] & 255) << 8);
+					o |= ((memp[argpc++] & 255) << 16);
+					o |= ((memp[argpc++] & 255) << 24);
+					if (o)
+						F("%X", o);
+				}
+				if (o)
+					F("%08X", n);
+				else
+					F("%X", n);
 				if (ixarg)
 					F("[%s]", rnames[ixarg-1]);
 			} else {
 				F("(%s)", rnames[regno]);
+				F("+");
 				if (ixarg)
 					F("[%s]", rnames[ixarg-1]);
-				F("+");
 			}
 			break;
 
 		case 9:
-			F("@(%s)", rnames[regno]);
-			if (ixarg)
-				F("[%s]", rnames[ixarg-1]);
-			F("+");
-			if (regno == 15)
-				argpc += 4;
+			if (regno == 15) {
+				n = memp[argpc++] & 255;
+				n |= ((memp[argpc++] & 255) << 8);
+				n |= ((memp[argpc++] & 255) << 16);
+				n |= ((memp[argpc++] & 255) << 24);
+				F("@#%X", n);
+			} else {
+				F("@(%s)", rnames[regno]);
+				F("+");
+				if (ixarg)
+					F("[%s]", rnames[ixarg-1]);
+			}
 			break;
 
 		case 10: case 11:
@@ -207,8 +226,12 @@ prt:			if (curarg & 16)
 			if (regno == 15) {
 				n += argpc;
 				F("%X", n);
-			} else
-				F("%X(%s)", n, rnames[regno]);
+			} else {
+				if (n < 0)
+					F("-%X(%s)", -n, rnames[regno]);
+				else
+					F("%X(%s)", n, rnames[regno]);
+			}
 			if (ixarg)
 				F("[%s]", rnames[ixarg-1]);
 			break;
@@ -376,7 +399,7 @@ struct vop vax_inst[256] = {
 /* 0x8c */	{	"XORB2",	"rb,mb"			},
 /* 0x8d */	{	"XORB3",	"rb,rb,wb"		},
 /* 0x8e */	{	"MNEGB",	"rb,wb"			},
-/* 0x8f */	{	"CASEB",	"rb,rb,rb,bw-list"	},
+/* 0x8f */	{	"CASEB",	"rb,rb,rb"		},
 
 /* 0x90 */	{	"MOVB",		"rb,wb"			},
 /* 0x91 */	{	"CMPB",		"rb,rb"			},
@@ -410,7 +433,7 @@ struct vop vax_inst[256] = {
 /* 0xac */	{	"XORW2",	"rw,mw"			},
 /* 0xad */	{	"XORW3",	"rw,rw,ww"		},
 /* 0xae */	{	"MNEGW",	"rw,ww"			},
-/* 0xaf */	{	"CASEW",	"rw,rw,rw,bw-list"	},
+/* 0xaf */	{	"CASEW",	"rw,rw,rw"		},
 	   
 /* 0xb0 */	{	"MOVW",		"rw,ww"			},
 /* 0xb1 */	{	"CMPW",		"rw,rw"			},
@@ -444,7 +467,7 @@ struct vop vax_inst[256] = {
 /* 0xcc */	{	"XORL2",	"rl,ml"			},
 /* 0xcd */	{	"XORL3",	"rl,rl,wl"		},
 /* 0xce */	{	"MNEGL",	"rl,wl"			},
-/* 0xcf */	{	"CASEL",	"rl,rl,rl,bw-list"	},
+/* 0xcf */	{	"CASEL",	"rl,rl,rl"		},
 	   
 /* 0xd0 */	{	"MOVL",		"rl,wl"			},
 /* 0xd1 */	{	"CMPL",		"rl,rl"			},

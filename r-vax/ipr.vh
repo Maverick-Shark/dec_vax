@@ -17,6 +17,7 @@
 `define IPR_ICCS	6'h18
 `define IPR_NICR	6'h19
 `define IPR_ICR		6'h1a
+`define IPR_TODR	6'h1b
 
 `define IPR_RXCS	6'h20
 `define IPR_RXDB	6'h21

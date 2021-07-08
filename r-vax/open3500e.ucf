@@ -36,23 +36,11 @@ NET "buzzer" LOC=P123 | IOSTANDARD = LVTTL;
 NET "tti_rx" LOC = P75 | IOSTANDARD = LVTTL;
 NET "tto_tx" LOC = P76 | IOSTANDARD = LVTTL;
 
-# USB host adapter
-#NET "usb_ncs"		LOC = P119 | IOSTANDARD = LVTTL;
-#NET "usb_data<0>"	LOC = P116 | IOSTANDARD = LVTTL;
-#NET "usb_nrd"		LOC = P115 | IOSTANDARD = LVTTL;
-#NET "usb_data<1>"	LOC = P113 | IOSTANDARD = LVTTL;
-#NET "usb_nwr"		LOC = P112 | IOSTANDARD = LVTTL;
-#NET "usb_data<2>"	LOC = P109 | IOSTANDARD = LVTTL;
-#NET "usb_intrq"		LOC = P108 | IOSTANDARD = LVTTL;
-#NET "usb_data<3>"	LOC = P107 | IOSTANDARD = LVTTL;
-#NET "usb_a0"		LOC = P106 | IOSTANDARD = LVTTL;
-#NET "usb_data<4>"	LOC = P102 | IOSTANDARD = LVTTL;
-#NET "usb_nrst"		LOC = P100 | IOSTANDARD = LVTTL;
-#NET "usb_data<5>"	LOC = P99 | IOSTANDARD = LVTTL;
-#NET "usb_ndack"		LOC = P98 | IOSTANDARD = LVTTL;
-#NET "usb_data<6>"	LOC = P97 | IOSTANDARD = LVTTL;
-## NET "usb_ndrq"		LOC = P96 | IOSTANDARD = LVTTL;
-#NET "usb_data<7>"	LOC = P94 | IOSTANDARD = LVTTL;
+# MicroSD card
+NET "sd_miso"		LOC = P115 | IOSTANDARD = LVTTL;
+NET "sd_mosi"		LOC = P112 | IOSTANDARD = LVTTL;
+NET "sd_sck"		LOC = P108 | IOSTANDARD = LVTTL;
+NET "sd_cs"		LOC = P106 | IOSTANDARD = LVTTL;
 
 # SDRAM adapter
 NET "sdram_addr<5>"	LOC = P9 | IOSTANDARD = LVTTL | DRIVE=12 | SLEW=FAST;
