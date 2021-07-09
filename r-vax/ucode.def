@@ -419,8 +419,10 @@ mtpr_14:
 
 # OK to write to IPR
 mtpr_ok:
+	minus 3F arg2	ncond goto mtpr_end
 	plus arg2 0	crn		# set IPR number
 	plus arg1 0     crw wipr	# set IPR val and write
+mtpr_end:
 	plus 0 0	eoi
 
 # mfpr arg1=ipr,arg2=dest

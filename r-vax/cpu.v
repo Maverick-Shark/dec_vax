@@ -520,7 +520,7 @@ assign debug = 0;
 reg debug;
 initial debug = 0;
 	always @(posedge clk)
-		if (curpc == 32'hb8bc)
+		if (curpc == 32'h9999)
 			debug <= 1;
 `endif
 `else
@@ -889,7 +889,7 @@ if (debug)$fdisplay(32'h80000002, "ARG_ADDTO: getbwl_OA %x cur_reg_val %x cur_re
 		end
 
 		`ARG_INDIR: begin
-if (debug)$fdisplay(32'h80000002, "ARG_INDIR\r");
+if (debug)$fdisplay(32'h80000002, "ARG_INDIR: addto_OA %x indir %d", addto_OA, arg_indir);
 			arg_indir_loop <= 1;
 			indir_OA <= addto_OA;
 			rmemstate <= `RMEM_ARG_INDIR;
@@ -904,6 +904,7 @@ if (debug)$fdisplay(32'h80000002, "ARG_INDIR\r");
 
 		`ARG_READ: begin
 if (debug)$fdisplay(32'h80000002, "ARG_READ: OA %x IA %x cur_byte %x curarg %x step1 %d step2 %d", OA, IA, cur_byte, curarg, arg_read_step1, arg_read_step2);
+if (debug)$fdisplay(32'h80000002, "ARG_READ2: arg_read_add %x indir_OA %x lit %d R %d reg %d", arg_read_add, indir_OA, arg_lit, arg_aR, arg_reg);
 			arg_read_step1 <= 1;
 			state <= `ARGEND;
 			if (arg_read_step1 == 0)
@@ -1177,6 +1178,9 @@ if (debug) $fdisplay(32'h80000002, "ENDINST: pc %x argd[1] %x argpsz[1] %d arg2p
 			state <= `S_FETCH;
 			doing_intr <= 0;
 
+//if (doing_intr)
+//$fdisplay(32'h80000002, "DOING INTR: i_setnz %d", i_setnz);
+
 			if (resopflt|mcheck) begin
 				scounter <= { 6'b0, vecoff };
 $fdisplay(32'h80000002, "ENDINST: sc %d anyfault %d s_enable %d s_stepoff %d\r", mcheck ? 1 : resopflt ? 2 : 0, anyfault, s_enable, s_stepoff);
@@ -1246,24 +1250,30 @@ if (debug) $fdisplay(32'h80000002, "WB1: argd1 %x size %d addr %x\r", argd[1], a
 				scounter <= { 6'b0, vecoff };
 				state <= `PREEXEC;
 			end
-			if (i_setcmpnz) begin
-				psw[`PSL_N] <= argd[0][31] ^ Vtmp;
-				psw[`PSL_Z] <= Ztmp;
+			if (doing_intr == 0) begin
+				if (i_setcmpnz) begin
+					psw[`PSL_N] <= argd[0][31] ^ Vtmp;
+					psw[`PSL_Z] <= Ztmp;
+				end
+				if (i_setnz) begin
+					psw[`PSL_N] <= Ntmp;
+					psw[`PSL_Z] <= Ztmp;
+				end
+				if (i_clv)
+					psw[`PSL_V] <= 0;
+				if (i_setv)
+					psw[`PSL_V] <= Vtmp;
+				if (i_clc)
+					psw[`PSL_C] <= 0;
+				if (i_setc)
+					psw[`PSL_C] <= Ctmp;
 			end
-			if (i_setnz) begin
-				psw[`PSL_N] <= Ntmp;
-				psw[`PSL_Z] <= Ztmp;
-			end
-			if (i_clv)
-				psw[`PSL_V] <= 0;
-			if (i_setv)
-				psw[`PSL_V] <= Vtmp;
-			if (i_clc)
-				psw[`PSL_C] <= 0;
-			if (i_setc)
-				psw[`PSL_C] <= Ctmp;
 			if (step)
 				delay_halt <= 1;
+			arg_read_step1 <= 0;
+			arg_read_step2 <= 0;
+			OA_isreg <= 0;
+			IA <= 0;
 		end
 
 		/*
