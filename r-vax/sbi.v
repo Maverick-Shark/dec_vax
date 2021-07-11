@@ -113,7 +113,7 @@ defparam console.tto.CLKPERBIT = 2604;
 `ifdef DBGCNT
 		.dcount(dcount),
 `endif
-		.tto_tx(cpu_tto_tx),
+		.tto_tx(tto_tx),
 		.tti_rx(tti_rx),
 		.cpu_mcheck(mcheck)
 	);
@@ -153,28 +153,33 @@ defparam console.tto.CLKPERBIT = 2604;
 		.UT_ACK_I(pc_to_mmu_ack)
 	);
 
-	wire		qbus_stb, qbus_ack, qb_tto_tx;
-	wire [31:0]	qbus_wdata;
-	assign	qbus_stb = (mmu_to_sw_addr[31:28] == 4'h2)  & mmu_to_sw_stb;
-
 	/*
-	 * Qbus controller.
+	 * SBIA adapter.
 	 */
-	qbus qbus(
-		.clk(clk),
-		.rst(rst),
+	wire		sbia_addressed, sbia_regs_addressed, sbia_regs;
+	reg		sbia_ack;
+	reg [31:0]	sbia_reg;
+	assign sbia_addressed = mmu_to_sw_addr[29] & ~mmu_to_sw_addr[25];
+	assign sbia_regs = (mmu_to_sw_addr[20:18] == 3'b010);
+	assign sbia_regs_addressed =
+	    mmu_to_sw_stb && sbia_addressed && sbia_regs;
 
-		.STB_I(qbus_stb),
-		.ADR_I(mmu_to_sw_addr[27:0]),
-		.DAT_I(mmu_to_sw_wdata),
-		.WE_I(mmu_to_sw_write),
-		.DAT_O(qbus_wdata),
-		.ACK_O(qbus_ack),
+	always @(posedge clk) begin
+		sbia_reg <= 0;
+		if (mmu_to_sw_stb == 0)
+			sbia_ack <= 0;
+if (mmu_to_sw_addr[29] && mmu_to_sw_stb)
+$fdisplay(32'h80000002, "io_addr: addr %x regs %x access %d write %d\r", mmu_to_sw_addr, sbia_regs, sbia_regs_addressed, mmu_to_sw_write);
+		if (sbia_regs_addressed) begin
+			if (mmu_to_sw_addr[4:2] == 3'b0)
+				sbia_reg <= 32'h00400010;
+			sbia_ack <= 1;
+		end
+	end
 
-		.tti_rx(tti_rx),
-		.tto_tx(qb_tto_tx)
-	);
-	assign tto_tx = /* qb_tto_tx& */ cpu_tto_tx;
+
+
+
 
 
 	/* switch pcache input between console and mmu */
@@ -185,16 +190,16 @@ defparam console.tto.CLKPERBIT = 2604;
 
 	/* wires between mem and pcache */
 	wire pc_to_sw_write, pc_to_sw_stb, sw_to_mem_write, sw_to_mem_stb;
-	wire mem_to_pc_ack, rom_to_pc_ack;
-	wire [31:0] pc_to_sw_addr, sw_to_mem_addr, rom_to_pc_rdata;
+	wire mem_to_pc_ack;
+	wire [31:0] pc_to_sw_addr, sw_to_mem_addr;
 	wire [31:0] pc_to_sw_wdata, sw_to_mem_wdata, mem_to_pc_rdata;
 
 	assign pc_to_sw_addr = sw_to_pc_addr;
 	assign pc_to_sw_wdata = sw_to_pc_wdata;
 	assign pc_to_sw_write = sw_to_pc_write;
 	assign pc_to_sw_stb = sw_to_pc_stb;
-	assign pc_to_mmu_rdata = mem_to_pc_rdata | qbus_wdata | rom_to_pc_rdata;
-	assign pc_to_mmu_ack = mem_to_pc_ack | qbus_ack | rom_to_pc_ack;
+	assign pc_to_mmu_rdata = mem_to_pc_rdata | sbia_reg;
+	assign pc_to_mmu_ack = mem_to_pc_ack | sbia_ack;
 
 	/* switch mem input between console and pcache */
 	assign sw_to_mem_addr = pc_to_sw_addr;
@@ -231,24 +236,5 @@ defparam console.tto.CLKPERBIT = 2604;
 		.DAT_O(mem_to_pc_rdata),		// o
 		.ACK_O(mem_to_pc_ack)		// o
 	);
-
-	wire		rom_stb;
-	assign rom_stb = &sw_to_mem_addr[31:28] & sw_to_mem_stb;
-
-//always @(posedge clk) begin
-//	if (rom_stb)
-//		$fdisplay(32'h80000002, "ROM: adr %x ack %d data %x\r", sw_to_mem_addr, rom_to_pc_ack, rom_to_pc_rdata);
-//end
-
-`ifdef notdef
-	mcode mcode(
-		.clk(clk),
-
-		.ADR_I(sw_to_mem_addr[10:2]),
-		.STB_I(rom_stb),
-		.DAT_O(rom_to_pc_rdata),
-		.ACK_O(rom_to_pc_ack)
-	);
-`endif
 
 endmodule

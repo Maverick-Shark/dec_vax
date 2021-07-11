@@ -28,12 +28,12 @@ module intclk(
 	input		clk,
 	output		intrq,
 
-	// ICR
-	output reg [31:0] icr,
+	output reg [31:0] icr, // ICR
+	output reg [31:0] todr, // TODR
 
-	// NICR
 	input		wrnicr,
 	input		wriccs,
+	input		wrtodr,
 
 	input [31:0]	iprdb,
 
@@ -44,6 +44,7 @@ module intclk(
 );
 
 parameter CLKINIT =	8'h4e;	// 50MHz clock to microseconds. (128-50)
+parameter TODRCNTINIT =	15'h18f0; // 10 ms clock
 
 	reg [31:0]	nicr;
 	reg		running, error, inten, intreq, lastcry;
@@ -75,6 +76,24 @@ parameter CLKINIT =	8'h4e;	// 50MHz clock to microseconds. (128-50)
 		else
 			clkcnt <= clkcnt + 1;
 	assign uspulse = clkcnt[7] & running;
+
+	/*
+	 * Counts to 10000, then increases TODR. This is a 10ms clock.
+	 */
+	initial todr = 32'h10000001; // VMS valid something...
+	reg [14:0]	todrcnt;
+	always @(posedge clk) begin
+		if (wrtodr)
+			todr <= iprdb;
+		else if (clkcnt[7]) begin
+			if (todrcnt[14]) begin
+				todrcnt <= TODRCNTINIT;
+				todr <= todr + 1;
+			end else
+				todrcnt <= todrcnt + 1;
+		end
+	end
+			
 
 	/*
 	 * interval count register.

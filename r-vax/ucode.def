@@ -212,6 +212,7 @@ FF	RESIN
 # Interrupt.  Interrupt level tells which vector to use, is in savpsw.
 #
 intrq:
+	and 0 0		argp1		# end in scb_common
 	shr savpsw 10	argd0		# get IPL which is upper word in PSL
 	shl savpsw B	ncond goto intrq_hw # skip is hardware interrupt
 	and 15 15	crn		# set ipr SISR
@@ -250,35 +251,26 @@ intrq_14_2:
 # Ignore stack change for now.
 #
 mcheck:
+	and 1F 1F	argd0		# psl set to 1F
+	and 4 4		argd1		# vector 04
+	and 1 1		argp1 goto scb_common	# return here
+mcheck_1:
 	and E E		crn		# 3 fetch stack pointer
-	minus crv 4	argp0		# 4 save stack address
-	plus psl 0	crw		# 5 psl to write
-	minus argp0 4	cpuaddr wmem	# 6 save psl on stack
-	and F F		crn		# 7
-	plus crv 0	crw		# 8
-	minus argp0 8	cpuaddr wmem	# 9 save pc on stack
-	plus 0 0	crw		# 10
-	minus argp0 C	cpuaddr wmem	# 11 byte count (0)
-	and E E		crn		# 12
-	minus argp0 C	crw wreg	# 13 restore stack pointer
-
-	# clear PSL status bits
-	bic FF psl	psl
-
-	and 11 11	crn		# 14  SCBB offset
-	plus civ 4	cpuaddr rmem phys # 15  fetch vector
-	and F F		crn		# 16
-	plus rmemdat 0	crw wreg	# 17 new pc
+	minus crv 4	cpuaddr		# save in cpuaddr
+	minus crv 4	crw wreg	# 4 write back subtracted sp
+	plus 0 0	crw wmem	# write 0 to stack
 	plus 0 0	eoi		# 18
 	
 # Reserved operand
 resop:
+	and 0 0		argp1		# end in scb_common
 	shr psl 10	argd0		# 19 no change to PSL
 	and 18 18	argd1 goto scb_common # 20
 #
 # Reserved instruction, handled entirely in microcode.
 # No parameters are pushed.
 resinflt:
+	and 0 0		argp1		# end in scb_common
 	shr psl 10	argd0		# 21 no change to PSL
 	and F F		crn		# 22 set PC
 	minus crv 1	crw wreg	# 23 sub one from PC
@@ -323,7 +315,7 @@ scb_1:
 	shl arg4 A	arg4		# 72
 	bis arg4 argd0	arg4		# 73
 	shl arg4 10	psl		# 74
-#	and argp1 argp1	nzcond goto scb_2 # 
+	minus argp1 1	zcond goto mcheck_1 #
 	plus 0 0	eoi		# 75
 
 #

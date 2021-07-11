@@ -147,13 +147,14 @@ module cpu(
 	reg [31:0]	cpu_addr, cpu_wdata;
 	reg		cpu_write, cpu_stb;
 	reg		cpu_pmem;
-	reg		mcheck;
+	reg		mcheck, mapen;
 	reg [1:0]	cpu_size;
 	wire		cpu_acki;
 	assign cpu_mcheck  = mcheck;
 	assign cpu_acki = CPU_ACK_I | mcheck;
 	assign CPU_STB_O = halted & ~(con_reg | con_ipr) ? CON_STB_I : cpu_stb;
-	assign CPU_ADR_O = halted ? CON_ADR_I : cpu_addr;
+	assign CPU_ADR_O = halted ? CON_ADR_I :
+	    mapen ? cpu_addr : { 2'b0, cpu_addr[29:0] };
 	assign CPU_DAT_O = halted ? CON_DAT_I : cpu_wdata;
 	assign CPU_WE_O  = halted ? CON_WE_I  : cpu_write;
 
@@ -178,7 +179,7 @@ module cpu(
 			ipr_reg[ipr_regaddr] <= ipr_regwdata;
 
 	reg [31:0]	ipr_val;
-	wire [31:0]	icr, ipr_val_tmp;
+	wire [31:0]	icr, ipr_val_tmp, todr;
 	wire		iccs_err, iccs_int, iccs_ie, iccs_run;
 	wire		txcs_rdy, txcs_ie;
 	wire		rxcs_rdy, rxcs_ie;
@@ -192,6 +193,7 @@ module cpu(
 		`IPR_ICR: ipr_val = icr;
 		`IPR_ICCS: ipr_val =
 		    { iccs_err, 23'b0, iccs_int, iccs_ie, 5'b0, iccs_run };
+		`IPR_TODR: ipr_val = todr;
 		`IPR_TXCS: ipr_val = { 24'b0, txcs_rdy, txcs_ie, 6'b0 };
 		`IPR_RXCS: ipr_val = { 24'b0, rxcs_rdy, rxcs_ie, 6'b0 };
 		`IPR_RXDB: ipr_val = { 24'b0, rxdb };
@@ -642,19 +644,23 @@ initial debug = 0;
 	/*
 	 * The interval clock.
 	 */
-	wire	wrnicr, wriccs;
+	wire	wrnicr, wriccs, wrtodr;
 	assign wrnicr = (ipr_write || state == `WRITEIPR) &&
 	    (ipr_regaddr == `IPR_NICR);
 	assign wriccs = (ipr_write || state == `WRITEIPR) &&
 	    (ipr_regaddr == `IPR_ICCS);
+	assign wrtodr = (ipr_write || state == `WRITEIPR) &&
+	    (ipr_regaddr == `IPR_TODR);
 
 	intclk intclk(
 		.clk(clk),
 		.intrq(intrq18),
 
 		.icr(icr),
+		.todr(todr),
 		.wrnicr(wrnicr),
 		.wriccs(wriccs),
+		.wrtodr(wrtodr),
 		.iprdb(ipr_regwdata),
 
 		.err_o(iccs_err),
