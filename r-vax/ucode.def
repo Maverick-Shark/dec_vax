@@ -424,9 +424,9 @@ mfpr:
 	plus arg1 0	crn			# for access
 
 	minus arg1 3E	nzcond goto mfpr_1	# SID
-	and 0400 0400	arg2
+	and 0407 0407	arg2
 	shl arg2 10	arg2
-	plus arg2 6	argd0 eoi savnz
+	plus arg2 4D2	argd0 eoi savnz
 mfpr_1:
 	minus arg1 15	zcond goto mfpr_ok	# SISR
 	minus arg1 18	zcond goto mfpr_ok	# ICCS

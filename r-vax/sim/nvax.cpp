@@ -8,12 +8,13 @@
 
 #include "nvax.h"
 
-int cpubusdebug, itrace, mcode;
+int cpubusdebug, itrace, mcode, itrace2;
 
 unsigned long nticks;
 void dumpvcache(Vnvax *tb);
 void cpubusdump(Vnvax *tb);
 void itracedump(Vnvax *tb);
+void itrace2dump(Vnvax *tb);
 void loadfile(char *, int);
 
 int nflag, port;
@@ -57,6 +58,8 @@ int main(int argc, char **argv)
 				cpubusdebug++;
 			else if (strcmp(optarg, "itrace") == 0)
 				itrace++;
+			else if (strcmp(optarg, "itrace2") == 0)
+				itrace++, itrace2++;
 			else if (strcmp(optarg, "mcode") == 0)
 				mcode++;
 			else
@@ -99,6 +102,8 @@ int main(int argc, char **argv)
 		if (itrace && tb->sbi__DOT__cpu__DOT__state == 1 &&
 		    tb->sbi__DOT__cpu__DOT__isvalid) // S_FETCH
 			itracedump(tb);
+		if (itrace2 && tb->sbi__DOT__cpu__DOT__state == 19)
+			itrace2dump(tb); // ENDINST
 		if (cpubusdebug && tb->sbi__DOT__cpu_stb)
 			cpubusdump(tb);
 //		if (tb->sbi__DOT__con_stb != 0)

@@ -14,6 +14,7 @@ void preg_or_pos2(Vnvax *tb);
 struct vop { const char *name, *arg; };
 extern struct vop vax_inst[];
 
+int argvals[6], argvalp, argdestp;
 
 #define	BEQL	0x13
 #define	BRW	0x31
@@ -41,6 +42,7 @@ extern struct vop vax_inst[];
 #define	MOVAL	0xde
 
 void itracedump(Vnvax *tb);
+void itrace2dump(Vnvax *tb);
 void prtargs(Vnvax *tb, const char *);
 
 
@@ -57,13 +59,6 @@ itracedump(Vnvax *tb)
 	int arg2 = tb->sbi__DOT__cpu__DOT__arg[1];
 	int psl;
 
-	if ((tb->sbi__DOT__cpu__DOT__curpc & 0xf0000000) && !mcode)
-		return;
-
-#if 0
-	psl = (tb->sbi__DOT__cpu__DOT__psl_is << 26) |
-	    (tb->sbi__DOT__cpu__DOT__psl_ipl << 16);
-#endif
 	psl = tb->sbi__DOT__cpu__DOT__psw |
 	    (tb->sbi__DOT__cpu__DOT__psl_is << 26) |
 	    (tb->sbi__DOT__cpu__DOT__cur_mod << 24) |
@@ -112,12 +107,11 @@ prtargs(Vnvax *tb, const char *s)
 {
 	int argpc = tb->sbi__DOT__cpu__DOT__curpc + 1;
 	char *memp = (char *)sdramet;
-	int i, curarg, ixarg, regno, n;
+	int i, curarg, ixarg, regno, n, ixadd;
+	int hasdest, hassrc, hasaddr, argsz;
 
-	if (argpc & 0xf0000000) {
-		argpc &= 0xffffff;
-//		memp = (char *)tb->sbi__DOT__mcode__DOT__mcode_rom;
-	}
+	argvalp = 0;
+	argdestp = 0;
 
 	for (; *s; s++) {
 		if (*s == 'b') {
@@ -129,24 +123,51 @@ prtargs(Vnvax *tb, const char *s)
 			goto ck;
 		}
 
+		hasdest = (*s == 'm' || *s == 'w');
+		hassrc = (*s == 'r' || *s == 'm');
+		hasaddr = (*s == 'a');
+		argsz = s[1] == 'w' ? 2 : s[1] == 'l' ? 4 :
+		    s[1] == 'q' ? 8 : 1;
 		ixarg = 0;
+
 more:		curarg = memp[argpc++];
 		regno = curarg & 15;
 
 		switch ((curarg >> 4) & 15) {
 		case 0: case 1: case 2: case 3:
 			F("#%X", curarg & 63);
+			argvals[argvalp++] = curarg & 63;
 			break;
 		case 4:
 			ixarg = regno+1;
+			ixadd = tb->sbi__DOT__cpu__DOT__general_reg[regno] *
+			    argsz;
 			goto more;
 
 		case 5:
 			F("%s", rnames[regno]);
+			if (hasdest)
+				argdestp++;
+			if (hassrc || hasdest)
+				argvals[argvalp++] =
+			    tb->sbi__DOT__cpu__DOT__general_reg[regno];
 			break;
 
 		case 6:
 			F("(%s)", rnames[regno]);
+			i = tb->sbi__DOT__cpu__DOT__general_reg[regno];
+			if (*s == 'v' || *s == 'a') {
+				argvals[argvalp++] = i;
+			} else if (hassrc) {
+				n = i >= 16*1024*1024 ? 0 : memp[i];
+				if (s[1] != 'b')
+					n = (n & 255) | (memp[i+1] << 8);
+				if (s[1] == 'l') {
+					n = (n & 65535) | (memp[i+2] << 16);
+					n = (n & 0xffffff) | (memp[i+3] << 24);
+				}
+				argvals[argvalp++] = n;
+			}
 			if (ixarg)
 				F("[%s]", rnames[ixarg-1]);
 			break;
@@ -155,6 +176,12 @@ more:		curarg = memp[argpc++];
 			F("-(%s)", rnames[regno]);
 			if (ixarg)
 				F("[%s]", rnames[ixarg-1]);
+			if (hasdest) {
+				argvals[argvalp++] = 
+				    tb->sbi__DOT__cpu__DOT__general_reg[regno] -
+				    argsz;
+				argdestp++;
+			}
 			break;
 
 		case 8:
@@ -182,11 +209,19 @@ more:		curarg = memp[argpc++];
 					F("%X", n);
 				if (ixarg)
 					F("[%s]", rnames[ixarg-1]);
+				argvals[argvalp++] = n;
 			} else {
 				F("(%s)", rnames[regno]);
 				F("+");
 				if (ixarg)
 					F("[%s]", rnames[ixarg-1]);
+				argvals[argvalp++] =
+			    tb->sbi__DOT__cpu__DOT__general_reg[regno] + ixadd;
+				if (hasdest) {
+					argdestp++;
+					if (s[1] == 'q')
+						argdestp++;
+				}
 			}
 			break;
 
@@ -197,12 +232,16 @@ more:		curarg = memp[argpc++];
 				n |= ((memp[argpc++] & 255) << 16);
 				n |= ((memp[argpc++] & 255) << 24);
 				F("@#%X", n);
+				argvals[argvalp] = n;
 			} else {
 				F("@(%s)", rnames[regno]);
 				F("+");
 			}
 			if (ixarg)
 				F("[%s]", rnames[ixarg-1]);
+			if (ixarg)
+				argvals[argvalp] += ixadd;
+			argvalp++;
 			break;
 
 		case 10: case 11:
@@ -226,14 +265,26 @@ prt:			if (curarg & 16)
 			if (regno == 15) {
 				n += argpc;
 				F("%X", n);
+				argvals[argvalp] = n;
 			} else {
 				if (n < 0)
 					F("-%X(%s)", -n, rnames[regno]);
 				else
 					F("%X(%s)", n, rnames[regno]);
+				argvals[argvalp] = n +
+				    tb->sbi__DOT__cpu__DOT__general_reg[regno];
 			}
 			if (ixarg)
 				F("[%s]", rnames[ixarg-1]);
+			if (curarg & 16)
+				argvals[argvalp] = memp[argvals[argvalp]];
+			if (ixarg)
+				argvals[argvalp] += ixadd;
+			if (hassrc)
+				argvals[argvalp] = memp[argvals[argvalp]];
+			if (hasdest)
+				argdestp++;
+			argvalp++;
 			break;
 
 		default:
@@ -244,6 +295,39 @@ ck:		if (s[2] != ',')
 		s += 2;
 		F(",");
 	}
+}
+
+void
+itrace2dump(Vnvax *tb)
+{
+	int i;
+
+	if (argvalp == 0 && argdestp == 0)
+		return;
+
+	F("                   ");
+	switch (tb->sbi__DOT__cpu__DOT__cur_inst) {
+	case 0xdd: // pushl
+		F("%08X -> SP: %08X", argvals[0], argvals[0]);
+		break;
+	case 0xf5: // sobgtr
+		F("%08X", argvals[0]);
+		break;
+	default:
+		for (i = 0; i < argvalp; i++) {
+			F("%08X", argvals[i]);
+			if (i+1 != argvalp)
+				F(" ");
+		}
+		if (argdestp) {
+			F(" -> ");
+			F("%08X", tb->sbi__DOT__cpu__DOT__argd[0]);
+			if (argdestp == 2)
+				F(" %08X", tb->sbi__DOT__cpu__DOT__argd[1]);
+		}
+	}
+	argvalp = argdestp = 0;
+	F("\n");
 }
 
 /* one-byte instructions */
