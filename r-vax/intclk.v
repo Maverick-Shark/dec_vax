@@ -80,7 +80,7 @@ parameter TODRCNTINIT =	15'h18f0; // 10 ms clock
 	/*
 	 * Counts to 10000, then increases TODR. This is a 10ms clock.
 	 */
-	initial todr = 32'h10000001; // VMS valid something...
+	initial todr = 32'h73139D43; // VMS valid something...
 	reg [14:0]	todrcnt;
 	always @(posedge clk) begin
 		if (wrtodr)

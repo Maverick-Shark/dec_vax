@@ -373,6 +373,10 @@ mtpr_1:
 	plus arg3 E	argp0 wback
 	and arg1 arg1	argd0 goto mtpr_ok
 mtpr_2:
+	minus arg2 8	zcond goto mtpr_ok	# P0BR
+	minus arg2 9	zcond goto mtpr_ok	# P0LR
+	minus arg2 B	zcond goto mtpr_ok	# P1LR
+	minus arg2 C	zcond goto mtpr_ok	# SBR
 	minus arg2 10	zcond goto mtpr_ok	# PCBB
 	minus arg2 11	zcond goto mtpr_ok	# SCBB
 
@@ -411,10 +415,8 @@ mtpr_14:
 
 # OK to write to IPR
 mtpr_ok:
-	minus 3F arg2	ncond goto mtpr_end
 	plus arg2 0	crn		# set IPR number
 	plus arg1 0     crw wipr	# set IPR val and write
-mtpr_end:
 	plus 0 0	eoi
 
 # mfpr arg1=ipr,arg2=dest
@@ -1327,7 +1329,7 @@ popr_end:
 popr:
 	and 0 0		arg3		# reg 0 first
 popr_loop:
-	and arg1 7FFF	arg1 zcond goto popr_end # no more regs to pop
+	and arg1 7FFF	arg1 zcond goto pushr_end # no more regs to pop
 	and arg1 1	zcond goto popr_1f	# no pop
 
 	plus arg2 0	cpuaddr rmem

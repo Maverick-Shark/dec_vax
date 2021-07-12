@@ -200,9 +200,9 @@ more:		curarg = memp[argpc++];
 			} else {
 				F("@(%s)", rnames[regno]);
 				F("+");
-				if (ixarg)
-					F("[%s]", rnames[ixarg-1]);
 			}
+			if (ixarg)
+				F("[%s]", rnames[ixarg-1]);
 			break;
 
 		case 10: case 11:

@@ -167,25 +167,27 @@ module cpu(
 	(* ram_style = "DISTRIBUTED" *)
 	reg [31:0]	ipr_reg[63:0];
 
-	wire [5:0]	ipr_regaddr;
+	wire [6:0]	ipr_regaddr;
 	wire [31:0]	ipr_regwdata;
-	reg [5:0]	ipr_addr;
+	reg [6:0]	ipr_addr;
 	reg [31:0]	ipr_wdata;
 	reg		ipr_write;
 	reg [`STATBITS-1:0]	state;
 
 	always @(posedge clk)
-		if (ipr_write || state == `WRITEIPR)
-			ipr_reg[ipr_regaddr] <= ipr_regwdata;
+		if ((ipr_write || state == `WRITEIPR) & ~ipr_regaddr[6])
+			ipr_reg[ipr_regaddr[5:0]] <= ipr_regwdata;
 
 	reg [31:0]	ipr_val;
+	reg [9:0]	pamloc;
+	reg [4:0]	pamacc;
 	wire [31:0]	icr, ipr_val_tmp, todr;
 	wire		iccs_err, iccs_int, iccs_ie, iccs_run;
 	wire		txcs_rdy, txcs_ie;
 	wire		rxcs_rdy, rxcs_ie;
 	wire [7:0]	rxdb;
 
-	assign ipr_val_tmp = ipr_reg[ipr_regaddr];
+	assign ipr_val_tmp = ipr_reg[ipr_regaddr[5:0]];
 
 	always @(ipr_regaddr, icr, ipr_val_tmp,
 	    iccs_err, iccs_int, iccs_ie, iccs_run)
@@ -197,8 +199,24 @@ module cpu(
 		`IPR_TXCS: ipr_val = { 24'b0, txcs_rdy, txcs_ie, 6'b0 };
 		`IPR_RXCS: ipr_val = { 24'b0, rxcs_rdy, rxcs_ie, 6'b0 };
 		`IPR_RXDB: ipr_val = { 24'b0, rxdb };
+		`IPR_PAMACC: ipr_val = { 2'b0, pamloc, 15'b0, pamacc };
+		`IPR_PAMLOC: ipr_val = { 2'b0, pamloc, 20'b0 };
 		default: ipr_val = ipr_val_tmp;
 		endcase
+
+	/*
+	 * PAMM (8600)
+	 */
+	wire wrpamloc;
+	assign wrpamloc = (ipr_write || state == `WRITEIPR) &&
+	    (ipr_regaddr == `IPR_PAMLOC);
+	always @(posedge clk) begin
+		if (wrpamloc) begin
+			pamloc[9:0] <= ipr_regwdata[29:20];
+			pamacc <= (ipr_regwdata[29:25] == 5'b10_000 ) ?
+			    5'h18 : 5'h1f;
+		end
+	end
 
 	/*
 	 * arg1/2 are arg value read. (if R|A)
@@ -214,7 +232,7 @@ module cpu(
 /* verilator lint_on UNDRIVEN */
 /* verilator lint_on UNUSED */
 
-	assign ipr_regaddr = halted ? CON_ADR_I[5:0] : ipr_addr[5:0];
+	assign ipr_regaddr = halted ? CON_ADR_I[6:0] : ipr_addr;
 	assign ipr_regwdata = halted ? CON_DAT_I : ipr_wdata;
 
 	reg [3:0]	wregstate;
@@ -641,6 +659,11 @@ initial debug = 0;
 //$fdisplay(32'h80000002, "INTRQ plain: plain %x intr %x ipl %x\n", intrqplain, intrq, psl_ipl);
 //	intrqplain <= intrq;
 //end
+
+always @(posedge clk)
+if (curpc == 32'h0002B009 && state == `S_FETCH)
+$fdisplay(32'h80000002, "0002B009: r1 %x", general_reg[1]);
+
 	/*
 	 * The interval clock.
 	 */
@@ -1080,7 +1103,7 @@ if (debug & alu_ack) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d ste
 			end
 			10: begin
 				cur_reg_num_save <= alu_res[3:0];
-				ipr_addr <= alu_res[5:0];
+				ipr_addr <= alu_res[6:0];
 				greg_wregnum <= alu_res[3:0];
 			end
 			11: begin
@@ -1369,6 +1392,7 @@ $fdisplay(32'h80000002, "MCODE: ctr %d mc_rv %x\r", mcodectr, mc_rv);
 			default: state <= `S_HALT;
 			endcase
 			if (mcheck) begin
+$fdisplay(32'h80000002, "S_WRITEMEM2: mcheck %x", cpu_addr);
 				state <= `S_HALT;
 				haltpos <= `HALT_MCHECK;
 			end
@@ -1395,6 +1419,7 @@ $fdisplay(32'h80000002, "MCODE: ctr %d mc_rv %x\r", mcodectr, mc_rv);
 			default: state <= `S_HALT;
 			endcase
 			if (mcheck) begin
+$fdisplay(32'h80000002, "S_READMEM2: mcheck %x", cpu_addr);
 				state <= `ENDINST;
 //				state <= `S_HALT;
 //				haltpos <= `HALT_MCHECK;

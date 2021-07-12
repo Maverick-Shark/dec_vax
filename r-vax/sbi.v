@@ -92,7 +92,7 @@ defparam console.tto.CLKPERBIT = 2604;
 	wire mcheck;
 	wire [31:0] cpu_addr, cpu_wdata, cpu_rdata;
 	wire cpu_write, cpu_stb, cpu_ack;
-	wire cpu_pmem, cpu_tto_tx;
+	wire cpu_pmem;
 	wire [1:0] cpu_size;
 
 	cpu cpu(
@@ -168,8 +168,8 @@ defparam console.tto.CLKPERBIT = 2604;
 		sbia_reg <= 0;
 		if (mmu_to_sw_stb == 0)
 			sbia_ack <= 0;
-if (mmu_to_sw_addr[29] && mmu_to_sw_stb)
-$fdisplay(32'h80000002, "io_addr: addr %x regs %x access %d write %d\r", mmu_to_sw_addr, sbia_regs, sbia_regs_addressed, mmu_to_sw_write);
+//if (mmu_to_sw_addr[29] && mmu_to_sw_stb)
+//$fdisplay(32'h80000002, "io_addr: addr %x regs %x access %d write %d\r", mmu_to_sw_addr, sbia_regs, sbia_regs_addressed, mmu_to_sw_write);
 		if (sbia_regs_addressed) begin
 			if (mmu_to_sw_addr[4:2] == 3'b0)
 				sbia_reg <= 32'h00400010;
