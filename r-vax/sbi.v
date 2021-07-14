@@ -158,7 +158,7 @@ defparam console.tto.CLKPERBIT = 2604;
 	 */
 	wire		sbia_addressed, sbia_regs_addressed, sbia_regs;
 	reg		sbia_ack;
-	reg [31:0]	sbia_reg;
+	reg [31:0]	sbia_reg, sbi_fs;
 	assign sbia_addressed = mmu_to_sw_addr[29] & ~mmu_to_sw_addr[25];
 	assign sbia_regs = (mmu_to_sw_addr[20:18] == 3'b010);
 	assign sbia_regs_addressed =
@@ -171,8 +171,14 @@ defparam console.tto.CLKPERBIT = 2604;
 //if (mmu_to_sw_addr[29] && mmu_to_sw_stb)
 //$fdisplay(32'h80000002, "io_addr: addr %x regs %x access %d write %d\r", mmu_to_sw_addr, sbia_regs, sbia_regs_addressed, mmu_to_sw_write);
 		if (sbia_regs_addressed) begin
-			if (mmu_to_sw_addr[4:2] == 3'b0)
+			if (mmu_to_sw_addr[6:2] == 5'b0)
 				sbia_reg <= 32'h00400010;
+			if (mmu_to_sw_addr[6:2] == 5'b01111) begin
+//$fdisplay(32'h80000002, "SBIFS: wr %d addr %x wdata %x rdata %x", mmu_to_sw_write, mmu_to_sw_addr, mmu_to_sw_wdata, sbi_fs);
+				if (mmu_to_sw_write)
+					sbi_fs <= mmu_to_sw_wdata & 32'h03140000;
+				sbia_reg <= sbi_fs;
+			end
 			sbia_ack <= 1;
 		end
 	end

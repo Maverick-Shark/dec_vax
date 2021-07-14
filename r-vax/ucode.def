@@ -255,11 +255,22 @@ mcheck:
 	and 4 4		argd1		# vector 04
 	and 1 1		argp1 goto scb_common	# return here
 mcheck_1:
-	and E E		crn		# 3 fetch stack pointer
-	minus crv 4	cpuaddr		# save in cpuaddr
-	minus crv 4	crw wreg	# 4 write back subtracted sp
-	plus 0 0	crw wmem	# write 0 to stack
-	plus 0 0	eoi		# 18
+# Write some sort of VAX8600 mcheck frame (0x58 bytes of 0 + one long count)
+	and E E		crn		# fetch stack pointer
+	plus crv 0	arg2		# sp in arg2
+	and 16 16	arg1		# 0x16 longs on stack
+mcheck_2:
+	minus arg2 4 	arg2		# next stack position
+	plus arg2 0	cpuaddr		# prepare for write
+	and 0 0		crw wmem	# write 0
+	minus arg1 1	arg1 nzcond goto mcheck_2 # count to 22
+
+	minus arg2 4	cpuaddr		# last word onstack
+	and 58 58	crw wmem	# write 0x58
+	and E E		crn		# stack pointer
+	minus arg2 4	crw wreg	# write back
+# ...may save data here...
+	plus 0 0	eoi		# Done!
 	
 # Reserved operand
 resop:
@@ -375,8 +386,10 @@ mtpr_1:
 mtpr_2:
 	minus arg2 8	zcond goto mtpr_ok	# P0BR
 	minus arg2 9	zcond goto mtpr_ok	# P0LR
+	minus arg2 A	zcond goto mtpr_ok	# P1BR
 	minus arg2 B	zcond goto mtpr_ok	# P1LR
 	minus arg2 C	zcond goto mtpr_ok	# SBR
+	minus arg2 D	zcond goto mtpr_ok	# SLR
 	minus arg2 10	zcond goto mtpr_ok	# PCBB
 	minus arg2 11	zcond goto mtpr_ok	# SCBB
 
@@ -428,6 +441,8 @@ mfpr:
 	shl arg2 10	arg2
 	plus arg2 4D2	argd0 eoi savnz
 mfpr_1:
+	minus arg1 A	zcond goto mfpr_ok	# P1BR
+	minus arg1 C	zcond goto mfpr_ok	# SBR
 	minus arg1 15	zcond goto mfpr_ok	# SISR
 	minus arg1 18	zcond goto mfpr_ok	# ICCS
 	minus arg1 1A	zcond goto mfpr_ok	# ICR

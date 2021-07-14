@@ -540,7 +540,7 @@ assign debug = 0;
 reg debug;
 initial debug = 0;
 	always @(posedge clk)
-		if (curpc == 32'h9999)
+		if (curpc == 32'h0002A202)
 			debug <= 1;
 `endif
 `else
@@ -660,9 +660,9 @@ initial debug = 0;
 //	intrqplain <= intrq;
 //end
 
-always @(posedge clk)
-if (curpc == 32'h0002B009 && state == `S_FETCH)
-$fdisplay(32'h80000002, "0002B009: r1 %x", general_reg[1]);
+//always @(posedge clk)
+//if (curpc == 32'h0002B009 && state == `S_FETCH)
+//$fdisplay(32'h80000002, "0002B009: r1 %x", general_reg[1]);
 
 	/*
 	 * The interval clock.
@@ -1405,7 +1405,7 @@ $fdisplay(32'h80000002, "S_WRITEMEM2: mcheck %x", cpu_addr);
 		end
 
 		`S_READMEM2: if (cpu_acki) begin
-//if (debug || cur_inst == 8'hed || cpu_addr == 32'h00000238 || cpu_addr == 32'h0000023c) $fdisplay(32'h80000002, "S_READMEM2: addr %x dat %x pc %x size %d", cpu_addr, CPU_DAT_I, oldpc, cpu_size);
+if (debug) $fdisplay(32'h80000002, "S_READMEM2: addr %x dat %x pc %x size %d", cpu_addr, CPU_DAT_I, oldpc, cpu_size);
 //if (cpu_addr > 32'h00ffffff && cpu_addr[31:4] != 28'h20001f7) $display("S_READMEM2: addr %x pc %x", cpu_addr, curpc);
 			rmem_dat <= CPU_DAT_I;
 			cpu_stb <= 0;
