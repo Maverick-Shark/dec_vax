@@ -540,7 +540,7 @@ assign debug = 0;
 reg debug;
 initial debug = 0;
 	always @(posedge clk)
-		if (curpc == 32'h0002A202)
+		if (curpc == 32'h000354E9)
 			debug <= 1;
 `endif
 `else

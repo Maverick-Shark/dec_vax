@@ -157,12 +157,20 @@ defparam console.tto.CLKPERBIT = 2604;
 	 * SBIA adapter.
 	 */
 	wire		sbia_addressed, sbia_regs_addressed, sbia_regs;
+	wire		tr03_addressed, sbi0_tr03_addressed;
+	wire		tr08_addressed, sbi0_tr08_addressed;
 	reg		sbia_ack;
-	reg [31:0]	sbia_reg, sbi_fs;
+	reg [31:0]	sbia_reg, sbi_fs, sbi_tmo;
 	assign sbia_addressed = mmu_to_sw_addr[29] & ~mmu_to_sw_addr[25];
 	assign sbia_regs = (mmu_to_sw_addr[20:18] == 3'b010);
 	assign sbia_regs_addressed =
 	    mmu_to_sw_stb && sbia_addressed && sbia_regs;
+	assign tr03_addressed = (mmu_to_sw_addr[16:13] == 4'b0011);
+	assign tr08_addressed = (mmu_to_sw_addr[16:13] == 4'b1000);
+	assign sbi0_tr03_addressed = 
+	    mmu_to_sw_stb && sbia_addressed & tr03_addressed;
+	assign sbi0_tr08_addressed = 
+	    mmu_to_sw_stb && sbia_addressed & tr08_addressed;
 
 	always @(posedge clk) begin
 		sbia_reg <= 0;
@@ -170,6 +178,7 @@ defparam console.tto.CLKPERBIT = 2604;
 			sbia_ack <= 0;
 //if (mmu_to_sw_addr[29] && mmu_to_sw_stb)
 //$fdisplay(32'h80000002, "io_addr: addr %x regs %x access %d write %d\r", mmu_to_sw_addr, sbia_regs, sbia_regs_addressed, mmu_to_sw_write);
+		/* SBIA0 registers */
 		if (sbia_regs_addressed) begin
 			if (mmu_to_sw_addr[6:2] == 5'b0)
 				sbia_reg <= 32'h00400010;
@@ -179,11 +188,28 @@ defparam console.tto.CLKPERBIT = 2604;
 					sbi_fs <= mmu_to_sw_wdata & 32'h03140000;
 				sbia_reg <= sbi_fs;
 			end
+			if (mmu_to_sw_addr[6:2] == 5'b01110) begin
+				sbia_reg <= sbi_tmo;
+			end
+			sbia_ack <= 1;
+		end
+		/* Unibus (DW780) internal registers */
+		if (sbi0_tr03_addressed) begin
+			if (mmu_to_sw_addr[12:0] == 13'b0)
+				sbia_reg <= 32'h00010028; // UBA+INIT DONE
+			sbia_ack <= 1;
+		end
+		/* Massbus (RH780) internal registers */
+		if (sbi0_tr08_addressed) begin
+			if (mmu_to_sw_addr[12:0] == 13'b0)
+				sbia_reg <= 32'h00000020; // MBA
 			sbia_ack <= 1;
 		end
 	end
 
-
+	always @(posedge clk)
+		if (mcheck & sbia_addressed)
+			sbi_tmo <= { 4'h2, mmu_to_sw_addr[29:2] };
 
 
 

@@ -278,6 +278,7 @@ more:		curarg = memp[argpc++];
 			} else {
 				F("@(%s)", rnames[regno]);
 				F("+");
+				argvals[argvalp] = gmem(regval, 'l');
 			}
 			if (ixarg)
 				F("[%s]", rnames[ixarg-1]);
@@ -378,12 +379,21 @@ itrace2dump(Vnvax *tb)
 	case 0x91: // cmpb
 		F("%08X %08X", argvals[0] & 255, argvals[1] & 255);
 		break;
+	case 0x90: // movb
+		F("%08X %08X -> %08X", argvals[0] & 255, argvals[1],
+		    tb->sbi__DOT__cpu__DOT__argd[0] & 255);
+		break;
+	case 0x8a: // bicb2
 	case 0x93: // bitb
 		F("%08X %08X -> %08X", argvals[0] & 255, argvals[1] & 255,
 		    tb->sbi__DOT__cpu__DOT__argd[0] & 255);
 		break;
 	case 0x9f: // pushab
 		F("%08X -> SP: %08X", argvals[0], argvals[0]);
+		break;
+	case 0xa8: // bisw2
+		F("%08X %08X -> %08X", argvals[0] & 65535, argvals[1] & 65535,
+		    tb->sbi__DOT__cpu__DOT__argd[0] & 65535);
 		break;
 	case 0xdd: // pushl
 		F("%08X -> SP: %08X", argvals[0], argvals[0]);
