@@ -106,7 +106,7 @@ gmem(int addr, int sz)
 	int n;
 	char *memp = (char *)sdramet;
 
-	if (addr >= 16*256*256)
+	if ((unsigned)addr >= 16*1024*1024)
 		return 0;
 	n = memp[addr++];
 	if (sz == 'b')
@@ -361,9 +361,26 @@ itrace2dump(Vnvax *tb)
 	F("                   ");
 	cur_inst = tb->sbi__DOT__cpu__DOT__cur_inst;
 	switch (cur_inst) {
+	case 0x3e: // movaw
+		F("%08X %08X", argvals[0], argvals[1]);
+		break;
+	case 0x79: // ashq
+		F("%08X %08X %08X -> %08X %08X\n",
+		    argvals[0], argvals[1], argvals[2],
+		    tb->sbi__DOT__cpu__DOT__argd[0],
+		    tb->sbi__DOT__cpu__DOT__argd[1]);
+		F("                            %08X         ",
+		    argvalq[1]);
+		break;
 	case 0x7a: //
 		F("%08X %08X %08X %08X",
 		    argvals[0], argvals[1], argvals[2], argvals[3]);
+		break;
+	case 0x7b: // ediv
+		F("%08X %08X %08X %08X\n",
+		    argvals[0], argvals[1], argvals[2], argvals[3]);
+		F("                            %08X                  ",
+		    argvalq[1]);
 		break;
 	case 0x7c: // clrq
 		F("%08X -> 00000000 00000000", argvals[0]);
@@ -375,6 +392,9 @@ itrace2dump(Vnvax *tb)
 		    tb->sbi__DOT__cpu__DOT__argd[1]);
 		F("                   %08X         ",
 		    tb->sbi__DOT__cpu__DOT__argd[1]);
+		break;
+	case 0x7f: // pushaq
+		F("%08X -> SP: %08X", argvals[0], argvals[0]);
 		break;
 	case 0x91: // cmpb
 		F("%08X %08X", argvals[0] & 255, argvals[1] & 255);
@@ -394,6 +414,14 @@ itrace2dump(Vnvax *tb)
 	case 0xa8: // bisw2
 		F("%08X %08X -> %08X", argvals[0] & 65535, argvals[1] & 65535,
 		    tb->sbi__DOT__cpu__DOT__argd[0] & 65535);
+		break;
+	case 0xb6: // incw
+	case 0xb7: // decw
+		F("%08X -> %08X", argvals[0] & 65535,
+		    tb->sbi__DOT__cpu__DOT__argd[0] & 65535);
+		break;
+	case 0xd1: // cmpl
+		F("%08X %08X", argvals[0], argvals[1]);
 		break;
 	case 0xdd: // pushl
 		F("%08X -> SP: %08X", argvals[0], argvals[0]);
@@ -445,7 +473,7 @@ struct vop vax_inst[256] = {
 /* 0x0b */	{	"CRC",		"ab,rl,rw,ab"		},
 /* 0x0c */	{	"PROBER",	"rb,rw,ab"		},
 /* 0x0d */	{	"PROBEW",	"rb,rw,ab"		},
-/* 0x0e */	{	"INSQUE",	"ab,wl"			},
+/* 0x0e */	{	"INSQUE",	"ab,ab"			},
 /* 0x0f */	{	"REMQUE",	"ab,wl"			},
 	   
 /* 0x10 */	{	"BSBB",		"bb"			},

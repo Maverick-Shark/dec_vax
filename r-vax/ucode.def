@@ -27,6 +27,8 @@
 04	RET
 05	RSB
 #
+0C	PROBER
+0D	PROBEW
 0E	INSQUE
 0F	REMQUE
 10	BSBB
@@ -135,7 +137,10 @@ B8	BISPSW
 B9	BICPSW
 BA	POPR
 BB	PUSHR
-#
+BC	CHMK
+BD	CHME
+BE	CHMS
+BF	CHMU
 C0	ADDL2
 C1	ADDL3
 C2	SUBL2
@@ -327,6 +332,7 @@ scb_1:
 	bis arg4 argd0	arg4		# 73
 	shl arg4 10	psl		# 74
 	minus argp1 1	zcond goto mcheck_1 #
+	minus argp1 2	zcond goto chmk_1 #
 	plus 0 0	eoi		# 75
 
 #
@@ -371,7 +377,8 @@ mtpr:
 	and arg2 arg2	nzcond goto mtpr_1	# KSP?
 	shr psl 1A	arg3			# IS set?
 	and arg3 1	nzcond goto mtpr_ok	# if so, fine
-	plus 0 0	resopflt eoi		# write back XXX fixme
+# update KSP and SP
+	plus 0 0	goto mtpr_3
 
 mtpr_1:
 	minus 3 arg2	nncond goto mtpr_ok	# SSP, ESP, USP
@@ -379,6 +386,7 @@ mtpr_1:
 	minus arg2 4	nzcond goto mtpr_2
 	shr psl 1A	arg3
 	and arg3 1	zcond goto mtpr_ok	# not on ISP, get out
+mtpr_3:
 	and C000 C000	arg3			# create wback encoding
 	shl arg3 10	arg3
 	plus arg3 E	argp0 wback
@@ -392,6 +400,7 @@ mtpr_2:
 	minus arg2 D	zcond goto mtpr_ok	# SLR
 	minus arg2 10	zcond goto mtpr_ok	# PCBB
 	minus arg2 11	zcond goto mtpr_ok	# SCBB
+	minus arg2 13	zcond goto mtpr_ok	# ASTLVL
 
 	minus arg2 18	zcond goto mtpr_ok	# ICCS
 	minus arg2 19	zcond goto mtpr_ok	# NICR
@@ -439,14 +448,24 @@ mtpr_ok:
 
 # mfpr arg1=ipr,arg2=dest
 mfpr:
-	plus arg1 0	crn			# for access
+	plus arg1 0	crn nzcond goto mfpr_0	# KSP?
+	shl psl 5	ncond goto mfpr_ok	# On ISP just end
+	and E E		crn
+	plus crv 0	argd0 eoi savnz		# fetch current SP
 
+mfpr_0:
 	minus arg1 3E	nzcond goto mfpr_1	# SID
 	and 0407 0407	arg2
 	shl arg2 10	arg2
 	plus arg2 4D2	argd0 eoi savnz
 mfpr_1:
+	minus arg1 1	zcond goto mfpr_ok	# SSP
+	minus arg1 2	zcond goto mfpr_ok	# ESP
+	minus arg1 3	zcond goto mfpr_ok	# USP
+	minus arg1 8	zcond goto mfpr_ok	# P0BR
+	minus arg1 9	zcond goto mfpr_ok	# P0LR
 	minus arg1 A	zcond goto mfpr_ok	# P1BR
+	minus arg1 B	zcond goto mfpr_ok	# P1LR
 	minus arg1 C	zcond goto mfpr_ok	# SBR
 	minus arg1 15	zcond goto mfpr_ok	# SISR
 	minus arg1 18	zcond goto mfpr_ok	# ICCS
@@ -762,8 +781,8 @@ caseb:
 case_off:
 	shl argd1 1		argd1			# word offset
 	plus argd1 arg4		cpuaddr rmem		# read word
-	shl rmemdat 16		arg3			# sign extend...
-	asr arg3 16		arg3
+	shl rmemdat 10		arg3			# sign extend...
+	asr arg3 10		arg3
 	plus arg3 arg4		argd0 eoi		# jmp new address
 caseb_end:
 	and arg3 FF		arg3			# zero extend
@@ -1108,6 +1127,8 @@ movc3_donex:
 #
 movc5:
 	minus arg1 arg3	savc savnz	# save flags early
+	and arg1 FFFF	arg1		# zero-extend srclen
+	and arg3 FFFF	arg3		# zero-extend dstlen
 	bic F psl	psl
 	bis savpsw psl	psl
 	and argd0 FF	argp0		# 452 save fill byte
@@ -1135,9 +1156,36 @@ movc5_f_loop2:
 	plus arg4 1	arg4 goto movc5_f_loop2	# 465
 
 movc5_backw:
-	and 0 0		resopflt eoi
+# tmp5 <= MINU(tmp1, tmp3)
+	plus arg1 0	argd0
+	minus arg3 arg1	nncond goto movc5_backw_1
+	plus arg3 0	argd0
+movc5_backw_1:
+	plus arg3 0	argd1
+	plus arg2 argd0	arg2
+	plus arg4 argd1	arg4
+# Fill from above
+movc5_backw_2:
+	minus arg1 arg3	nncond goto movc5_backw_3
+	minus arg4 1	arg4
+	plus argp0 0	crw
+	plus arg4 0	cpuaddr wmem byte
+	minus arg3 1	arg3 goto movc5_backw_2
+movc5_backw_3:
+# Copy
+	and arg3 arg3	zcond goto movc5_backw_4
+	minus arg1 1	arg1
+	minus arg2 1	arg2
+	minus arg4 1	arg4
 
-
+	and arg2 arg2	cpuaddr rmem byte
+	plus rmemdat 0	crw
+	and arg4 arg4	cpuaddr wmem byte
+	minus arg3 1	arg3 goto movc5_backw_3
+movc5_backw_4:
+	plus arg2 argd0	arg2
+	plus arg4 argd1	arg4
+# FALLTHROUGH
 movc5_done:
 	and arg4 arg4	arg3	# for movc3
 	and 0 0		crn
@@ -1463,6 +1511,23 @@ remque_1:
 	plus rmemdat 0	arg4
 	minus arg3 arg4	argd0 savc savv savnz eoi
 #
+probew:
+	bic E psl	psl eoi
+#
+# CHMK rw (sp in arg2)
+chmk:
+# IS -> HALT XXX
+	and 40 40	argd1		# vector
+	and 0 0		argd0		# PSL upper word
+	and 2 2		argp1 goto scb_common	# return
+chmk_1:
+	and E E		crn
+	minus crv 4	cpuaddr
+	plus arg1 0	crw wmem	# write reason
+	minus crv 4	crw wreg	# save new sp
+	plus 0 0	eoi
+
+#
 !INSTRUCTIONS
 #
 NOP	rl#0,rl#0		lbl=add				# 01
@@ -1471,6 +1536,7 @@ REI	rl#(sp)+,rl#(sp)+,wl#pc	lbl=rei wback			# 02
 RET	rl#fp			lbl=ret				# 04
 RSB	rl#(sp)+,wl#pc	lbl=mov wback				# 05
 #
+PROBEW	rb,rw,ab	lbl=probew				# 0d
 INSQUE	ab,ab		lbl=insque setcmpnz clv setc		# 0e
 REMQUE	ab,wl#pc,wl	lbl=remque setcmpnz setc wback2		# 0f
 BSBB	0ab#b^d(pc),2rl#pc,wl#pc,wl#-(sp)	lbl=mov move2 wback wback2
@@ -1575,6 +1641,7 @@ BISPSW	rw		lbl=bispsw				# b8
 BICPSW	rw		lbl=bicpsw				# b9
 POPR	rw,rl#sp	lbl=popr				# ba
 PUSHR	rw,rl#sp	lbl=pushr				# bb
+CHMK	rw,rl#sp	lbl=chmk				# bc
 # 
 ADDL2	rl,ml		lbl=add setnz setc setv wback 		# c0
 ADDL3	rl,rl,wl	lbl=add setnz setc setv wback 		# c1
