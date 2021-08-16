@@ -196,7 +196,8 @@ module cpu(
 		`IPR_ICCS: ipr_val =
 		    { iccs_err, 23'b0, iccs_int, iccs_ie, 5'b0, iccs_run };
 		`IPR_TODR: ipr_val = todr;
-		`IPR_TXCS: ipr_val = { 24'b0, txcs_rdy, txcs_ie, 6'b0 };
+		`IPR_TXCS: ipr_val = { 24'h0, txcs_rdy, txcs_ie, 6'b0 };
+//		`IPR_TXCS: ipr_val = { 24'h000100, txcs_rdy, txcs_ie, 6'b0 };
 		`IPR_RXCS: ipr_val = { 24'b0, rxcs_rdy, rxcs_ie, 6'b0 };
 		`IPR_RXDB: ipr_val = { 24'b0, rxdb };
 		`IPR_PAMACC: ipr_val = { 2'b0, pamloc, 15'b0, pamacc };
@@ -533,14 +534,14 @@ initial psl_ipl = 5'h1f;
 	assign pc_plus_1 = curpc + 1;
 
 `ifdef DBGCNT
-`ifndef notdef
+`ifdef notdef
 wire debug;
 assign debug = 0;
 `else
 reg debug;
 initial debug = 0;
 	always @(posedge clk)
-		if (curpc == 32'h00021af2)
+		if (curpc == 32'h04027443)
 			debug <= 1;
 `endif
 `else
@@ -1182,7 +1183,7 @@ if (debug & alu_ack) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d ste
 				resopflt <= 1;
 
 			/* copy third arg XXX */
-			if (i_move2)
+			if (i_move2 && doing_intr == 0)
 				argd[1] <= arg[2];
 //if (resopflt)$fdisplay(32'h80000002, "EXEC: resopflt\r");
 		end
@@ -1212,7 +1213,7 @@ if (debug) $fdisplay(32'h80000002, "ENDINST: pc %x argd[1] %x argpsz[1] %d arg2p
 
 			if (resopflt|mcheck) begin
 				scounter <= { 6'b0, vecoff };
-$fdisplay(32'h80000002, "ENDINST: sc %d anyfault %d s_enable %d s_stepoff %d\r", mcheck ? 1 : resopflt ? 2 : 0, anyfault, s_enable, s_stepoff);
+//$fdisplay(32'h80000002, "ENDINST: sc %d anyfault %d s_enable %d s_stepoff %d\r", mcheck ? 1 : resopflt ? 2 : 0, anyfault, s_enable, s_stepoff);
 				state <= `PREEXEC;
 				resopflt <= 0;
 				writeback <= 0;
@@ -1273,7 +1274,7 @@ if (debug) $fdisplay(32'h80000002, "WB1: argd1 %x size %d addr %x\r", argd[1], a
 				end
 				writeback2 <= 0;
 			end else if (intrq) begin
-//$fdisplay(32'h80000002, "INTR: pc %x psl %x intlvl %x", oldpc, psl, intlvl);
+// $fdisplay(32'h80000002, "INTR: pc %x psl %x intlvl %x", oldpc, psl, intlvl);
 //$display("INTR: pc %x psl %x intlvl %x\r", oldpc, psl, intlvl);
 				doing_intr <= 1;
 				scounter <= { 6'b0, vecoff };
@@ -1419,7 +1420,7 @@ if (debug) $fdisplay(32'h80000002, "S_READMEM2: addr %x dat %x pc %x size %d", c
 			default: state <= `S_HALT;
 			endcase
 			if (mcheck) begin
-$fdisplay(32'h80000002, "S_READMEM2: mcheck %x", cpu_addr);
+//$fdisplay(32'h80000002, "S_READMEM2: mcheck %x", cpu_addr);
 				state <= `ENDINST;
 //				state <= `S_HALT;
 //				haltpos <= `HALT_MCHECK;

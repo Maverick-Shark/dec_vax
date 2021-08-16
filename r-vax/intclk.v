@@ -81,7 +81,6 @@ parameter TODRCNTINIT =	15'h18f0; // 10 ms clock
 	 * Counts to 10000, then increases TODR. This is a 10ms clock.
 	 */
 	initial todr = 32'h7315BAAC; // VMS valid something...
-`ifdef notdef
 	reg [14:0]	todrcnt;
 	always @(posedge clk) begin
 		if (wrtodr)
@@ -94,7 +93,6 @@ parameter TODRCNTINIT =	15'h18f0; // 10 ms clock
 				todrcnt <= todrcnt + 1;
 		end
 	end
-`endif
 
 	/*
 	 * interval count register.

@@ -18,6 +18,7 @@ void itrace2dump(Vnvax *tb);
 void loadfile(char *, int);
 
 int nflag, port;
+int icount;
 
 int main(int argc, char **argv)
 {
@@ -84,6 +85,7 @@ int main(int argc, char **argv)
 
 	while(!Verilated::gotFinish()) {
 		needeval = 0;
+//if (tb->sbi__DOT__cpu__DOT__state == 1 && icount++ > 1000000) tb->sbi__DOT__cpu__DOT__debug = 1;
 
 		if (tto_active || tb->tto_tx == 0)
 			ttoexec(tb);

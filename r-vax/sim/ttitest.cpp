@@ -102,9 +102,14 @@ ttiexec(Vnvax *tb)
 		tti_active++;
 		break;
 
-	case 9:
+	case 9:	// stop bit
 		tb->tti_rx = 1;
+		tti_active++;
+		break;
+
+	case 10:
 		tti_active = 0;
+		ttisig = 1;	// check if any more character gotten.
 		break;
 	}
 }

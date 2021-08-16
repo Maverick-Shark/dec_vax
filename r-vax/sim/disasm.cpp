@@ -286,7 +286,11 @@ more:		curarg = memp[argpc++];
 				argvals[argvalp] += ixadd;
 			if (sav_val) {
 				i = argvals[argvalp];
-				argvals[argvalp] = gmem(i, s[1]);
+				if (i == 0x60080038)
+					argvals[argvalp] =
+					    tb->sbi__DOT__sbi_tmo;
+				else
+					argvals[argvalp] = gmem(i, s[1]);
 				if (argsz == 8)
 					argvalq[argvalp] = gmem(i+4, s[1]);
 			}
@@ -361,6 +365,10 @@ itrace2dump(Vnvax *tb)
 	F("                   ");
 	cur_inst = tb->sbi__DOT__cpu__DOT__cur_inst;
 	switch (cur_inst) {
+	case 0x3c: // movzwl
+		F("%08X %08X -> %08X", argvals[0] & 65535, argvals[1],
+		    tb->sbi__DOT__cpu__DOT__argd[0]);
+		break;
 	case 0x3e: // movaw
 		F("%08X %08X", argvals[0], argvals[1]);
 		break;
@@ -408,8 +416,17 @@ itrace2dump(Vnvax *tb)
 		F("%08X %08X -> %08X", argvals[0] & 255, argvals[1] & 255,
 		    tb->sbi__DOT__cpu__DOT__argd[0] & 255);
 		break;
+	case 0x9b: // movzbw
+		F("%08X %08X -> %08X", argvals[0] & 255, argvals[1],
+		    tb->sbi__DOT__cpu__DOT__argd[0]);
+		break;
 	case 0x9f: // pushab
 		F("%08X -> SP: %08X", argvals[0], argvals[0]);
+		break;
+	case 0xa1: // addw3
+		F("%08X %08X %08X -> %08X",
+		    argvals[0] & 65535, argvals[1] & 65535, argvals[2],
+		    tb->sbi__DOT__cpu__DOT__argd[0] & 65535);
 		break;
 	case 0xa8: // bisw2
 		F("%08X %08X -> %08X", argvals[0] & 65535, argvals[1] & 65535,
@@ -623,7 +640,7 @@ struct vop vax_inst[256] = {
 /* 0x98 */	{	"CVTBL",	"rb,wl"			},
 /* 0x99 */	{	"CVTBW",	"rb,ww"			},
 /* 0x9a */	{	"MOVZBL",	"rb,wl"			},
-/* 0x9b */	{	"MOVZBW",	"wb,ww"			},
+/* 0x9b */	{	"MOVZBW",	"rb,ww"			},
 /* 0x9c */	{	"ROTL",		"rb,rl,wl"		},
 /* 0x9d */	{	"ACBB",		"rb,rb,mb,bw"		},
 /* 0x9e */	{	"MOVAB",	"ab,wl"			},

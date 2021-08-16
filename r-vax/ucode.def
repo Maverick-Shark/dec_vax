@@ -1526,6 +1526,38 @@ chmk_1:
 	plus arg1 0	crw wmem	# write reason
 	minus crv 4	crw wreg	# save new sp
 	plus 0 0	eoi
+#
+# CMPC3 len,src1,src2
+cmpc3:
+	plus arg3 0	arg4
+	and 0 0		argd0
+	and 0 0		argd1
+
+cmpc3_loop:
+	plus arg1 0	zcond goto cmpc3_done
+	plus arg2 0	cpuaddr rmem byte
+	and rmemdat FF	argd0
+	plus arg4 0	cpuaddr rmem byte
+	and rmemdat FF	argd1
+	minus argd0 argd1 nzcond goto cmpc3_done
+	minus arg1 1	arg1
+	plus arg2 1	arg2
+	plus arg4 1	arg4 goto cmpc3_loop
+
+cmpc3_done:
+	minus argd0 argd1 savnz savc
+	plus arg1 0	arg3 goto cmpc_regsave
+
+cmpc_regsave:
+	and 0 0		crn
+	plus arg1 0	crw wreg
+	and 1 1		crn
+	plus arg2 0	crw wreg
+	and 2 2		crn
+	plus arg3 0	crw wreg
+	and 3 3		crn
+	plus arg4 0	crw wreg
+	plus 0 0	eoi
 
 #
 !INSTRUCTIONS
@@ -1557,7 +1589,7 @@ BGEQU	ab#b^d(pc),rl#1,wl#pc	lbl=bclr			# 1e
 BLSSU	ab#b^d(pc),rl#1,wl#pc	lbl=bset			# 1f
 #
 MOVC3	rw,ab,ab	lbl=movc3 setnz clc clv			# 28
-#CMPC3	rw,ab,ab						# 29
+CMPC3	rw,ab,ab	lbl=cmpc3 setnz setc clv		# 29
 #
 MOVC5	0rw,1ab,4rb,2rw,3ab	lbl=movc5			# 2c
 CMPC5	0rw,1ab,4rb,2rw,3ab	lbl=cmpc5 setnz setc clv	# 2d
