@@ -1,4 +1,4 @@
-# DEC VAX Verilog code.
+# r-vax: DEC VAX Verilog code.
 This is an basic implementation of the DEC VAX cpu.  It was written by me for a way to learn verilog, hence not pretty.  I also assume it is quite incorrect in quite some places.
 
 It implements the Vax basic instruction set and passes the **EVKAA.EXE** basic instruction set test program.
