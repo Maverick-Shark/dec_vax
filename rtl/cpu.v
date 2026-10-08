@@ -213,8 +213,7 @@ module cpu(
 
 	assign ipr_val_tmp = ipr_reg[ipr_regaddr[5:0]];
 
-	always @(ipr_regaddr, icr, ipr_val_tmp,
-	    iccs_err, iccs_int, iccs_ie, iccs_run)
+	always @*
 		case (ipr_regaddr)
 		`IPR_ICR: ipr_val = icr;
 		`IPR_ICCS: ipr_val =
@@ -320,8 +319,7 @@ initial psl_ipl = 5'h1f;
 	    ~{ 28'b0, argp_regnum[mcodectr[0]] } : argp[mcodectr[0]];
 	assign mc_rv_tmp2 = arg[mcodectr[1:0]];
 
-	always @(mcodectr, psl, curpc, oldpc, cur_inst,
-	    mc_rv_tmp, mc_rv_tmp2)
+	always @*
 		casez (mcodectr)
 		4'd13: mc_rv = psl;
 		4'd12: mc_rv = curpc;
@@ -515,7 +513,7 @@ initial psl_ipl = 5'h1f;
 	);
 
 	reg [3:0]	pos_arg_size;
-	always @(a_argsz)
+	always @*
 		case (a_argsz)
 		2'b00: pos_arg_size = 4'h1;
 		2'b01: pos_arg_size = 4'h2;
@@ -525,7 +523,7 @@ initial psl_ipl = 5'h1f;
 
 	/* used for -(Rx) */
 	reg [3:0]	neg_arg_size;
-	always @(a_argsz)
+	always @*
 		case (a_argsz)
 		2'b00: neg_arg_size = 4'hf;
 		2'b01: neg_arg_size = 4'he;

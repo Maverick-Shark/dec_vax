@@ -1,0 +1,29 @@
+# DEC VAX (r-vax) for MiSTer - core source list
+set_global_assignment -name VERILOG_MACRO "MISTER=1"
+set_global_assignment -name VERILOG_MACRO "CLKPERBIT=434"
+set_global_assignment -name SEARCH_PATH rtl
+
+# MiSTer glue
+set_global_assignment -name VERILOG_FILE rtl/mister/vax_uart.v
+set_global_assignment -name VERILOG_FILE rtl/mister/vax_kbd.v
+set_global_assignment -name VERILOG_FILE rtl/mister/vt_font.v
+set_global_assignment -name VERILOG_FILE rtl/mister/vt_term.v
+set_global_assignment -name VERILOG_FILE rtl/mister/vax_sdram.v
+set_global_assignment -name VERILOG_FILE rtl/mister/vax_core.v
+set_global_assignment -name VERILOG_FILE rtl/mister/vax_system.v
+set_global_assignment -name SYSTEMVERILOG_FILE dec_vax.sv
+set_global_assignment -name SDC_FILE dec_vax.sdc
+
+# r-vax CPU (Anders Magnusson), same order as the original sbi.prj
+set_global_assignment -name VERILOG_FILE rtl/div.v
+set_global_assignment -name VERILOG_FILE rtl/ucode.v
+set_global_assignment -name VERILOG_FILE rtl/intrpt.v
+set_global_assignment -name VERILOG_FILE rtl/intclk.v
+set_global_assignment -name VERILOG_FILE rtl/constx.v
+set_global_assignment -name VERILOG_FILE rtl/consrx.v
+set_global_assignment -name VERILOG_FILE rtl/console.v
+set_global_assignment -name VERILOG_FILE rtl/argdecode.v
+set_global_assignment -name VERILOG_FILE rtl/alu.v
+set_global_assignment -name VERILOG_FILE rtl/vcache.v
+set_global_assignment -name VERILOG_FILE rtl/cpu.v
+set_global_assignment -name VERILOG_FILE rtl/mister/nettype_reset.v

@@ -137,15 +137,27 @@ parameter	S_ROM_ADDRS = 1024;
 
 	reg [I_ROM_WIDTH-1:0] ucinsn_rom [I_ROM_ADDRS-1:0];
 	reg [I_ROM_WIDTH-1:0] ucinsn_data;
+`ifdef MISTER
+	initial $readmemh("rtl/uc-insn.hex", ucinsn_rom, 0, I_ROM_ADDRS-1);
+`else
 	initial $readmemh("uc-insn.hex", ucinsn_rom, 0, I_ROM_ADDRS-1);
+`endif
 
 	reg [A_ROM_WIDTH-1:0] ucargs_rom [A_ROM_ADDRS-1:0];
 	reg [A_ROM_WIDTH-1:0] ucargs_data;
+`ifdef MISTER
+	initial $readmemh("rtl/uc-args.hex", ucargs_rom, 0, A_ROM_ADDRS-1);
+`else
 	initial $readmemh("uc-args.hex", ucargs_rom, 0, A_ROM_ADDRS-1);
+`endif
 
 	reg [S_ROM_WIDTH-1:0] ucstep_rom [S_ROM_ADDRS-1:0];
 	reg [S_ROM_WIDTH-1:0] ucstep_data;
+`ifdef MISTER
+	initial $readmemh("rtl/uc-step.hex", ucstep_rom, 0, S_ROM_ADDRS-1);
+`else
 	initial $readmemh("uc-step.hex", ucstep_rom, 0, S_ROM_ADDRS-1);
+`endif
 
 	always @(posedge clk)
 		if (i_enable)

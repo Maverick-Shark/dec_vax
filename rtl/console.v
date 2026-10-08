@@ -135,7 +135,7 @@ module console(
 
 	reg [3:0] htoa;
 	reg [7:0] hexd;
-	always @(htoa) begin
+	always @* begin
 		case (htoa)
 		4'd0: hexd = "0";
 		4'd1: hexd = "1";

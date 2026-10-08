@@ -1,55 +1,50 @@
-# Prerequisites
-*.d
+# Quartus / MiSTer build products (from Template_MiSTer)
+db
+greybox_tmp
+incremental_db
+output_files
+simulation
+hc_output
+scaler
+hps_isw_handoff
+vip
+*_sim
+.qsys_edit
+PLLJ_PLLSPE_INFO.txt
+*.bak
+*.orig
+*.rej
+*.qdf
+*.rpt
+*.smsg
+*.summary
+*.done
+*.jdi
+*.pin
+*.sof
+*.qws
+*.ppf
+*.ddb
+build_id.v
+c5_pin_model_dump.txt
+*.sopcinfo
+*.csv
+*.f
+*.cmp
+*.sip
+*.spd
+*.bsf
+*~
+*.xml
+*_netlist
+*.cdf
+**/.DS_Store
 
-# Object files
-*.o
-*.ko
-*.obj
-*.elf
+# simulation outputs
+sim/obj/
+sim/obj_unit/
+*.ppm
+__pycache__/
 
-# Linker output
-*.ilk
-*.map
-*.exp
-
-# Precompiled Headers
-*.gch
-*.pch
-
-# Libraries
-*.lib
-*.a
-*.la
-*.lo
-
-# Shared objects (inc. Windows DLLs)
-*.dll
-*.so
-*.so.*
-*.dylib
-
-# Executables
-*.exe
-*.out
-*.app
-*.i*86
-*.x86_64
-*.hex
-
-# Debug files
-*.dSYM/
-*.su
-*.idb
-*.pdb
-
-# Kernel Module Compile Results
-*.mod*
-*.cmd
-.tmp_versions/
-modules.order
-Module.symvers
-Mkfile.old
-dkms.conf
-
-# debug information files
-*.dwo
+# keep the generated microcode ROM images (needed by Quartus)
+!rtl/uc-*.hex

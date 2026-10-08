@@ -161,7 +161,7 @@ parameter SHIFT=1;
 		endcase
 	end
 
-	always @(op)
+	always @*
 		case (op)
 		`ALU_PLUS, `ALU_MINUS, `ALU_BIS, `ALU_BIC, `ALU_AND,
 		    `ALU_XOR: quick = 1;

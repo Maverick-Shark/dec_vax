@@ -7,3 +7,9 @@ There are quite some parts missing; for example memory management and floating p
 
 It runs on the Waveshare Open3S500E Spartan-3 board.  
 Code for simulation in Verilator also exist and works.
+
+## MiSTer port
+
+This branch adds a MiSTer (DE10-Nano) version of r-vax: CPU, 32 MB SDRAM,
+on-screen VT100-style console terminal and USB keyboard. See
+[README_MiSTer.md](README_MiSTer.md).
