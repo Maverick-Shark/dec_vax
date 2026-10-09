@@ -44,7 +44,6 @@ assign HDMI_BOB_DEINT = 0;
 
 assign AUDIO_MIX = 0;
 
-assign LED_DISK = 0;
 assign LED_POWER = 0;
 assign BUTTONS = 0;
 
@@ -56,12 +55,16 @@ assign VIDEO_ARX = (!ar) ? 12'd4 : (ar - 1'd1);
 assign VIDEO_ARY = (!ar) ? 12'd3 : 12'd0;
 
 // Status bits
-//  0      reset
-//  2:1    load address
-//  3      autostart (0 = yes)
-//  5:4    text colour
-//  6      keyboard layout
-//  7      console also on UART (/dev/ttyS1)
+//  0       reset
+//  2:1     load address
+//  3       start address (0 = load address, 1 = 0x200)
+//  4       autostart (0 = yes)
+//  6:5     text colour
+//  7       keyboard layout
+//  8       accept input from the MiSTer UART
+//  9       power-on memory test (0 = on)
+//  10      run the memory test now (trigger)
+//  13:11   SDRAM read phase: 0 = calibrated, 1..4 = force phase 0..3
 //  122:121 aspect ratio
 
 `include "build_id.v"
@@ -70,12 +73,17 @@ localparam CONF_STR = {
 	"-;",
 	"F1,BINEXE,Load Program;",
 	"O[2:1],Load Address,0x00001000,0x00000000,0x00000200,0x00010000;",
-	"O[3],Autostart,Yes,No;",
+	"O[3],Start Address,Load address,0x00000200;",
+	"O[4],Autostart,Yes,No;",
 	"-;",
-	"O[5:4],Text Color,Green,Amber,White;",
-	"O[6],Keyboard,US,ES;",
-	"O[7],UART Console,Off,On;",
+	"O[6:5],Text Color,Green,Amber,White;",
+	"O[7],Keyboard,US,ES;",
+	"O[8],UART Console In,Off,On;",
 	"O[122:121],Aspect Ratio,Original,Full Screen,[ARC1],[ARC2];",
+	"-;",
+	"O[9],Power-on Memory Test,On,Off;",
+	"O[13:11],SDRAM Read Phase,Calibrated,Force 0,Force 1,Force 2,Force 3;",
+	"T[10],Run Memory Test;",
 	"-;",
 	"T[0],Reset;",
 	"R[0],Reset and close OSD;",
@@ -94,6 +102,7 @@ wire         ioctl_wr;
 wire  [26:0] ioctl_addr;
 wire   [7:0] ioctl_dout;
 wire         ioctl_wait;
+wire  [15:0] sdram_sz;
 
 hps_io #(.CONF_STR(CONF_STR)) hps_io
 (
@@ -115,8 +124,11 @@ hps_io #(.CONF_STR(CONF_STR)) hps_io
 	.ioctl_wr(ioctl_wr),
 	.ioctl_addr(ioctl_addr),
 	.ioctl_dout(ioctl_dout),
-	.ioctl_wait(ioctl_wait)
+	.ioctl_wait(ioctl_wait),
+
+	.sdram_sz(sdram_sz)
 );
+
 
 ///////////////////////   CLOCKS   ///////////////////////////////
 
@@ -147,6 +159,13 @@ end
 reg rst_sys = 1;
 always @(posedge clk_sys)
 	rst_sys <= RESET | status[0] | buttons[1];
+
+// the OSD "trigger" bit arrives as a level that flips; make it a pulse
+reg st_go = 0, st_d = 0;
+always @(posedge clk_sys) begin
+	st_d  <= status[10];
+	st_go <= status[10] & ~st_d;
+end
 
 ///////////////////////   SDRAM   ///////////////////////////////
 
@@ -187,9 +206,9 @@ sdramclk_ddr
 wire        ce_pix, hs, vs, hblank, vblank;
 wire  [7:0] vr, vg, vb;
 wire [15:0] audio;
-wire        led;
+wire        led, led_run;
 
-vax_system #(.CLK_HZ(50000000), .CPB(`CLKPERBIT)) vax
+vax_system #(.CLK_HZ(50000000), .CPB(`CLKPERBIT), .UART_CPB(434), .CACHEIDX(`CACHEIDX)) vax
 (
 	.clk            (clk_sys),
 	.rst_mem        (rst_mem),
@@ -203,10 +222,15 @@ vax_system #(.CLK_HZ(50000000), .CPB(`CLKPERBIT)) vax
 	.ioctl_wait     (ioctl_wait),
 
 	.load_base      (status[2:1]),
-	.autostart      (~status[3]),
-	.color          (status[5:4]),
-	.kbd_es         (status[6]),
-	.uart_console   (status[7]),
+	.start_200      (status[3]),
+	.autostart      (~status[4]),
+	.color          (status[6:5]),
+	.kbd_es         (status[7]),
+	.uart_console   (status[8]),
+	.selftest_en    (~status[9]),
+	.selftest_go    (st_go),
+	.rdphase_sel    (status[13:11]),
+	.sdram_sz       (sdram_sz),
 
 	.ps2_key        (ps2_key),
 	.uart_rxd       (UART_RXD),
@@ -234,7 +258,8 @@ vax_system #(.CLK_HZ(50000000), .CPB(`CLKPERBIT)) vax
 	.b              (vb),
 
 	.audio          (audio),
-	.led            (led)
+	.led_user       (led),
+	.led_disk       (led_run)
 );
 
 assign CLK_VIDEO = clk_sys;
@@ -252,5 +277,6 @@ assign AUDIO_L = audio;
 assign AUDIO_R = audio;
 
 assign LED_USER = led;
+assign LED_DISK = {1'b1, led_run};   // CPU running
 
 endmodule

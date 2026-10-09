@@ -41,10 +41,10 @@ c5_pin_model_dump.txt
 **/.DS_Store
 
 # simulation outputs
-sim/obj/
-sim/obj_unit/
+sim/obj*/
 *.ppm
 __pycache__/
 
 # keep the generated microcode ROM images (needed by Quartus)
 !rtl/uc-*.hex
+software/evkaa.exe

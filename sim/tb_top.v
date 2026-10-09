@@ -4,7 +4,9 @@
 
 `default_nettype none
 
-module tb_top (
+module tb_top #(
+	parameter integer CL_SKEW = 0
+) (
 	input         clk,
 	input         rst_mem,
 	input         rst_sys,
@@ -17,10 +19,16 @@ module tb_top (
 	output        ioctl_wait,
 
 	input   [1:0] load_base,
+	input         start_200,
 	input         autostart,
 	input   [1:0] color,
 	input         kbd_es,
+	input         selftest_en,
+	input         selftest_go,
+	input   [2:0] rdphase_sel,
+	input  [15:0] sdram_sz,
 	input  [10:0] ps2_key,
+	input         uart_rxd,
 
 	output        ce_pix,
 	output        hs,
@@ -32,6 +40,7 @@ module tb_top (
 	output  [7:0] b,
 	output [15:0] audio,
 	output        led,
+	output        led_disk,
 	output        uart_txd
 );
 
@@ -43,25 +52,29 @@ module tb_top (
 
 	wire [15:0] dq_bus = m_drive ? m_dq : sd_dq_oe ? sd_dq_o : 16'h0000;
 
-	vax_system #(.CLK_HZ(50000000), .CPB(`CLKPERBIT)) sys (
+	vax_system #(.CLK_HZ(50000000), .CPB(`CLKPERBIT), .UART_CPB(434),
+	             .CACHEIDX(`CACHEIDX)) sys (
 		.clk(clk), .rst_mem(rst_mem), .rst_sys(rst_sys),
 		.ioctl_download(ioctl_download), .ioctl_index(ioctl_index),
 		.ioctl_wr(ioctl_wr), .ioctl_addr(ioctl_addr), .ioctl_dout(ioctl_dout),
 		.ioctl_wait(ioctl_wait),
-		.load_base(load_base), .autostart(autostart), .color(color),
-		.kbd_es(kbd_es), .uart_console(1'b0),
-		.ps2_key(ps2_key), .uart_rxd(1'b1), .uart_txd(uart_txd),
+		.load_base(load_base), .start_200(start_200), .autostart(autostart),
+		.color(color), .kbd_es(kbd_es), .uart_console(1'b1),
+		.selftest_en(selftest_en), .selftest_go(selftest_go),
+		.rdphase_sel(rdphase_sel), .sdram_sz(sdram_sz),
+		.ps2_key(ps2_key), .uart_rxd(uart_rxd), .uart_txd(uart_txd),
 		.sd_a(sd_a), .sd_ba(sd_ba), .sd_ncs(sd_ncs), .sd_nras(sd_nras),
 		.sd_ncas(sd_ncas), .sd_nwe(sd_nwe), .sd_dqml(sd_dqml), .sd_dqmh(sd_dqmh),
 		.sd_dq_o(sd_dq_o), .sd_dq_oe(sd_dq_oe), .sd_dq_i(dq_bus),
 		.ce_pix(ce_pix), .hs(hs), .vs(vs), .hblank(hblank), .vblank(vblank),
-		.r(r), .g(g), .b(b), .audio(audio), .led(led)
+		.r(r), .g(g), .b(b), .audio(audio),
+		.led_user(led), .led_disk(led_disk)
 	);
 
-	sdram_model sdram (
+	sdram_model #(.CL_SKEW(CL_SKEW)) sdram (
 		.clk(clk), .a(sd_a), .ba(sd_ba), .ncs(sd_ncs), .nras(sd_nras),
 		.ncas(sd_ncas), .nwe(sd_nwe), .dqml(sd_dqml), .dqmh(sd_dqmh),
-		.dq_in(sd_dq_o), .dq_out(m_dq), .dq_drive(m_drive)
+		.dq_in(sd_dq_o), .dq_oe(sd_dq_oe), .dq_out(m_dq), .dq_drive(m_drive)
 	);
 
 	// bus contention check

@@ -135,6 +135,7 @@ parameter	A_ROM_ADDRS = 256;
 parameter	S_ROM_WIDTH = 72;
 parameter	S_ROM_ADDRS = 1024;
 
+	(* ramstyle = "M10K" *)
 	reg [I_ROM_WIDTH-1:0] ucinsn_rom [I_ROM_ADDRS-1:0];
 	reg [I_ROM_WIDTH-1:0] ucinsn_data;
 `ifdef MISTER
@@ -143,6 +144,7 @@ parameter	S_ROM_ADDRS = 1024;
 	initial $readmemh("uc-insn.hex", ucinsn_rom, 0, I_ROM_ADDRS-1);
 `endif
 
+	(* ramstyle = "M10K" *)
 	reg [A_ROM_WIDTH-1:0] ucargs_rom [A_ROM_ADDRS-1:0];
 	reg [A_ROM_WIDTH-1:0] ucargs_data;
 `ifdef MISTER
@@ -151,6 +153,7 @@ parameter	S_ROM_ADDRS = 1024;
 	initial $readmemh("uc-args.hex", ucargs_rom, 0, A_ROM_ADDRS-1);
 `endif
 
+	(* ramstyle = "M10K" *)
 	reg [S_ROM_WIDTH-1:0] ucstep_rom [S_ROM_ADDRS-1:0];
 	reg [S_ROM_WIDTH-1:0] ucstep_data;
 `ifdef MISTER

@@ -22,6 +22,11 @@ module vax_uart_tx #(
 	output           txd
 );
 
+	/* verilator lint_off WIDTHTRUNC */
+	localparam [15:0] LAST = CLKS - 1;
+	localparam [15:0] HALF = CLKS / 2;
+	/* verilator lint_on WIDTHTRUNC */
+
 	reg  [9:0]  shreg;          // {stop, data[7:0], start}, LSB first
 	reg  [3:0]  nbits;
 	reg  [15:0] cnt;
@@ -49,7 +54,7 @@ module vax_uart_tx #(
 			end
 		end else begin
 			line <= shreg[0];
-			if (cnt == CLKS - 1) begin
+			if (cnt == LAST) begin
 				cnt   <= 16'd0;
 				shreg <= {1'b1, shreg[9:1]};
 				nbits <= nbits - 4'd1;
@@ -70,6 +75,11 @@ module vax_uart_rx #(
 	output reg [7:0] data,
 	output reg       valid       // one clock pulse per received byte
 );
+
+	/* verilator lint_off WIDTHTRUNC */
+	localparam [15:0] LAST = CLKS - 1;
+	localparam [15:0] HALF = CLKS / 2;
+	/* verilator lint_on WIDTHTRUNC */
 
 	reg  [2:0]  sync;
 	reg  [15:0] cnt;
@@ -94,11 +104,11 @@ module vax_uart_rx #(
 		end else if (!active) begin
 			if (!rx) begin                    // start bit edge
 				active <= 1'b1;
-				cnt    <= CLKS / 2;
+				cnt    <= HALF;
 				nbits  <= 4'd0;
 			end
 		end else begin
-			if (cnt == CLKS - 1) begin
+			if (cnt == LAST) begin
 				cnt <= 16'd0;
 				if (nbits == 4'd0 && rx) begin
 					active <= 1'b0;           // glitch, not a start bit

@@ -5,8 +5,26 @@
 // 1. power-up (SDRAM init), 2. download prog.bin through the ioctl port
 // (like the HPS does), 3. autostart types FR<addr>CR G into the monitor,
 // 4. waits for the program, 5. types [keys] on the PS/2 keyboard
-// ('~' = Enter, uppercase letters use Shift), 6. dumps the terminal text
-// RAM and one video frame (PPM).
+// ('~' = Enter, uppercase letters use Shift, '^X' = Ctrl+X, '{' = cursor
+// up, which sends the three bytes ESC [ A), 6. dumps the
+// terminal text RAM and one video frame (PPM).
+//
+// Environment:
+//   NOTEST      power-on memory test off       PHASE=n   force read phase n-1
+//   START200    start address 0x200            NOAUTO    no autostart
+//   NOHPSRST    do not imitate the HPS holding the core in reset after it
+//               sends the SDRAM size (MiSTer Main does: size, then status[0]
+//               for the whole time it loads the saved settings)
+//   HPSRST=n    length of that reset in clocks (default 2000000 = 40 ms)
+//   MEMFILL=x   fill the whole SDRAM with 16-bit value x before anything
+//               runs (default: zero); MEMFILL=rand for pseudo-random data,
+//               which is what a real module holds at power-up
+//   UNTIL/UNTIL2/BUDGET/HALT/BANNER/FAULT/SESSION  see below
+//   SESSION     tokens separated by '|': text is typed, "@text" waits for
+//               text to appear on the console (BUDGET clocks at most),
+//               "!R" is an OSD reset, "!Wn" runs n clocks
+//   PRELOAD=f@a put file f into memory at hex address a after the memory
+//               test, as if a previous program had left it there
 
 #include <cstdio>
 #include <cstdlib>
@@ -19,14 +37,62 @@
 
 static Vtb_top *tb;
 static uint64_t cycles = 0;
+static uint64_t nhit = 0, nmiss = 0, nrun = 0, ninst = 0;
+static int      halted_d = 1, state_d = 0;
 static std::string tto_log;
 
 #define R (tb->rootp)
+
+// software UART receiver on UART_TXD, 115200 baud equivalent (435 clocks/bit)
+static std::string uart_log;
+static void uart_sample() {
+	static int phase = -1, bit = 0, val = 0;
+	static int cnt = 0;
+	if (phase < 0) {
+		if (!tb->uart_txd) { phase = 0; cnt = 435 / 2; bit = 0; val = 0; }
+		return;
+	}
+	if (--cnt > 0) return;
+	cnt = 435;
+	if (phase == 0) {                 // middle of the start bit
+		if (tb->uart_txd) { phase = -1; return; }
+		phase = 1;
+		return;
+	}
+	if (bit < 8) { val |= tb->uart_txd << bit; bit++; return; }
+	if (tb->uart_txd) uart_log.push_back((char)val);   // stop bit present
+	phase = -1;
+}
 
 static void tick() {
 	tb->clk = 1; tb->eval();
 	tb->clk = 0; tb->eval();
 	cycles++;
+	uart_sample();
+	if (R->tb_top__DOT__sys__DOT__core__DOT__cache__DOT__stat_hit)  nhit++;
+	if (R->tb_top__DOT__sys__DOT__core__DOT__cache__DOT__stat_miss) nmiss++;
+	// cycles with the CPU actually running, and instructions decoded
+	int h = R->tb_top__DOT__sys__DOT__cpu_halted;
+	if (!h) nrun++;
+	int st = R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__state;
+	if (st == 10 && state_d != 10) ninst++;
+	state_d = st; halted_d = h;
+	// RXTRACE: log the console receiver as the CPU sees it
+	static int rxtrace = getenv("RXTRACE") ? 1 : 0;
+	if (rxtrace) {
+		static int d_done = 0, d_irq = 0, d_ie = 0;
+		int done = R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__consrx__DOT__done;
+		int irq  = R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__consrx__DOT__intreq;
+		int ie   = R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__consrx__DOT__inten;
+		if (done != d_done || irq != d_irq || ie != d_ie)
+			printf("\n[%llu] RX done %d->%d irq %d->%d ie %d->%d char %02X ipr_addr %02X ipl %02X pc %08X halted %d\n",
+			       (unsigned long long)cycles, d_done, done, d_irq, irq, d_ie, ie,
+			       R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__consrx__DOT__rxraw & 0xFF,
+			       R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__ipr_addr,
+			       (R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__psl >> 16) & 0x1F,
+			       R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__oldpc, h);
+		d_done = done; d_irq = irq; d_ie = ie;
+	}
 	if (R->tb_top__DOT__sys__DOT__rx_valid) {
 		unsigned char c = R->tb_top__DOT__sys__DOT__rx_data;
 		tto_log.push_back((char)c);
@@ -60,18 +126,34 @@ static int scancode(char c, int *shift) {
 	case '~': return 0x5A;      // Enter
 	case ' ': return 0x29;
 	case '/': return 0x4A;
+	case '?': *shift = 1; return 0x4A;
+	case '.': return 0x49;
+	case ',': return 0x41;
+	case '-': return 0x4E;
+	case '+': *shift = 1; return 0x55;
+	case '=': return 0x55;
 	}
 	return -1;
 }
 
 static void type(const char *s) {
 	for (; *s; s++) {
+		int ctrl = 0;
+		if (*s == '{') {                              // { = cursor up (ESC [ A)
+			ps2_event(0x75, 1, 1);
+			ps2_event(0x75, 0, 1);
+			run(250000);
+			continue;
+		}
+		if (*s == '^' && s[1]) { ctrl = 1; s++; }    // ^X = Ctrl+X
 		int sh, sc = scancode(*s, &sh);
 		if (sc < 0) continue;
+		if (ctrl) { sh = 0; ps2_event(0x14, 1, 0); }
 		if (sh) ps2_event(0x12, 1, 0);
 		ps2_event(sc, 1, 0);
 		ps2_event(sc, 0, 0);
 		if (sh) ps2_event(0x12, 0, 0);
+		if (ctrl) ps2_event(0x14, 0, 0);
 		run(250000);            // 5 ms between keys
 	}
 }
@@ -148,12 +230,24 @@ static void download(const std::vector<unsigned char> &data) {
 	printf("\n[%llu] downloaded %zu bytes\n", (unsigned long long)cycles, data.size());
 }
 
-static bool wait_done(uint64_t budget) {
-	size_t from = tto_log.size();
+static bool wait_done(uint64_t budget, const char *pat) {
 	uint64_t limit = cycles + budget;
-	while (cycles < limit && tto_log.find("DONE", from) == std::string::npos) tick();
-	run(500000);
-	return tto_log.find("DONE", from) != std::string::npos;
+	// stop on the pattern, or (with HALT set) when the CPU halts again
+	size_t from = tto_log.size();
+	uint64_t limit0 = cycles;
+	(void)limit0;
+	bool usehalt = getenv("HALT") != 0;
+	int seen_run = 0;
+	while (cycles < limit) {
+		tick();
+		if (tto_log.find(pat ? pat : "DONE", from) != std::string::npos) break;
+		if (usehalt) {
+			if (!R->tb_top__DOT__sys__DOT__cpu_halted) seen_run = 1;
+			else if (seen_run) break;
+		}
+	}
+	run(200000);
+	return tto_log.find(pat ? pat : "DONE", from) != std::string::npos;
 }
 
 int main(int argc, char **argv) {
@@ -165,16 +259,87 @@ int main(int argc, char **argv) {
 	const char *ppm = argc > 4 ? argv[4] : "frame.ppm";
 
 	tb->clk = 0; tb->rst_mem = 1; tb->rst_sys = 1;
-	tb->load_base = base; tb->autostart = 1; tb->color = 0; tb->kbd_es = 0;
+	tb->load_base = base; tb->autostart = getenv("NOAUTO") ? 0 : 1; tb->color = 0; tb->kbd_es = 0;
 	tb->ps2_key = 0; tb->ioctl_download = 0; tb->ioctl_wr = 0;
+	tb->start_200 = getenv("START200") ? 1 : 0;
+	tb->selftest_en = getenv("NOTEST") ? 0 : 1;
+	tb->selftest_go = 0; tb->uart_rxd = 1;
+	tb->rdphase_sel = getenv("PHASE") ? atoi(getenv("PHASE")) : 0;
+	tb->sdram_sz = 0;                       // the HPS reports it later
 	run(20);
+	// after the first eval, so the model's initial block has already run
+	if (const char *mf = getenv("MEMFILL")) {
+		unsigned v = strtoul(mf, 0, 0), x = 0x12345678;
+		bool rnd = !strcmp(mf, "rand");
+		for (unsigned i = 0; i < (1u << 24); i++) {
+			if (rnd) { x ^= x << 13; x ^= x >> 17; x ^= x << 5; }
+			R->tb_top__DOT__sdram__DOT__mem[i] = rnd ? (x & 0xFFFF) : v;
+		}
+		printf("SDRAM filled with %s\n", rnd ? "pseudo-random data" : mf);
+	}
 	tb->rst_mem = 0;
 	run(10);
 	tb->rst_sys = 0;
 
 	while (!R->tb_top__DOT__sys__DOT__mem_ready) tick();
 	printf("[%llu] SDRAM ready\n", (unsigned long long)cycles);
+	// the HPS announces the module a little later, as on real hardware
+	run(30000);
+	tb->sdram_sz = 0x8001;                  // valid, 32 MB
+	run(20);
+	if (!getenv("NOHPSRST")) {
+		// MiSTer Main: UIO_SET_MEMSZ, then status[0] = 1 a few microseconds
+		// later, held while it loads the saved settings, then released
+		uint64_t len = getenv("HPSRST") ? strtoull(getenv("HPSRST"), 0, 0) : 2000000ULL;
+		run(1000);
+		tb->rst_sys = 1;
+		printf("[%llu] HPS holds the core in reset\n", (unsigned long long)cycles);
+		run(len);
+		tb->rst_sys = 0;
+		printf("[%llu] HPS releases the reset\n", (unsigned long long)cycles);
+	}
+	{
+		// optional fault injection: corrupt one longword once the test has
+		// finished writing, to exercise the FAIL report
+		const char *flt = getenv("FAULT");
+		unsigned flw = flt ? strtoul(flt, 0, 0) : 0;
+		bool done = !flt;
+		while (R->tb_top__DOT__sys__DOT__st_pending || R->tb_top__DOT__sys__DOT__st_busy) {
+			tick();
+			if (!done && R->tb_top__DOT__sys__DOT__selftest__DOT__tst == 3) {
+				R->tb_top__DOT__sdram__DOT__mem[flw * 2] ^= 0x0040;
+				printf("[%llu] injected a fault at longword 0x%X\n",
+				       (unsigned long long)cycles, flw);
+				done = true;
+			}
+		}
+	}
+	printf("[%llu] self test done, fail=%d, phases ok=%X, using phase %d\n",
+	       (unsigned long long)cycles,
+	       R->tb_top__DOT__sys__DOT__st_fail,
+	       R->tb_top__DOT__sys__DOT__selftest__DOT__ok,
+	       R->tb_top__DOT__sys__DOT__st_best);
 	run(200000);   // monitor prints the halt code after reset
+	if (getenv("BANNER")) { dump_screen(); grab_frame(ppm); delete tb; return 0; }
+
+	// PRELOAD=file@hexaddr: put a file straight into the SDRAM model, as if
+	// an earlier program had been loaded there (memory left over from it)
+	if (const char *pl = getenv("PRELOAD")) {
+		std::string spec(pl);
+		size_t at = spec.find('@');
+		std::string fn = spec.substr(0, at);
+		unsigned pa = (at == std::string::npos) ? 0 : strtoul(spec.c_str() + at + 1, 0, 16);
+		FILE *pf = fopen(fn.c_str(), "rb");
+		if (!pf) { perror(fn.c_str()); return 1; }
+		int ch, n = 0;
+		while ((ch = fgetc(pf)) != EOF) {
+			unsigned a = pa + n++;
+			unsigned short &w = R->tb_top__DOT__sdram__DOT__mem[a >> 1];
+			w = (a & 1) ? ((w & 0x00FF) | (ch << 8)) : ((w & 0xFF00) | ch);
+		}
+		fclose(pf);
+		printf("preloaded %s (%d bytes) at 0x%X\n", fn.c_str(), n, pa);
+	}
 
 	// ---- download like hps_io: one byte per ioctl_wr pulse, honour ioctl_wait
 	FILE *f = fopen(prog, "rb");
@@ -199,14 +364,24 @@ int main(int argc, char **argv) {
 	printf("memory check: %s (%d mismatches)\n", bad ? "FAIL" : "OK", bad);
 
 	// ---- let autostart and the program run
-	bool done = wait_done(40000000ULL);
-	printf("\n[%llu] program finished: %s\n", (unsigned long long)cycles, done ? "yes" : "NO");
+	const char *bud = getenv("BUDGET");
+	uint64_t budget = bud ? strtoull(bud, 0, 0) : 40000000ULL;
+	const char *u1 = getenv("UNTIL");
+	bool done = wait_done(budget, u1 ? u1 : "DONE");
+	printf("\n[%llu] stage 1 (%s): %s\n", (unsigned long long)cycles,
+	       u1 ? u1 : "DONE", done ? "matched" : "NOT matched");
 
-	// ---- keyboard
+	// ---- keyboard, then an optional second wait
 	if (*keys) {
 		printf("[%llu] typing \"%s\"\n", (unsigned long long)cycles, keys);
 		type(keys);
 		run(500000);
+		const char *u2 = getenv("UNTIL2");
+		if (u2) {
+			bool d2 = wait_done(budget, u2);
+			printf("\n[%llu] stage 2 (%s): %s\n", (unsigned long long)cycles,
+			       u2, d2 ? "matched" : "NOT matched");
+		}
 	}
 
 	if (argc > 5 && !strcmp(argv[5], "again")) {
@@ -217,8 +392,36 @@ int main(int argc, char **argv) {
 		type("1000P~");
 		run(300000);
 		download(data);
-		done = wait_done(40000000ULL);
+		done = wait_done(40000000ULL, "DONE");
 		printf("\n[%llu] second run finished: %s\n", (unsigned long long)cycles, done ? "yes" : "NO");
+	}
+
+	if (getenv("SESSION")) {
+		char *sc = strdup(getenv("SESSION"));
+		const char *bud2 = getenv("BUDGET");
+		uint64_t sbudget = bud2 ? strtoull(bud2, 0, 0) : 40000000ULL;
+		for (char *tok = strtok(sc, "|"); tok; tok = strtok(0, "|")) {
+			if (tok[0] == '@') {
+				bool ok = wait_done(sbudget, tok + 1);
+				printf("\n[%llu] --- waiting for \"%s\": %s\n",
+				       (unsigned long long)cycles, tok + 1, ok ? "seen" : "NOT seen");
+				continue;
+			}
+			if (!strcmp(tok, "!R")) {               // OSD Reset
+				printf("\n[%llu] --- OSD reset\n", (unsigned long long)cycles);
+				tb->rst_sys = 1; run(100); tb->rst_sys = 0;
+				run(300000);
+				continue;
+			}
+			if (tok[0] == '!' && tok[1] == 'W') {   // !Wn: just run n clocks
+				run(strtoull(tok + 2, 0, 0));
+				continue;
+			}
+			printf("\n[%llu] --- typing: %s\n", (unsigned long long)cycles, tok);
+			type(tok);
+			run(2000000);
+		}
+		free(sc);
 	}
 
 	dump_screen();
@@ -226,6 +429,21 @@ int main(int argc, char **argv) {
 	while (!(R->tb_top__DOT__sys__DOT__term__DOT__frame & 16)) tick();
 	grab_frame(ppm);
 	printf("audio %d, cycles %llu\n", tb->audio, (unsigned long long)cycles);
+	printf("MiSTer UART captured %zu bytes; last line: ", uart_log.size());
+	{
+		size_t e = uart_log.find_last_not_of("\r\n");
+		size_t b = (e == std::string::npos) ? 0 : uart_log.find_last_of('\n', e);
+		for (size_t i = (b == std::string::npos ? 0 : b + 1); i <= e && i < uart_log.size(); i++)
+			putchar(uart_log[i] >= 0x20 ? uart_log[i] : '.');
+		putchar('\n');
+	}
+	printf("cache: %llu hits, %llu misses (%.1f%% hit rate)\n",
+	       (unsigned long long)nhit, (unsigned long long)nmiss,
+	       (nhit + nmiss) ? 100.0 * nhit / (nhit + nmiss) : 0.0);
+	printf("cpu: %llu instructions in %llu running clocks, CPI %.2f, %.3f MIPS at 50 MHz\n",
+	       (unsigned long long)ninst, (unsigned long long)nrun,
+	       ninst ? (double)nrun / ninst : 0.0,
+	       nrun ? 50.0 * ninst / nrun : 0.0);
 	delete tb;
 	return 0;
 }

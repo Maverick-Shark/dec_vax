@@ -111,6 +111,7 @@ module cpu(
 
 	output		tto_tx,
 	input		tti_rx,
+	output		cpu_halted,
 	output		cpu_mcheck
 
 
@@ -175,6 +176,7 @@ module cpu(
 	reg [1:0]	cpu_size;
 	wire		cpu_acki;
 	assign cpu_mcheck  = mcheck;
+	assign cpu_halted  = halted;
 	assign cpu_acki = CPU_ACK_I | mcheck;
 	assign CPU_STB_O = halted & ~(con_reg | con_ipr) ? CON_STB_I : cpu_stb;
 	assign CPU_ADR_O = halted ? CON_ADR_I :
@@ -188,7 +190,7 @@ module cpu(
 	/*
 	 * IPR regs in LUT RAM.
 	 */
-	(* ram_style = "DISTRIBUTED" *)
+	(* ram_style = "DISTRIBUTED" *) (* ramstyle = "logic" *)
 	reg [31:0]	ipr_reg[63:0];
 
 	wire [6:0]	ipr_regaddr;
@@ -355,7 +357,7 @@ initial psl_ipl = 5'h1f;
 	/*
 	 * General register file, currently in Distributed RAM.
 	 */
-	(* ram_style = "DISTRIBUTED" *)
+	(* ram_style = "DISTRIBUTED" *) (* ramstyle = "logic" *)
 	reg [31:0]	general_reg[15:0];
 
 	/* decoding of greg writeback */
@@ -1334,7 +1336,7 @@ if (debug) $fdisplay(32'h80000002, "WB1: argd1 %x size %d addr %x\r", argd[1], a
 		 * cur_reg_val contains stack pointer value.
 		 */
 		`MCODE: begin
-$fdisplay(32'h80000002, "MCODE: ctr %d mc_rv %x\r", mcodectr, mc_rv);
+if (debug) $fdisplay(32'h80000002, "MCODE: ctr %d mc_rv %x\r", mcodectr, mc_rv);
 			mcodectr <= mcodectr - 1;
 			greg_wregnum <= `REG_SP;
 			greg_wbdata <= cur_reg_val - 4;
@@ -1415,7 +1417,7 @@ $fdisplay(32'h80000002, "MCODE: ctr %d mc_rv %x\r", mcodectr, mc_rv);
 			default: state <= `S_HALT;
 			endcase
 			if (mcheck) begin
-$fdisplay(32'h80000002, "S_WRITEMEM2: mcheck %x", cpu_addr);
+if (debug) $fdisplay(32'h80000002, "S_WRITEMEM2: mcheck %x", cpu_addr);
 				state <= `S_HALT;
 				haltpos <= `HALT_MCHECK;
 			end

@@ -1,6 +1,7 @@
 # DEC VAX (r-vax) for MiSTer - core source list
 set_global_assignment -name VERILOG_MACRO "MISTER=1"
-set_global_assignment -name VERILOG_MACRO "CLKPERBIT=434"
+set_global_assignment -name VERILOG_MACRO "CLKPERBIT=16"
+set_global_assignment -name VERILOG_MACRO "CACHEIDX=10"
 set_global_assignment -name SEARCH_PATH rtl
 
 # MiSTer glue
@@ -8,11 +9,16 @@ set_global_assignment -name VERILOG_FILE rtl/mister/vax_uart.v
 set_global_assignment -name VERILOG_FILE rtl/mister/vax_kbd.v
 set_global_assignment -name VERILOG_FILE rtl/mister/vt_font.v
 set_global_assignment -name VERILOG_FILE rtl/mister/vt_term.v
+set_global_assignment -name VERILOG_FILE rtl/mister/vax_msg.v
+set_global_assignment -name VERILOG_FILE rtl/mister/vax_selftest.v
 set_global_assignment -name VERILOG_FILE rtl/mister/vax_sdram.v
+set_global_assignment -name VERILOG_FILE rtl/mister/vax_cache.v
 set_global_assignment -name VERILOG_FILE rtl/mister/vax_core.v
 set_global_assignment -name VERILOG_FILE rtl/mister/vax_system.v
 set_global_assignment -name SYSTEMVERILOG_FILE dec_vax.sv
 set_global_assignment -name SDC_FILE dec_vax.sdc
+# writes output_files/dec_vax_timing.txt (worst paths, SDRAM read data paths)
+set_global_assignment -name TIMEQUEST_REPORT_SCRIPT tools/sta_report.tcl
 
 # r-vax CPU (Anders Magnusson), same order as the original sbi.prj
 set_global_assignment -name VERILOG_FILE rtl/div.v

@@ -67,8 +67,8 @@ module intclk(
 	output		run_o
 );
 
-parameter CLKINIT =	8'h4e;	// 50MHz clock to microseconds. (128-50)
-parameter TODRCNTINIT =	15'h18f0; // 10 ms clock
+parameter CLKINIT =	8'h4f;	// 50MHz clock to microseconds: 79..128 = 50 states
+parameter TODRCNTINIT =	15'h18f1; // 10 ms clock: 6385..16384 = 10000 us
 
 	reg [31:0]	nicr;
 	reg		running, error, inten, intreq, lastcry;

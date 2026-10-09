@@ -27,6 +27,7 @@ module vt_term (
 	input      [7:0] rx_data,
 	input            rx_valid,
 	input      [1:0] color,        // 0 green, 1 amber, 2/3 white
+	output           rx_ready,     // input FIFO has room (and reset is over)
 	output reg       bell,         // one clock pulse per BEL
 
 	output           ce_pix,
@@ -43,22 +44,30 @@ module vt_term (
 	localparam [6:0] LAST_COL = 7'd79;
 
 	// ------------------------------------------------------------ input FIFO
-	reg  [7:0] fifo [0:15];
-	reg  [3:0] wp, rp;
+	// The CPU's characters arrive every 3.4 us with no way to hold them
+	// back, while a full-screen clear keeps the terminal busy for 2400
+	// clocks (14 characters' time). 64 entries cover several of those in a
+	// row; 16 covered exactly one.
+	reg  [7:0] fifo [0:63];
+	reg  [5:0] wp, rp;
 	wire       empty = (wp == rp);
 	wire [7:0] ch    = fifo[rp];
 
 	initial begin
-		wp = 4'd0;
-		rp = 4'd0;
+		wp = 6'd0;
+		rp = 6'd0;
 	end
+
+	// room for at least four more characters, and the screen clear is done
+	assign rx_ready = !f_act && ((wp + 6'd4) != rp) && ((wp + 6'd3) != rp)
+	                          && ((wp + 6'd2) != rp) && ((wp + 6'd1) != rp);
 
 	always @(posedge clk)
 		if (rst)
-			wp <= 4'd0;
-		else if (rx_valid && (wp + 4'd1 != rp)) begin
+			wp <= 6'd0;
+		else if (rx_valid && (wp + 6'd1 != rp)) begin
 			fifo[wp] <= rx_data;
-			wp <= wp + 4'd1;
+			wp <= wp + 6'd1;
 		end
 
 	// ------------------------------------------------------------ text RAM
@@ -168,7 +177,7 @@ module vt_term (
 		pop  = 1'b0;
 
 		if (rst) begin
-			rp <= 4'd0;
+			rp <= 6'd0;
 			esc <= E_NORM;
 			cur_r <= 5'd0; cur_c <= 7'd0; wrap <= 1'b0; top <= 5'd0;
 			a_bold <= 1'b0; a_rev <= 1'b0; g0_gfx <= 1'b0; g1_gfx <= 1'b0; so <= 1'b0;
@@ -315,7 +324,7 @@ module vt_term (
 			endcase
 
 			if (pop)
-				rp <= rp + 4'd1;
+				rp <= rp + 6'd1;
 		end
 	end
 

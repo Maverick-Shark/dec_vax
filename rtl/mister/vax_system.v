@@ -1,13 +1,20 @@
 //============================================================================
-//  vax_system.v - everything of the MiSTer core below the emu/hps_io layer:
+//  vax_system.v - everything of the MiSTer core below the emu/hps_io layer.
 //
-//    vax_core   r-vax CPU + 32 MB SDRAM + SBI stubs
-//    loader     HPS file download (OSD "Load program") into SDRAM
-//    autostart  types "FR<addr><CR>G" into the console monitor after a load
-//    vax_kbd    USB keyboard -> ASCII -> serial line into the console (TTI)
-//    vt_term    console output (TTO) -> 80x30 on-screen terminal
-//    UART       console also on the MiSTer UART (Linux /dev/ttyS1) if selected
-//    beeper     BEL -> short tone on the audio output
+//    vax_core     r-vax CPU + M10K cache + 32 MB SDRAM + SBI stubs
+//    vax_selftest power-on SDRAM test and banner (owns memory, CPU in reset)
+//    loader       HPS file download (OSD "Load Program") into SDRAM
+//    autostart    types FR<addr><CR>G into the console monitor after a load
+//    vax_kbd      USB keyboard -> ASCII -> console receive line (TTI)
+//    vt_term      console transmit line (TTO) -> on-screen terminal
+//    UART bridge  the same console on the MiSTer UART at 115200 baud
+//    beeper       BEL -> short tone on the audio output
+//
+//  Console wiring: the r-vax console is a serial line inside the CPU
+//  (constx/consrx on IPRs 20h-23h). Its bit rate is set by CLKPERBIT and is
+//  deliberately fast here - it never leaves the FPGA, and a slow line would
+//  only make the screen crawl. The MiSTer UART, which does leave the FPGA,
+//  gets its own pair of 115200 baud converters with FIFOs.
 //
 //  Part of the MiSTer port of r-vax (VAX CPU in Verilog by Anders Magnusson).
 //  SPDX-License-Identifier: BSD-2-Clause
@@ -16,8 +23,10 @@
 `default_nettype none
 
 module vax_system #(
-	parameter CLK_HZ = 50000000,
-	parameter CPB    = 434          // console bit period - 1 (= `CLKPERBIT)
+	parameter CLK_HZ   = 50000000,
+	parameter CPB      = 16,        // internal console bit period - 1
+	parameter UART_CPB = 434,       // 115200 baud at 50 MHz
+	parameter CACHEIDX = 10
 ) (
 	input             clk,
 	input             rst_mem,      // power-up reset (PLL not locked)
@@ -33,10 +42,15 @@ module vax_system #(
 
 	// options
 	input       [1:0] load_base,    // 0: 0x1000, 1: 0x0, 2: 0x200, 3: 0x10000
+	input             start_200,    // start at 0x200 instead of the load address
 	input             autostart,
 	input       [1:0] color,
 	input             kbd_es,
 	input             uart_console,
+	input             selftest_en,
+	input             selftest_go,  // one clock pulse: run the test again
+	input       [2:0] rdphase_sel,  // 0 = calibrated, 1..4 = force phase 0..3
+	input      [15:0] sdram_sz,
 
 	input      [10:0] ps2_key,
 	input             uart_rxd,
@@ -66,8 +80,12 @@ module vax_system #(
 	output      [7:0] b,
 
 	output     [15:0] audio,
-	output            led
+	output            led_user,
+	output            led_disk
 );
+
+	wire mem_ready;
+	wire cpu_halted;
 
 	// ------------------------------------------------------------ loader
 	wire        ldr_go = ioctl_download && (ioctl_index[5:0] == 6'd1);
@@ -75,7 +93,6 @@ module vax_system #(
 	reg  [22:0] ldr_adr;
 	reg   [3:0] ldr_sel;
 	reg  [31:0] ldr_dat;
-	wire        ldr_ack;
 	reg  [24:0] base;
 
 	always @* begin
@@ -96,12 +113,37 @@ module vax_system #(
 
 	assign ioctl_wait = ldr_busy;
 
+	// ------------------------------------------------------------ self test
+	wire        st_busy, st_fail;
+	wire  [1:0] st_phase, st_best;
+	wire        st_req, st_we;
+	wire [22:0] st_adr;
+	wire [31:0] st_dat;
+	wire  [3:0] st_sel;
+	wire  [7:0] st_char;
+	wire        st_stb;
+	wire        term_ready;
+
+	// ------------------------------------------------- memory port arbitration
+	wire        dma_en = ldr_go | ldr_busy | st_busy | st_pending;
+	wire        dma_done;
+	wire [31:0] dma_rdat;
+	wire  [1:0] dma_ridx;
+	wire        dma_rstb;
+
+	wire        dma_req = st_busy ? st_req : ldr_stb;
+	wire        dma_we  = st_busy ? st_we  : 1'b1;
+	wire [22:0] dma_adr = st_busy ? st_adr : ldr_adr;
+	wire [31:0] dma_dat = st_busy ? st_dat : ldr_dat;
+	wire  [3:0] dma_sel = st_busy ? st_sel : ldr_sel;
+
 	always @(posedge clk) begin
-		if (ldr_stb && ldr_ack) begin
+		if (ldr_stb && dma_done) begin
 			ldr_stb  <= 1'b0;
 			ldr_busy <= 1'b0;
 		end
-		if (ldr_go && ioctl_wr && !ldr_busy) begin
+		// accept on the completion cycle too: ldr_busy still reads 1 there
+		if (ldr_go && ioctl_wr && (!ldr_busy || (ldr_stb && dma_done))) begin
 			ldr_adr  <= ldr_byte_addr[24:2];
 			ldr_sel  <= 4'b0001 << ldr_byte_addr[1:0];
 			ldr_dat  <= {4{ioctl_dout}};
@@ -110,42 +152,148 @@ module vax_system #(
 		end
 	end
 
-	// keep the loader on the bus until its last write is done
-	reg ldr_active;
-	initial ldr_active = 1'b0;
-	always @(posedge clk)
-		ldr_active <= ldr_go | ldr_busy;
-
 	// ------------------------------------------------------------ resets
-	wire mem_ready;
 	reg  rst_cpu;
 	initial rst_cpu = 1'b1;
 	always @(posedge clk)
-		rst_cpu <= rst_mem | rst_sys | ~mem_ready | ldr_go | ldr_active;
+		rst_cpu <= rst_mem | rst_sys | ~mem_ready | dma_en;
 
 	reg  rst_term;
 	initial rst_term = 1'b1;
 	always @(posedge clk)
 		rst_term <= rst_mem | rst_sys;
 
+	// When to run the power-on test. MiSTer Main, when it starts the core,
+	// sends the SDRAM module size and a few microseconds later sets status[0]
+	// (our rst_sys) and holds it while it loads the saved OSD settings. The
+	// terminal is reset with rst_sys, so a banner printed in that window is
+	// wiped - that is what cut the first line short. So the test waits until
+	// the size is known (or has not come for 2 s) AND rst_sys has then been
+	// low for 50 ms. That also means the saved "Power-on Memory Test" setting
+	// is in place before the test looks at it.
+	localparam [26:0] SZ_TIMEOUT = 2 * CLK_HZ;    // 2 s
+	/* verilator lint_off WIDTHTRUNC */
+	localparam [22:0] RST_QUIET  = CLK_HZ / 20;   // 50 ms
+	/* verilator lint_on WIDTHTRUNC */
+
+	reg  [26:0] sz_wait;
+	reg  [22:0] quiet;
+	reg         st_armed, st_start;
+	initial begin
+		sz_wait = 27'd0; quiet = 23'd0; st_armed = 1'b1; st_start = 1'b0;
+	end
+
+	wire sz_known = sdram_sz[15] || (sz_wait == SZ_TIMEOUT);
+
+	always @(posedge clk) begin
+		if (rst_mem || !mem_ready)
+			sz_wait <= 27'd0;
+		else if (sz_wait != SZ_TIMEOUT)
+			sz_wait <= sz_wait + 27'd1;
+
+		// counts only while the size is known and the core is out of reset
+		if (rst_mem || rst_sys || !sz_known)
+			quiet <= 23'd0;
+		else if (quiet != RST_QUIET)
+			quiet <= quiet + 23'd1;
+	end
+
+	// A program download before the power-on test has started (not something
+	// MiSTer does on its own; boot.rom files come with ioctl_index 0, which
+	// the loader ignores) cancels the test, which would overwrite it.
+	reg st_cancel;
+	initial st_cancel = 1'b0;
+
+	always @(posedge clk) begin
+		st_start  <= 1'b0;
+		st_cancel <= 1'b0;
+		if (rst_mem)
+			st_armed <= 1'b1;
+		else if (st_armed) begin
+			if (ldr_go) begin
+				st_cancel <= 1'b1;
+				st_armed  <= 1'b0;
+			end else if (mem_ready && quiet == RST_QUIET) begin
+				st_start <= 1'b1;
+				st_armed <= 1'b0;
+			end
+		end else if (selftest_go && !ldr_go && !ldr_busy)
+			st_start <= 1'b1;
+	end
+
+	// The test must own the bus from the moment it is asked for, not from the
+	// moment it reports busy, or the CPU gets two clocks of bus access in
+	// between. st_pending closes that window. It is set from power-up, so the
+	// CPU stays in reset until the power-on test has run (or been cancelled).
+	reg st_pending;
+	initial st_pending = 1'b1;
+	always @(posedge clk)
+		if (rst_mem)        st_pending <= 1'b1;
+		else if (st_start)  st_pending <= 1'b1;
+		else if (st_busy)   st_pending <= 1'b0;
+		else if (st_cancel) st_pending <= 1'b0;
+
+	vax_selftest selftest (
+		.clk      (clk),
+		.rst      (rst_mem),
+		.start    (st_start),
+		.enable   (selftest_en),
+		.sdram_sz (sdram_sz),
+
+		.busy     (st_busy),
+		.fail     (st_fail),
+		.phase    (st_phase),
+		.best_phase (st_best),
+
+		.req      (st_req),
+		.req_we   (st_we),
+		.req_adr  (st_adr),
+		.req_dat  (st_dat),
+		.req_sel  (st_sel),
+		.req_done (dma_done),
+		.rd_dat   (dma_rdat),
+		.rd_idx   (dma_ridx),
+		.rd_stb   (dma_rstb),
+
+		.tx_data  (st_char),
+		.tx_stb   (st_stb),
+		.tx_ready (term_ready)
+	);
+
 	// ------------------------------------------------------------ VAX
+	// While the test is sweeping, it owns the phase; afterwards the core uses
+	// the calibrated one unless the OSD forces a particular setting.
+	wire [2:0] sel_m1  = rdphase_sel - 3'd1;
+	wire [1:0] rdphase = st_busy      ? st_phase
+	                   : |rdphase_sel ? sel_m1[1:0]
+	                                  : st_best;
+
 	wire tti_rx, tto_tx;
 
-	vax_core #(.CLK_HZ(CLK_HZ)) core (
+	vax_core #(.CLK_HZ(CLK_HZ), .CACHEIDX(CACHEIDX)) core (
 		.clk        (clk),
 		.rst_mem    (rst_mem),
 		.rst_cpu    (rst_cpu),
 		.mem_ready  (mem_ready),
+		.rdphase    (rdphase),
 
-		.ldr_active (ldr_active),
-		.ldr_stb    (ldr_stb),
-		.ldr_adr    (ldr_adr),
-		.ldr_sel    (ldr_sel),
-		.ldr_dat    (ldr_dat),
-		.ldr_ack    (ldr_ack),
+		.dma_en     (dma_en),
+		.dma_req    (dma_req),
+		.dma_we     (dma_we),
+		.dma_adr    (dma_adr),
+		.dma_dat    (dma_dat),
+		.dma_sel    (dma_sel),
+		.dma_done   (dma_done),
+		.dma_rdat   (dma_rdat),
+		.dma_ridx   (dma_ridx),
+		.dma_rstb   (dma_rstb),
 
 		.tti_rx     (tti_rx),
 		.tto_tx     (tto_tx),
+
+		.stat_hit   (),
+		.stat_miss  (),
+		.cpu_halted (cpu_halted),
 
 		.sd_a       (sd_a),
 		.sd_ba      (sd_ba),
@@ -160,7 +308,7 @@ module vax_system #(
 		.sd_dq_i    (sd_dq_i)
 	);
 
-	// ------------------------------------------------------------ console output
+	// --------------------------------------------- console output (TTO)
 	wire [7:0] rx_data;
 	wire       rx_valid;
 	wire       bell;
@@ -173,11 +321,16 @@ module vax_system #(
 		.valid (rx_valid)
 	);
 
+	// the self test writes to the screen before the CPU is released
+	wire [7:0] term_data  = st_busy ? st_char : rx_data;
+	wire       term_valid = st_busy ? st_stb  : rx_valid;
+
 	vt_term term (
 		.clk      (clk),
 		.rst      (rst_term),
-		.rx_data  (rx_data),
-		.rx_valid (rx_valid),
+		.rx_data  (term_data),
+		.rx_valid (term_valid),
+		.rx_ready (term_ready),
 		.color    (color),
 		.bell     (bell),
 		.ce_pix   (ce_pix),
@@ -190,9 +343,69 @@ module vax_system #(
 		.b        (b)
 	);
 
-	assign uart_txd = tto_tx;
+	// --------------------------------------------- MiSTer UART, 115200 8N1
+	// console output -> host. The CPU can send much faster than 115200 baud
+	// (the internal line takes 3.4 us per character, the UART 87 us), and
+	// nothing slows it down, so this FIFO has to absorb whole bursts: 2 KB
+	// covers a full screen and EVKAA's banner many times over. A longer
+	// non-stop burst loses characters on the UART copy only; the screen
+	// always gets everything.
+	reg  [7:0]  ufo [0:2047];
+	reg  [10:0] ufo_wp, ufo_rp;
+	wire        ufo_empty = (ufo_wp == ufo_rp);
+	wire        ufo_full  = (ufo_wp + 11'd1 == ufo_rp);
+	wire        utx_busy;
+	reg         utx_start;
+	reg  [7:0]  utx_byte;
 
-	// ------------------------------------------------------------ console input
+	initial begin
+		ufo_wp = 11'd0;
+		ufo_rp = 11'd0;
+		utx_start = 1'b0;
+	end
+
+	always @(posedge clk) begin
+		if (rst_mem)
+			ufo_wp <= 11'd0;
+		else if (term_valid && !ufo_full) begin
+			ufo[ufo_wp] <= term_data;
+			ufo_wp <= ufo_wp + 11'd1;
+		end
+	end
+
+	always @(posedge clk) begin
+		utx_start <= 1'b0;
+		if (rst_mem)
+			ufo_rp <= 11'd0;
+		else if (!ufo_empty && !utx_busy && !utx_start) begin
+			utx_byte  <= ufo[ufo_rp];
+			utx_start <= 1'b1;
+			ufo_rp    <= ufo_rp + 11'd1;
+		end
+	end
+
+	vax_uart_tx #(.CLKS(UART_CPB + 1)) host_tx (
+		.clk   (clk),
+		.rst   (rst_mem),
+		.data  (utx_byte),
+		.start (utx_start),
+		.busy  (utx_busy),
+		.txd   (uart_txd)
+	);
+
+	// host -> console input
+	wire [7:0] urx_data;
+	wire       urx_valid;
+
+	vax_uart_rx #(.CLKS(UART_CPB + 1)) host_rx (
+		.clk   (clk),
+		.rst   (rst_mem),
+		.rxd   (uart_rxd),
+		.data  (urx_data),
+		.valid (urx_valid)
+	);
+
+	// --------------------------------------------- console input (TTI)
 	wire [7:0] kbd_data;
 	wire       kbd_valid;
 
@@ -205,10 +418,10 @@ module vax_system #(
 		.valid     (kbd_valid)
 	);
 
-	// autostart: after a download, wait for the monitor prompt and type
-	// "FR" <8 hex digits of the load address> CR "G"  (deposit PC, go)
+	// autostart: after a download, type "FR" <8 hex digits> CR "G" into the
+	// console monitor, which deposits the PC and starts the program
 	localparam [31:0] AS_DELAY = CLK_HZ / 20;     // 50 ms before the first key
-	localparam [31:0] AS_GAP   = CLK_HZ / 500;    // 2 ms between keys
+	localparam [31:0] AS_GAP   = CLK_HZ / 2000;   // 0.5 ms between keys
 
 	reg        as_run;
 	reg  [3:0] as_idx;
@@ -228,7 +441,7 @@ module vax_system #(
 		hexd = (v < 4'd10) ? (8'h30 + {4'd0, v}) : (8'h37 + {4'd0, v});
 	endfunction
 
-	wire [31:0] start_addr = {7'd0, base};
+	wire [31:0] start_addr = start_200 ? 32'h00000200 : {7'd0, base};
 
 	always @(posedge clk) begin
 		ldr_go_d <= ldr_go;
@@ -267,47 +480,80 @@ module vax_system #(
 		end
 	end
 
-	// transmit FIFO (keyboard + autostart) -> serial line into the CPU
-	reg  [7:0] txf [0:31];
-	reg  [4:0] txf_wp, txf_rp;
+	// transmit FIFO (keyboard + host UART + autostart) -> console line
+	//
+	// Characters are handed to the CPU no faster than one every 200 us. The
+	// internal line itself runs at 3.4 us per character, and the r-vax
+	// receiver holds a single character: without the gap, the three bytes of
+	// a cursor or PF key would arrive faster than any VAX program can read
+	// them, and the second would overwrite the first. 200 us is still 5000
+	// characters a second - a real VAX console line ran at 9600 baud (960) -
+	// and the FIFO is deep enough to take a paste from the 115200 baud UART.
+	/* verilator lint_off WIDTHTRUNC */
+	localparam [15:0] TTI_GAP = CLK_HZ / 5000;      // 200 us
+	/* verilator lint_on WIDTHTRUNC */
+
+	reg  [7:0] txf [0:255];
+	reg  [7:0] txf_wp, txf_rp;
 	wire       txf_empty = (txf_wp == txf_rp);
-	wire       txf_full  = (txf_wp + 5'd1 == txf_rp);
+	wire       txf_full  = (txf_wp + 8'd1 == txf_rp);
 	wire       tx_busy;
 	wire       kbd_line;
 	reg        tx_start;
+	reg  [7:0] tx_byte;
+	reg [15:0] tti_gap;
 
 	initial begin
-		txf_wp = 5'd0;
-		txf_rp = 5'd0;
+		txf_wp = 8'd0;
+		txf_rp = 8'd0;
 		tx_start = 1'b0;
+		tti_gap = 16'd0;
 	end
+
+	// One-entry holding slot per source, so two characters arriving in the
+	// same clock are both delivered instead of one being dropped.
+	reg       kbd_p, urx_p;
+	reg [7:0] kbd_h, urx_h;
+	initial begin kbd_p = 1'b0; urx_p = 1'b0; end
 
 	always @(posedge clk) begin
 		if (rst_mem) begin
-			txf_wp <= 5'd0;
-		end else if (as_valid && !txf_full) begin
-			txf[txf_wp] <= as_data;
-			txf_wp <= txf_wp + 5'd1;
-		end else if (kbd_valid && !txf_full) begin
-			txf[txf_wp] <= kbd_data;
-			txf_wp <= txf_wp + 5'd1;
+			txf_wp <= 8'd0;
+			kbd_p  <= 1'b0;
+			urx_p  <= 1'b0;
+		end else begin
+			if (kbd_valid) begin kbd_h <= kbd_data; kbd_p <= 1'b1; end
+			if (urx_valid && uart_console) begin urx_h <= urx_data; urx_p <= 1'b1; end
+
+			if (as_valid && !txf_full) begin
+				txf[txf_wp] <= as_data;
+				txf_wp <= txf_wp + 8'd1;
+			end else if (kbd_p && !txf_full) begin
+				txf[txf_wp] <= kbd_h;
+				txf_wp <= txf_wp + 8'd1;
+				if (!kbd_valid) kbd_p <= 1'b0;
+			end else if (urx_p && !txf_full) begin
+				txf[txf_wp] <= urx_h;
+				txf_wp <= txf_wp + 8'd1;
+				if (!(urx_valid && uart_console)) urx_p <= 1'b0;
+			end
 		end
 	end
 
 	always @(posedge clk) begin
 		tx_start <= 1'b0;
-		if (rst_mem)
-			txf_rp <= 5'd0;
+		if (rst_mem) begin
+			txf_rp  <= 8'd0;
+			tti_gap <= 16'd0;
+		end else if (tti_gap != 16'd0)
+			tti_gap <= tti_gap - 16'd1;
 		else if (!txf_empty && !tx_busy && !tx_start) begin
+			tx_byte  <= txf[txf_rp];
 			tx_start <= 1'b1;
-			txf_rp   <= txf_rp + 5'd1;
+			txf_rp   <= txf_rp + 8'd1;
+			tti_gap  <= TTI_GAP;
 		end
 	end
-
-	reg [7:0] tx_byte;
-	always @(posedge clk)
-		if (!txf_empty && !tx_busy && !tx_start)
-			tx_byte <= txf[txf_rp];
 
 	vax_uart_tx #(.CLKS(CPB + 1)) tti_tx (
 		.clk   (clk),
@@ -318,15 +564,14 @@ module vax_system #(
 		.txd   (kbd_line)
 	);
 
-	reg [2:0] uart_rx_s;
-	initial uart_rx_s = 3'b111;
-	always @(posedge clk)
-		uart_rx_s <= {uart_rx_s[1:0], uart_rxd};
-
-	// both sources idle high; the UART is only listened to when selected
-	assign tti_rx = kbd_line & (uart_console ? uart_rx_s[2] : 1'b1);
+	assign tti_rx = kbd_line;
 
 	// ------------------------------------------------------------ beeper
+	/* verilator lint_off WIDTHTRUNC */
+	localparam [22:0] BEEP_LEN = CLK_HZ / 8;           // 125 ms
+	localparam [15:0] BEEP_DIV = (CLK_HZ / 1760) - 1;  // 880 Hz
+	/* verilator lint_on WIDTHTRUNC */
+
 	reg [22:0] beep_len;
 	reg [15:0] beep_div;
 	reg        beep_sq;
@@ -339,10 +584,10 @@ module vax_system #(
 
 	always @(posedge clk) begin
 		if (bell)
-			beep_len <= CLK_HZ / 8;                  // 125 ms
+			beep_len <= BEEP_LEN;
 		else if (beep_len != 23'd0)
 			beep_len <= beep_len - 23'd1;
-		if (beep_div == CLK_HZ / 1760 - 1) begin  // 880 Hz square wave
+		if (beep_div == BEEP_DIV) begin
 			beep_div <= 16'd0;
 			beep_sq  <= ~beep_sq;
 		end else
@@ -351,15 +596,18 @@ module vax_system #(
 
 	assign audio = (beep_len == 23'd0) ? 16'd0 : (beep_sq ? 16'h1800 : 16'hE800);
 
-	// ------------------------------------------------------------ activity LED
+	// --------------------------------------------------------------- LEDs
+	// USER: console activity.  DISK: CPU running (off while halted).
 	reg [21:0] led_tmr;
 	initial led_tmr = 22'd0;
 	always @(posedge clk)
-		if (ldr_go || rx_valid || kbd_valid)
+		if (ldr_go || term_valid || kbd_valid)
 			led_tmr <= 22'h3FFFFF;
 		else if (led_tmr != 22'd0)
 			led_tmr <= led_tmr - 22'd1;
-	assign led = (led_tmr != 22'd0);
+
+	assign led_user = (led_tmr != 22'd0);
+	assign led_disk = ~cpu_halted & ~rst_cpu;
 
 endmodule
 
