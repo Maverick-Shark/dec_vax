@@ -47,6 +47,8 @@ module vax_system #(
 	input       [1:0] color,
 	input             kbd_es,
 	input             uart_console,
+	input             ctrlp_halt,   // Ctrl+P halts the CPU instead of being typed
+	input             halt_osd,     // one clock pulse: halt the CPU (OSD)
 	input             selftest_en,
 	input             selftest_go,  // one clock pulse: run the test again
 	input       [2:0] rdphase_sel,  // 0 = calibrated, 1..4 = force phase 0..3
@@ -86,6 +88,7 @@ module vax_system #(
 
 	wire mem_ready;
 	wire cpu_halted;
+	reg  halt_req;      // Ctrl+P / OSD halt, one clock (see the console input)
 
 	// ------------------------------------------------------------ loader
 	wire        ldr_go = ioctl_download && (ioctl_index[5:0] == 6'd1);
@@ -290,6 +293,7 @@ module vax_system #(
 
 		.tti_rx     (tti_rx),
 		.tto_tx     (tto_tx),
+		.halt_req   (halt_req),
 
 		.stat_hit   (),
 		.stat_miss  (),
@@ -516,14 +520,24 @@ module vax_system #(
 	reg [7:0] kbd_h, urx_h;
 	initial begin kbd_p = 1'b0; urx_p = 1'b0; end
 
+	// Ctrl+P (10h) from the keyboard or the MiSTer UART is the VAX 8600
+	// console's halt key: it halts the CPU at the end of the current
+	// instruction and never reaches the program, unless the OSD says it
+	// is a character. The OSD "Halt" entry does the same.
+	wire kbd_ctrlp = kbd_valid && ctrlp_halt && kbd_data == 8'h10;
+	wire urx_ctrlp = urx_valid && uart_console && ctrlp_halt && urx_data == 8'h10;
+	initial halt_req = 1'b0;
+	always @(posedge clk)
+		halt_req <= kbd_ctrlp | urx_ctrlp | halt_osd;
+
 	always @(posedge clk) begin
 		if (rst_mem) begin
 			txf_wp <= 8'd0;
 			kbd_p  <= 1'b0;
 			urx_p  <= 1'b0;
 		end else begin
-			if (kbd_valid) begin kbd_h <= kbd_data; kbd_p <= 1'b1; end
-			if (urx_valid && uart_console) begin urx_h <= urx_data; urx_p <= 1'b1; end
+			if (kbd_valid && !kbd_ctrlp) begin kbd_h <= kbd_data; kbd_p <= 1'b1; end
+			if (urx_valid && uart_console && !urx_ctrlp) begin urx_h <= urx_data; urx_p <= 1'b1; end
 
 			if (as_valid && !txf_full) begin
 				txf[txf_wp] <= as_data;
@@ -531,11 +545,11 @@ module vax_system #(
 			end else if (kbd_p && !txf_full) begin
 				txf[txf_wp] <= kbd_h;
 				txf_wp <= txf_wp + 8'd1;
-				if (!kbd_valid) kbd_p <= 1'b0;
+				if (!(kbd_valid && !kbd_ctrlp)) kbd_p <= 1'b0;
 			end else if (urx_p && !txf_full) begin
 				txf[txf_wp] <= urx_h;
 				txf_wp <= txf_wp + 8'd1;
-				if (!(urx_valid && uart_console)) urx_p <= 1'b0;
+				if (!(urx_valid && uart_console && !urx_ctrlp)) urx_p <= 1'b0;
 			end
 		end
 	end

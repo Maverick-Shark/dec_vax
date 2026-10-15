@@ -85,12 +85,19 @@
 `define	FUP_ASETUP	3
 `define	FUP_ARG_GETBWL	4
 
-/* halt codes */
-`define	HALT_RESET	0
-`define	HALT_INSN	1
-`define	HALT_MCHECK	2
-`define	HALT_STEP	3
-`define	HALT_ISNV	4	/* interrupt stack not valid (8600 halt code 4) */
+/*
+ * Halt codes, shown by the console monitor. Where the VAX 8600 has a code
+ * for the same event (DEC STD 032 table B-24) it is that code; 2, 3, 5 and
+ * 0F are r-vax's own.
+ */
+`define	HALT_RESET	0	/* power-up, reset */
+`define	HALT_CONSOLE	8'h11	/* halt requested from the console (Ctrl+P, OSD) */
+`define	HALT_MCHECK	2	/* machine check: a bus cycle got no answer */
+`define	HALT_STEP	3	/* single step done */
+`define	HALT_ISNV	4	/* interrupt stack not valid */
+`define	HALT_KERNEL	6	/* HALT instruction in kernel mode */
+`define	HALT_BUG	8'h0f	/* the CPU reached a state it should not */
+/* microcode halts (IPR_HALT): 7, 8 SCB vector<1:0> = 3, 2; A, B CHMx */
 
 module cpu(
 	input clk,
@@ -127,6 +134,7 @@ module cpu(
 
 	output		tto_tx,
 	input		tti_rx,
+	input		halt_req,	/* console halt request (Ctrl+P, OSD) */
 	output		cpu_halted,
 	output		cpu_mcheck
 
@@ -227,6 +235,27 @@ module cpu(
 		if ((ipr_write || state == `WRITEIPR) & ~ipr_regaddr[6])
 			ipr_reg[ipr_regaddr[5:0]] <= ipr_regwdata;
 
+	/*
+	 * VAX 8600 registers above 3F that hold a value (as in simh
+	 * vax860_abus.c): CSWP (cache sweep) <3:0>, MDCTL (M-box data
+	 * control) <14:13,11:8,3:0>, EHSR (error handling status) <5>, VMS
+	 * entered. ACCS reads as zero: no floating point accelerator.
+	 */
+	reg [3:0]	cswp;
+	reg [14:0]	mdctl;
+	reg		ehsr_vmse;
+	initial cswp = 4'd0;
+	initial mdctl = 15'd0;
+	initial ehsr_vmse = 1'b0;
+	always @(posedge clk)
+		if (ipr_write || state == `WRITEIPR)
+			case (ipr_regaddr)
+			`IPR_CSWP:	cswp <= ipr_regwdata[3:0];
+			`IPR_MDCTL:	mdctl <= ipr_regwdata[14:0] & 15'h6F0F;
+			`IPR_EHSR:	ehsr_vmse <= ipr_regwdata[5];
+			default:	;
+			endcase
+
 	reg [31:0]	ipr_val;
 	reg [9:0]	pamloc;
 	reg [4:0]	pamacc;
@@ -254,6 +283,10 @@ module cpu(
 		`IPR_RXDB: ipr_val = { 24'b0, rxdb };
 		`IPR_PAMACC: ipr_val = { 2'b0, pamloc, 15'b0, pamacc };
 		`IPR_PAMLOC: ipr_val = { 2'b0, pamloc, 20'b0 };
+		`IPR_CSWP: ipr_val = { 28'b0, cswp };
+		`IPR_MDCTL: ipr_val = { 17'b0, mdctl };
+		`IPR_EHSR: ipr_val = { 26'b0, ehsr_vmse, 5'b0 };
+		`IPR_ACCS, `IPR_MERG: ipr_val = 32'b0;
 		`IPR_MMVA: ipr_val = MMU_VA_I;
 		`IPR_MMPAR: ipr_val = { MMU_TNV_I, 28'b0, MMU_PAR_I };
 		default: ipr_val = ipr_val_tmp;
@@ -380,6 +413,18 @@ initial fpd_active = 1'b0;
 	 */
 	reg manhalt;
 	reg [6:0] mchk_cnt;
+
+	/*
+	 * Console halt request (Ctrl+P or the OSD): taken at the next
+	 * instruction boundary, halt code 1. Ignored while already halted.
+	 */
+	reg halt_pend;
+	initial halt_pend = 1'b0;
+	always @(posedge clk)
+		if (rst || halted)
+			halt_pend <= 1'b0;
+		else if (halt_req)
+			halt_pend <= 1'b1;
 	wire isvalid, anyfault;
 	assign halted = (state == `S_HALT) || manhalt;
 	assign isvalid = (itag[31:2] == curpc[31:2]) && ivalid;
@@ -432,6 +477,9 @@ initial fpd_active = 1'b0;
 	reg [31:0]	gshadow[14:0];
 	reg		xrestore;
 	reg [10:0]	xentry;
+	reg		xhalt;		/* XFAULT ends in a halt (IPR_HALT<8>) */
+	reg [7:0]	xhaltcode;
+	initial xhalt = 1'b0;
 	integer		gi;
 	always @(posedge clk)
 		if (state == `S_FETCH)
@@ -582,6 +630,28 @@ initial fpd_active = 1'b0;
 		.arg_reg(arg_reg)	/* Register */
 	);
 
+	/*
+	 * Reserved addressing mode (SRM chapter 2, table of addressing modes;
+	 * the fault, through SCB 1C, in chapter 5), with the cases the SRM
+	 * leaves UNPREDICTABLE decided as simh's vax_cpu.c does
+	 * for the 8600: a literal for anything but a read operand; a register
+	 * for an address operand, PC as the register, or SP for a quadword;
+	 * PC in register deferred or autodecrement mode; index mode with PC
+	 * as the index register, or with a literal, register or index mode
+	 * base. Only real specifiers are checked, not the implied operands of
+	 * the microcode (a_emul).
+	 */
+	reg		spec_idx;	/* decoding the base of an index mode */
+	initial spec_idx = 1'b0;
+	wire [3:0]	spec_rn = cur_mux[3:0];
+	wire		resad_spec =
+	    cur_mux[7:6] == 2'b00 ? (arg_aW | arg_aA | spec_idx) :
+	    cur_mux[7:4] == 4'h4 ? (spec_rn == 4'hf || spec_idx) :
+	    cur_mux[7:4] == 4'h5 ? (arg_aA || spec_idx || spec_rn == 4'hf ||
+	        (a_argsz == `O_QUAD && spec_rn == 4'he)) :
+	    (cur_mux[7:4] == 4'h6 || cur_mux[7:4] == 4'h7) ? spec_rn == 4'hf :
+	    1'b0;
+
 	reg [3:0]	pos_arg_size;
 	always @*
 		case (a_argsz)
@@ -656,6 +726,7 @@ initial debug = 0;
 	wire [31:0]	alu_res, alu_ures;
 	reg [31:0]	alu_right, alu_left, alu_upper_res;
 	assign alu_stb = (state == `EXEC);
+	reg		doing_intr;	/* interrupt or exception microcode */
 
 	alu alu(
 		.clk(clk),
@@ -668,8 +739,10 @@ initial debug = 0;
 
 		.neg(alu_neg),
 		.ovf(alu_ovf),
-		.use8(s_use8|i_use8),
-		.use16(s_use16|i_use16),
+		/* the instruction's operand size, not in the interrupt and
+		   exception microcode that may follow it */
+		.use8(s_use8 | (i_use8 & ~doing_intr)),
+		.use16(s_use16 | (i_use16 & ~doing_intr)),
 		.cry(alu_cry),
 		.zero(alu_zero),
 		.ures(alu_ures),
@@ -677,7 +750,6 @@ initial debug = 0;
 	);
 
 	/* OK to do conditional in microcode? */
-	reg		doing_intr;
 	wire		wr_cond_ok;
 	assign wr_cond_ok = alu_ack &&
 	    ((s_nzcond == 0 && s_zcond == 0 && s_ncond == 0 && s_nncond == 0) ||
@@ -892,6 +964,10 @@ initial debug = 0;
 				state <= `S_FETCH;
 				ivalid <= 0;
 				resopflt <= 0;
+				doing_intr <= 0;	/* a halt can come from microcode */
+				writeback <= 0;
+				writeback2 <= 0;
+				fpd_active <= 0;
 			end
 			if (CON_STB_I == 0)
 				con_ack_o_reg <= 0;
@@ -932,7 +1008,10 @@ initial debug = 0;
 			manhalt <= 0;
 			if (CPU_ACK_I)
 				cpu_stb <= 0;
-			if (step && delay_halt) begin
+			if (halt_pend) begin
+				state <= `S_HALT;
+				haltpos <= `HALT_CONSOLE;
+			end else if (step && delay_halt) begin
 				state <= `S_HALT;
 				delay_halt <= 0;
 				haltpos <= `HALT_STEP;
@@ -961,8 +1040,21 @@ if (debug) $fdisplay(32'h80000002, "S_DECODE: i_hasargs %d i_emul %d pc %x\r", i
 			acounter <= i_argoff;
 			scounter <= i_stepoff;
 			if (i_dohalt) begin
-				state <= `S_HALT;
-				haltpos <= `HALT_INSN;
+				if (cur_inst == 8'h00 && cur_mod == 2'd0) begin
+					/* HALT in kernel mode; PC is past it */
+					state <= `S_HALT;
+					haltpos <= `HALT_KERNEL;
+				end else begin
+					/*
+					 * HALT outside kernel mode (a privileged
+					 * instruction), or an opcode this CPU does not
+					 * have: reserved instruction fault, PC at the
+					 * opcode (SRM 5.4).
+					 */
+					state <= `XFAULT;
+					xentry <= 11'd7;
+					xrestore <= 1;
+				end
 			end else if (psl_fpd) begin
 				/*
 				 * The instruction was stopped part way with its
@@ -1002,10 +1094,17 @@ if (debug) $fdisplay(32'h80000002, "ASETUPx: isvalid %x curpc %x inslword %x\r",
 				if (a_emul == 0)
 					curpc <= pc_plus_1;
 				curarg <= cur_mux;
-				if (cur_mux[7:6] == 0) // literal
+				if (a_emul == 0 && resad_spec) begin
+					/* reserved addressing mode fault: PC
+					   and registers back to the start */
+					state <= `XFAULT;
+					xentry <= 11'd8;
+					xrestore <= 1;
+				end else if (cur_mux[7:6] == 0) // literal
 					state <= `ARG_READ;
 				else if (cur_mux[7:4] == 4'b0100) begin
 					IA <= cur_reg_val << a_argsz;
+					spec_idx <= 1;
 if (debug) $fdisplay(32'h80000002, "ASETUP2: cur_reg_val %x a_argsz %x\r", cur_reg_val, a_argsz);
 					state <= `ASETUP;
 				end else if (cur_mux[7:4] == 4'b0101) begin
@@ -1184,6 +1283,7 @@ if (debug) $fdisplay(32'h80000002, "ARGEND: a_rargno %d a_wargno %d arg_aR %d ar
 			arg_read_step2 <= 0;
 			OA_isreg <= 0;
 			IA <= 0;
+			spec_idx <= 0;
 		end
 
 		`PREEXEC: begin
@@ -1553,6 +1653,20 @@ if (debug) $fdisplay(32'h80000002, "MCODE: ctr %d mc_rv %x\r", mcodectr, mc_rv);
 
 		`WRITEIPR: begin
 			state <= `PREEXEC;
+			if (ipr_addr == `IPR_HALT) begin
+				/* microcode asks for a halt (IPR_HALT in ipr.vh) */
+				doing_intr <= 0;
+				if (ipr_wdata[8]) begin
+					/* put the instruction back first */
+					xhalt <= 1;
+					xhaltcode <= ipr_wdata[7:0];
+					xrestore <= 1;
+					state <= `XFAULT;
+				end else begin
+					haltpos <= ipr_wdata[7:0];
+					state <= `S_HALT;
+				end
+			end
 // $fdisplay(32'h80000002, "WIPR: wdata %x ipr 0x%x pc %x", ipr_wdata, ipr_addr, oldpc);
 		end
 
@@ -1633,14 +1747,22 @@ if (debug) $fdisplay(32'h80000002, "S_READMEM2: addr %x dat %x pc %x size %d", c
 			arg_read_step2 <= 0;
 			OA_isreg <= 0;
 			IA <= 0;
+			spec_idx <= 0;
 			if (xrestore) begin
 				curpc <= oldpc;
 				{ psl_fpd, psl_is, cur_mod, prv_mod, psl_ipl, psw } <=
 				    { oldpsl[27:22], oldpsl[20:16], oldpsl[7:0] };
 			end
+			if (xhalt) begin
+				/* a microcode halt with the instruction put back */
+				xhalt <= 0;
+				haltpos <= xhaltcode;
+				doing_intr <= 0;
+				state <= `S_HALT;
+			end
 		end
 
-		default: begin state <= `S_HALT; haltpos <= 7; end
+		default: begin state <= `S_HALT; haltpos <= `HALT_BUG; end
 		endcase
 	end
 

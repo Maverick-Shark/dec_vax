@@ -52,3 +52,5 @@ __pycache__/
 docs/*.pdf
 software/evkaa.exe
 software/VAX_MINIMUM_DIAGS.dsk
+software/*_ds.bin
+evkae_sim.*

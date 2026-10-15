@@ -52,10 +52,7 @@ module alu(
 );
 
 	reg [31:0]	res;
-	reg [5:0]	shlcnt;
-	reg		state, done, quick, dstate;
-	reg [31:0]	shldata;
-	wire		topbit;
+	reg		quick, dstate;
 	wire		t_ovf, t_ovf8, t_ovf16, mul_z, mul_v, mul_n;
 	wire		isdone;
 
@@ -113,6 +110,16 @@ parameter SHIFT=1;
 		end
 	end
 
+	/*
+	 * Barrel shifter (one clock): the count is right<5:0>, as the
+	 * bit-serial shifter it replaces counted; 32 or more shifts
+	 * everything out (ASR: copies of the sign).
+	 */
+	wire [31:0] shl_res = right[5] ? 32'b0 : left << right[4:0];
+	wire [31:0] shr_res = right[5] ? 32'b0 : left >> right[4:0];
+	wire [31:0] asr_res = right[5] ? {32{left[31]}} :
+	    $unsigned($signed(left) >>> right[4:0]);
+
 	wire Ctmp_p, Ctmp_m;
 	wire [31:0] res_p, res_m;
 	assign { Ctmp_p, res_p } = { 1'b0, left } + { 1'b0, right };
@@ -126,52 +133,24 @@ parameter SHIFT=1;
 		`ALU_BIC: res = ~left & right;
 		`ALU_AND: res = left & right;
 		`ALU_XOR: res = left ^ right;
-		`ALU_SHL, `ALU_SHR, `ALU_ASR: res = shldata;
+		`ALU_SHL: res = shl_res;
+		`ALU_SHR: res = shr_res;
+		`ALU_ASR: res = asr_res;
 		`ALU_MUL: res = s_res[31:0];
 		`ALU_DIV: res = q;
 		default: res = 0;
 		endcase
 
-	assign topbit = (op == `ALU_SHR) ? 0 : shldata[31];
-	always @(posedge clk) begin
-//if (stb|done)$fdisplay(32'h80000002, "CLK: stb %d ack %d\r", stb, ack);
-		if (stb == 0) begin
-			state <= BEGIN;
-			done <= 0;
-		end else
-		case (state)
-		BEGIN: if (stb) begin
-//$fdisplay(32'h80000002, "begin: op %d right %d left %x\r", op, right, left);
-			shlcnt <= right[5:0];
-			shldata <= left;
-			state <= SHIFT;
-		end
-		SHIFT: begin
-//$fdisplay(32'h80000002, "shift: shlcnt %d shldata %x\r", shlcnt, shldata);
-			if (~|shlcnt) begin
-				done <= 1;
-			end else begin
-				shlcnt <= shlcnt - 1;
-				if (op == `ALU_SHL)
-					shldata <= { shldata[30:0], 1'b0 };
-				else
-					shldata <= { topbit, shldata[31:1] };
-			end 
-		end
-		endcase
-	end
-
 	always @*
 		case (op)
 		`ALU_PLUS, `ALU_MINUS, `ALU_BIS, `ALU_BIC, `ALU_AND,
-		    `ALU_XOR: quick = 1;
-		`ALU_SHL, `ALU_SHR, `ALU_ASR, `ALU_DIV, `ALU_MUL: quick = 0;
+		    `ALU_XOR, `ALU_SHL, `ALU_SHR, `ALU_ASR: quick = 1;
+		`ALU_DIV, `ALU_MUL: quick = 0;
 		default: quick = 1;
 		endcase
 
 	
-	assign isdone = op == `ALU_DIV ? divdone :
-	    op == `ALU_MUL ? muldone : done;
+	assign isdone = op == `ALU_DIV ? divdone : muldone;
 	assign ack = stb ? (quick ? 1 : isdone) : 0;
 
 	assign ures = s_res[63:32];

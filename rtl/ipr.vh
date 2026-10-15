@@ -56,19 +56,27 @@
 `define IPR_TXCS	7'h22
 `define IPR_TXDB	7'h23
 
-`define IPR_CADR	7'h25
+`define IPR_ACCS	7'h28	/* accelerator control/status: 0, no accelerator */
 
 `define IPR_MAPEN	7'h38
 `define IPR_TBIA	7'h39
 `define IPR_TBIS	7'h3a
 
+`define IPR_PME		7'h3d
 `define IPR_SID		7'h3e
 `define IPR_TBCHK	7'h3f
 
+/* VAX 8600 (DEC STD 032 table B-25) */
 `define	IPR_PAMACC	7'h40
 `define	IPR_PAMLOC	7'h41
+`define	IPR_CSWP	7'h42
+`define	IPR_MDCTL	7'h45
+`define	IPR_MERG	7'h47
+`define	IPR_CRBT	7'h48
+`define	IPR_EHSR	7'h4a
 
 /* internal registers, not reachable with MTPR/MFPR (microcode only) */
 `define IPR_MMVA	7'h70	/* memory management fault: virtual address */
 `define IPR_MMPAR	7'h71	/* memory management fault: parameter */
 `define IPR_RIFLT	7'h72	/* write: next reserved operand fault is a reserved instruction fault */
+`define IPR_HALT	7'h73	/* write: halt the processor; <7:0> halt code, <8> with the registers, PC and PSL put back to the start of the instruction */

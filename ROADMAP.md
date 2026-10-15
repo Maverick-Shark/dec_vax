@@ -3,7 +3,10 @@
 Where the core stands, what it needs to run OpenVMS, and in which order to
 build it. Milestones 1 and 2 are on the `MiSTer` branch on GitHub; this plan
 starts at milestone 3. Memory management (M5) was taken first, because
-everything after it depends on it; it is complete in simulation.
+everything after it depends on it; it is complete and passes its tests on the
+board. Most of M4, the 8600's privileged architecture, followed, and DEC's
+privileged architecture exerciser, EVKAE, now runs under the 8600 Diagnostic
+Supervisor.
 
 Relative size: **S** a change in one module, **M** a new module or a block of
 microcode, **L** a subsystem, **XL** the largest pieces.
@@ -14,8 +17,9 @@ r-vax is Anders Magnusson's own implementation of the VAX architecture: its own
 datapath and its own microcode, not a copy of a DEC CPU's logic. The machine
 around it is a **VAX 8600**: the SBI adapter and nexus addresses are the 8600's
 (SBIA at `0x20080000`, Unibus adapter at TR 3, Massbus adapter at TR 8), the
-microcode accepts the 8600's own IPRs (PAMACC, PAMLOC, CSWP, EHSR), its machine
-check frame is the 8600's size, the interval timer is the 780/8600 one at IPL
+microcode accepts the 8600's own IPRs (ACCS, PAMACC, PAMLOC, CSWP, MDCTL, MERG,
+CRBT, EHSR) and halts with its halt codes, its machine check frame is the
+8600's size, the interval timer is the 780/8600 one at IPL
 24, and its author ran EDSAA, the 8600/8650 Diagnostic Supervisor, on it.
 
 So the target is the 8600, and one rule decides everything below: **whatever
@@ -30,46 +34,49 @@ OpenVMS VAX 7.3, the last VAX release, still supports the 8600.
 
 ## Where it stands
 
-- r-vax CPU: microcode for 161 of the 304 VAX opcodes, all from the base
-  group. It passes **EVKAA V8.0**, DEC's hardcore instruction test.
+- r-vax CPU: microcode for 172 of the 304 VAX opcodes: all of the base group
+  but INDEX, ADAWI, the interlocked queue instructions and seven string
+  instructions. It passes **EVKAA V8.0**, DEC's hardcore instruction test.
 - **Memory management as on the VAX 8600** (M5, below): the 8600's translation
   buffer, page table walk, protection and modify bit, access-control and
   translation-not-valid faults with instruction restart, PSL<FPD> for MOVC3 and
   MOVC5, PROBER/PROBEW, TBIA/TBIS/TBCHK, LDPCTX/SVPCTX, REI with all its
   checks and AST delivery, privileged MTPR/MFPR with the 8600's operand
-  checks, kernel stack not valid and interrupt stack not valid. 19 directed
-  tests give the same results as simh `vax8600`. Design and sources:
-  [docs/MMU.md](docs/MMU.md). Not yet built with Quartus.
+  checks, kernel stack not valid and interrupt stack not valid. Design and
+  sources: [docs/MMU.md](docs/MMU.md). Runs on the board.
+- **The 8600's privileged architecture** (most of M4): CHMK, CHME, CHMS, CHMU
+  with their stack probe, BPT, XFC, the reserved instruction and reserved
+  addressing mode faults, HALT as a privileged instruction, the 8600's halt
+  codes, its internal registers, a console halt with Ctrl+P or from the OSD.
+- 31 directed tests (`tests/mmu`) give the same results as simh `vax8600`;
+  `software/mmutest.bin` runs them on the core. **EVKAE**, DEC's privileged
+  architecture exerciser, passes 10 of its 11 tests under the 8600
+  Diagnostic Supervisor (loaded as a memory image taken from simh); the
+  eleventh needs compatibility mode.
 - 16 KB cache in M10K, SDRAM controller with read-phase calibration, power-on
   memory test, on-screen VT terminal with USB keyboard, MiSTer UART, program
   loader with autostart, and r-vax's hardware console monitor (`>` prompt).
-- Not there yet: half of the instruction set (floating point and decimal among
-  it), the rest of the exception architecture, the 8600's own registers, real
-  I/O adapters, and a disk.
+- Not there yet: floating point, decimal and the rest of the instruction set,
+  trace and arithmetic traps, PDP-11 compatibility mode, real I/O adapters,
+  and a disk.
 
 ## Milestone 3: Halt, and the tools for everything after
 
-### Halt from the OSD and with Ctrl+P (planned, S)
+### Halt from the OSD and with Ctrl+P (done)
 
-- An OSD trigger *Halt* (like *Run Memory Test*) and **Ctrl+P** on the keyboard
-  stop the CPU at the end of the current instruction. The console monitor
-  prints the halt code and `>`; registers and memory are untouched, and `G`
-  continues from where it stopped.
-- This is what Ctrl+P does on a VAX 8600 console: it halts the processor. DCL
-  does not use the character, and EVKAA only listens for Ctrl+C, Ctrl+X and
-  Ctrl+R. For the rare program that wants it (an Emacs-style editor), an OSD
-  switch *Ctrl+P halts: Yes/No* passes it through.
+- An OSD trigger *Halt CPU* and **Ctrl+P** on the keyboard (or on the MiSTer
+  UART with *UART Console In*) stop the CPU at the end of the current
+  instruction. The console monitor prints the halt code and `>`; registers
+  and memory are untouched, and `G` continues from where it stopped. An OSD
+  switch makes Ctrl+P an ordinary character for the rare program that wants
+  it.
+- The halt code is **11**, the 8600's "invoked by console" (DEC STD 032,
+  table B-24; an earlier reading of a scanned copy gave 1). The HALT
+  instruction moved to 6, "kernel mode HALT", and became privileged.
 - Implementation: a `halt_req` input into r-vax's `cpu.v`, checked in
-  `S_FETCH` before the next instruction starts (where single-step already
-  halts). It enters `S_HALT` with halt code **1**, the 8600's "invoked by
-  console" (DEC STD 032, table B-24). r-vax uses 1 for the HALT
-  instruction, which on the 8600 is code 6 ("kernel mode HALT"), so HALT
-  moves to 6 in the same change, and becomes privileged (M4). Code 4 is
-  already the 8600's "interrupt stack invalid". `vax_system.v` removes Ctrl+P
-  (0x10) from the keyboard stream, and from the MiSTer UART stream when *UART
-  Console In* is on, before it reaches the console line, and turns the OSD
-  trigger into a one-clock pulse. The request is ignored while the CPU is
-  already halted or held in reset (loader, memory test).
+  `S_FETCH` before the next instruction starts. `vax_system.v` removes
+  Ctrl+P (0x10) from the keyboard stream, and from the UART stream when
+  *UART Console In* is on, and turns the OSD trigger into a one-clock pulse.
 
 ### Auto load and start address (optional, S)
 
@@ -93,7 +100,10 @@ later milestone is debugged this way.
 Started with the MMU: `tools/vasm.py` assembles test programs written in a
 subset of VAX MACRO, and `tests/mmu/run.py` runs each one on simh and on a
 CPU-level test bench and compares the final registers, PSL, PC and memory.
-The per-instruction trace is still to come.
+The per-instruction trace came with EVKAE: the full-system bench writes PC,
+PSL, opcode and R0-R14 for every instruction (`ITRACE`, `ITRACE_REGS`), simh
+writes its instruction history, and the two are aligned instruction by
+instruction - this is how every EVKAE failure was found.
 
 **Done when:** Halt works on the board, and a C test program built with the
 cross-compiler gives the same trace on the core and on simh.
@@ -102,10 +112,10 @@ cross-compiler gives the same trace on the core and on simh.
 
 | Area | VAX 8600 | r-vax today |
 |---|---|---|
-| Instructions | All 304 opcodes in hardware, plus PDP-11 compatibility mode. | 161. Missing: 20 integer and privileged (HALT, BPT, XFC, CHME, CHMS, CHMU, INDEX, SKPC, SCANC, SPANC, CVTBW, CVTWB, CVTLB, ACBB, ACBW, ADAWI, INSQHI, INSQTI, REMQHI, REMQTI); 25 decimal and string (16 packed decimal, CRC, EDITPC, MATCHC, MOVTC, MOVTUC, 4 octaword); 98 floating point (F, D, G, H with ACB, EMOD and POLY). |
-| Exceptions and privileged architecture | Every SCB vector with its parameters; four access modes with five stack pointers; CHMx; REI with all its checks; ASTs (ASTLVL); software interrupts; LDPCTX/SVPCTX; privileged-instruction checks; arithmetic traps; trace; 8600 machine-check frame; kernel stack not valid; the 8600's halt codes. | Done: SCB dispatch for the interval timer, console and software interrupts, CHMK, reserved operand, machine check and the memory management faults; kernel stack not valid; interrupt stack not valid (halt code 4); REI with all its checks; AST delivery; LDPCTX/SVPCTX; MTPR/MFPR privileged and checked. Missing: CHME/CHMS/CHMU, arithmetic traps, trace, BPT; an undefined opcode still halts the CPU (code 1) instead of taking the reserved-instruction fault; the 8600 machine-check frame; the 8600 halt codes for a kernel-mode HALT, bad SCB vectors and CHMx on the interrupt stack (6, 7, 8, A, B). |
+| Instructions | All 304 opcodes in hardware, plus PDP-11 compatibility mode. | 172. Missing: 9 integer and string (INDEX, SKPC, SCANC, SPANC, ADAWI, INSQHI, INSQTI, REMQHI, REMQTI); 25 decimal and string (16 packed decimal, CRC, EDITPC, MATCHC, MOVTC, MOVTUC, 4 octaword); 98 floating point (F, D, G, H with ACB, EMOD and POLY). |
+| Exceptions and privileged architecture | Every SCB vector with its parameters; four access modes with five stack pointers; CHMx; REI with all its checks; ASTs (ASTLVL); software interrupts; LDPCTX/SVPCTX; privileged-instruction checks; arithmetic traps; trace; 8600 machine-check frame; kernel stack not valid; the 8600's halt codes. | Done: SCB dispatch for the interval timer, console and software interrupts; CHMK, CHME, CHMS, CHMU; BPT, XFC; reserved instruction, reserved operand and reserved addressing mode faults; machine check and the memory management faults; kernel stack not valid; interrupt stack not valid; REI with all its checks; AST delivery; LDPCTX/SVPCTX; MTPR/MFPR privileged and checked; the 8600's halt codes (4, 6, 7, 8, A, B, 11). Missing: arithmetic traps, trace, PDP-11 compatibility mode, the 8600 machine-check frame's contents. |
 | Memory management | P0, P1 and S0 regions, page tables, translation buffer, protection, modify bit, access-violation and translation-not-valid faults, restartable instructions. | Done, in simulation ([docs/MMU.md](docs/MMU.md)). |
-| 8600 registers | SID with type 4; IPRs ACCS, PAMACC, PAMLOC, CSWP, MDECC, MENA, MDCTL, MCCTL, MERG, CRBT, DFI, EHSR, STXCS, STXDB, ESPA, ESPD; console registers with the 8600's ID codes (console terminal, remote services, environmental monitor, logical console). | SID returns `040704D2`: type 4 (8600), ECO level 7, serial number 1234, from r-vax's microcode. TBCHK works; PAMACC and PAMLOC answer; CSWP and EHSR are accepted and ignored; the others give a reserved operand fault; console registers in the basic 780 format. |
+| 8600 registers | SID with type 4; IPRs ACCS, PAMACC, PAMLOC, CSWP, MDECC, MENA, MDCTL, MCCTL, MERG, CRBT, DFI, EHSR, STXCS, STXDB, ESPA, ESPD; console registers with the 8600's ID codes (console terminal, remote services, environmental monitor, logical console). | SID returns `040704D2`: type 4 (8600), ECO level 7, serial number 1234. The same set as simh's model: ACCS (no accelerator), PAMACC, PAMLOC, CSWP, MDCTL, MERG, CRBT, EHSR and PME behave as there, and the registers simh does not have (MDECC, MENA, MCCTL, DFI, ESPA, ESPD) and those of the 780 and 750 are reserved operands. Missing: STXCS and STXDB (console storage); console registers in the basic 780 format. |
 | I/O | SBIA with SBI fault and error registers; memory controllers; DW780 Unibus adapter (map registers, interrupt vectors); RH780 Massbus adapter (map registers); disks behind them; interrupts at IPL 20-23; DMA. | Fixed-value stubs for the SBIA, DW780 and RH780 configuration registers. No DMA, no device interrupts. |
 | Boot | The console loads VMB.EXE at `0x200` with R0-R5 describing the boot device. | Programs are loaded from the OSD and started by the monitor. |
 
@@ -136,39 +146,39 @@ The full description, with the DEC documents each rule comes from, is in
   progress in R0-R5 and set PSL<FPD> instead, on faults and on interrupts.
   A partial or unaligned write reads every longword it will write, with write
   intent, before writing any.
-- **Checked against** simh's `vax8600` with 19 directed tests
+- **Checked against** simh's `vax8600` with directed tests
   (`tests/mmu/`). Three differences are deliberate and allowed by the
   architecture (docs/MMU.md lists them).
 
 ## Milestones toward OpenVMS
 
-### M4 - 8600 identity and the privileged architecture (L)
+### M4 - 8600 identity and the privileged architecture (L) - mostly done
 
-- The 8600 IPRs and the 8600 console registers, behaving as in simh's model.
-- The 20 missing integer and privileged instructions; HALT becomes privileged,
-  with the 8600's halt code 6 in kernel mode.
-- Exceptions: arithmetic traps (integer overflow with PSL<IV>, divide by zero,
-  subscript range); the reserved instruction and reserved addressing-mode
-  faults taken instead of halting; trace (T and TP); CHME, CHMS and CHMU with
-  their stack checks; the 8600 machine-check frame; the 8600's halt codes for
-  SCB vectors with bits 1:0 = 2 or 3 and for CHMx on the interrupt stack.
-- Already done with M5: privileged-instruction checks on MTPR/MFPR, REI with
-  all its checks, ASTLVL and AST delivery, LDPCTX/SVPCTX, PROBER/PROBEW,
-  kernel stack not valid, interrupt stack not valid.
+- Done: the 8600 IPRs as in simh's model; CHME, CHMS and CHMU with their stack
+  checks; BPT and XFC; HALT privileged, with the 8600's halt code 6 in kernel
+  mode; the reserved instruction and reserved addressing mode faults; the
+  8600's halt codes for SCB vectors with bits 1:0 = 2 or 3 and for CHMx on the
+  interrupt stack; ACBB, ACBW, CVTWB, CVTLB, CVTBW. With M5: privileged
+  MTPR/MFPR, REI with all its checks, ASTLVL and AST delivery, LDPCTX/SVPCTX,
+  PROBER/PROBEW, kernel stack not valid, interrupt stack not valid.
+- Still to do: arithmetic traps (integer overflow with PSL<IV>, divide by
+  zero, subscript range); trace (T and TP); the nine remaining integer and
+  string instructions (INDEX, SKPC, SCANC, SPANC, ADAWI and the four
+  interlocked queue instructions); the 8600 machine-check frame's contents;
+  STXCS/STXDB.
 - The interval timer stays as it is: it is already the 8600's.
 
-**Done when:** EVKAA still passes and new instruction and exception tests trace
-the same as simh.
+**Done when:** EVKAA still passes, EVKAE passes but for compatibility mode
+(true now), and new instruction and exception tests trace the same as simh.
 
-### M5 - Memory management (XL) - built, in simulation
+### M5 - Memory management (XL) - done
 
-As described above and in [docs/MMU.md](docs/MMU.md). The 19 directed tests
+As described above and in [docs/MMU.md](docs/MMU.md). The directed tests
 match simh, on the CPU test bench and, as `software/mmutest.bin`, on the
-full-system model. The Quartus build meets timing (33 % of the ALMs with the
-MiSTer framework) and runs EVKAA, `hello.bin` and `bench.bin` on the board.
-Still to do: `mmutest.bin` on the board, random tests against simh, SVK
-(which needs the cross-compiler from milestone 3), and DEC's EVKAE (see the
-test table below).
+full-system model and on the board. The Quartus build meets timing (33 % of
+the ALMs with the MiSTer framework). EVKAE's memory management, kernel stack
+not valid, PROBE and context switch tests pass. Still to do: random tests
+against simh, and SVK (which needs the cross-compiler from milestone 3).
 
 **Done when:** directed and random tests match simh, and SVK runs.
 
@@ -223,6 +233,9 @@ EVKAC passes (M9).
   with EVKAB (basic instructions), EVKAC (floating point), EVKAD
   (compatibility mode, once it exists) and EVKAE (privileged architecture).
   simh boots that image from a UDA50; on the core it goes on the Massbus disk.
+  Until then, `tests/evkae/mkdsimage.py` brings the supervisor over as a
+  memory image taken from simh at its `DS>` prompt, with any of the four
+  exercisers loaded; that is how EVKAE runs now.
 - NetBSD/vax: its kernel supports the 8600 (`options VAX8600`, two SBIs on the
   ABus, Massbus disks). A complete, free OS as the rehearsal before VMS.
 
@@ -245,8 +258,9 @@ multi-user.
 
 ### M11 - The rest of the 8600 (optional)
 
-- PDP-11 compatibility mode. Only the RSX application layer uses it; VMS runs
-  without it.
+- PDP-11 compatibility mode. Only the RSX application layer uses it, and VMS
+  runs without it, but the 8600 has it: EVKAE's REI test (test 3) and EVKAD
+  need it.
 - The 8600 console's own command language (`>>>`, BOOT, EXAMINE, DEPOSIT,
   CONTINUE, HALT), replacing r-vax's minimal monitor.
 - Console RL02 (`CSA1:`) through STXCS/STXDB.
@@ -255,16 +269,17 @@ multi-user.
 - Ethernet (DEUNA/DELUA on the Unibus): it needs a path from the core to the
   network, which MiSTer cores normally do not have.
 - Speed: instruction prefetch and a faster operand decoder (r-vax needs about
-  40 clocks per instruction; a real 8600 is about 4 VUPs).
+  40 clocks per instruction; a real 8600 is about 4 VUPs). The ALU's
+  bit-serial shifter is already a barrel shifter.
 
 ## Test programs along the way
 
 | Program | What it exercises | When |
 |---|---|---|
 | EVKAA V8.0 | basic instructions | passes now |
-| `tests/mmu` (19 programs) | memory management, faults and restart, FPD, PROBE, LDPCTX/SVPCTX, REI, compared with simh `vax8600` | pass now |
-| `software/mmutest.bin` | the same 19 programs on the core itself, self-checking | passes on the full-system model |
-| EVKAE (Privileged Architecture Exerciser) | interrupts, exceptions, REI, CHMx, IPRs, interval timer, memory management, kernel stack not valid, PROBE, LDPCTX/SVPCTX - DEC's own test of the MMU work | needs CHME/CHMS/CHMU, the reserved instruction fault and a way to load the supervisor (M4, M8) |
+| `tests/mmu` (31 programs) | memory management, faults and restart, FPD, PROBE, LDPCTX/SVPCTX, REI, CHMx, BPT, XFC, halt codes, IPRs, reserved addressing modes, CASE, BBx, ACB, compared with simh `vax8600` | pass now |
+| `software/mmutest.bin` | the same programs on the core itself, self-checking | passes on the full-system model; the MMU ones on the board |
+| EVKAE (Privileged Architecture Exerciser) | interrupts, exceptions, REI, CHMx, IPRs, interval timer, memory management, kernel stack not valid, PROBE, LDPCTX/SVPCTX - DEC's own test of the MMU work | 10 of 11 tests pass under the Diagnostic Supervisor image; test 3 needs compatibility mode (M11) |
 | Own C and assembler tests | each new instruction and exception, traced against simh `vax8600` | from M3 |
 | SVK | MMU, SCB, interval timer and console interrupts, software interrupts, SVPCTX/LDPCTX | M5 |
 | Random-operand comparison with simh | decimal, string, floating point | M6, M7 |

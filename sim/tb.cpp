@@ -31,6 +31,7 @@
 #include <cstring>
 #include <string>
 #include <vector>
+#include <algorithm>
 #include "Vtb_top.h"
 #include "Vtb_top___024root.h"
 #include "verilated.h"
@@ -38,6 +39,7 @@
 static Vtb_top *tb;
 static uint64_t cycles = 0;
 static uint64_t nhit = 0, nmiss = 0, nrun = 0, ninst = 0;
+static FILE *itr = 0;                   // ITRACE file
 static int      halted_d = 1, state_d = 0;
 static std::string tto_log;
 
@@ -64,6 +66,23 @@ static void uart_sample() {
 	phase = -1;
 }
 
+static int prof_on = 0, prof_last = -1;
+static uint64_t prof_t, prof_cyc[256], prof_cnt[256];
+
+static void prof_print() {
+	uint64_t tot = 0;
+	int idx[256];
+	for (int i = 0; i < 256; i++) { tot += prof_cyc[i]; idx[i] = i; }
+	std::sort(idx, idx + 256, [](int a, int b) { return prof_cyc[a] > prof_cyc[b]; });
+	printf("profile: %llu clocks between decodes\n", (unsigned long long)tot);
+	for (int k = 0; k < 25 && prof_cyc[idx[k]]; k++) {
+		int i = idx[k];
+		printf("  %02X  %10llu insts %12llu clocks %5.1f%%  %6.1f per inst\n", i,
+		       (unsigned long long)prof_cnt[i], (unsigned long long)prof_cyc[i],
+		       100.0 * prof_cyc[i] / tot, (double)prof_cyc[i] / prof_cnt[i]);
+	}
+}
+
 static void tick() {
 	tb->clk = 1; tb->eval();
 	tb->clk = 0; tb->eval();
@@ -76,7 +95,79 @@ static void tick() {
 	if (!h) nrun++;
 	int st = R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__state;
 	if (st == 10 && state_d != 10) ninst++;
+	// EXCTRACE: every entry into the CPU's fault microcode (XFAULT): 2 reserved
+	// operand, 4 memory management, 5 kernel stack not valid, 7 reserved
+	// instruction; and every halt
+	static int exctrace = getenv("EXCTRACE") ? 1 : 0;
+	if (exctrace && st == 22 && state_d != 22)
+		printf("\n[%llu] XFAULT entry %d pc %08X opcode %02X psl %08X\n",
+		       (unsigned long long)cycles,
+		       R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__xentry,
+		       R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__oldpc,
+		       R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__cur_inst,
+		       R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__oldpsl);
+	if (exctrace && st == 0 && state_d != 0)
+		printf("\n[%llu] HALT code %X pc %08X oldpc %08X opcode %02X psl %08X\n",
+		       (unsigned long long)cycles,
+		       R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__haltpos,
+		       R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__curpc,
+		       R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__oldpc,
+		       R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__cur_inst,
+		       R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__psl);
+	// ITRACE=file: PC, PSL and opcode of every instruction, from cycle
+	// ITRACE_FROM on (for comparing with simh's instruction history)
+	static uint64_t itr_from = 0;
+	static int itr_init = 0;
+	if (!itr_init) {
+		itr_init = 1;
+		if (const char *f = getenv("ITRACE")) {
+			itr = fopen(f, "w");
+			if (const char *fr = getenv("ITRACE_FROM")) itr_from = strtoull(fr, 0, 0);
+		}
+	}
+	// PROFILE: clocks from one instruction decode to the next, per opcode
+	// (operand decode, execution, the following fetch and any interrupt or
+	// exception in between), printed at the end
+	if (prof_on && st == 10 && state_d != 10 && !h) {
+		if (prof_last >= 0) {
+			prof_cyc[prof_last] += cycles - prof_t;
+			prof_cnt[prof_last]++;
+		}
+		prof_last = R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__cur_inst;
+		prof_t = cycles;
+	}
+	static int itr_regs = getenv("ITRACE_REGS") ? 1 : 0;
+	if (itr && st == 10 && state_d != 10 && cycles >= itr_from) {
+		fprintf(itr, "%08X %08X %02X",
+		        R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__oldpc,
+		        R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__psl,
+		        R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__cur_inst);
+		if (itr_regs)		// ITRACE_REGS: R0-R14 before the instruction
+			for (int i = 0; i < 15; i++)
+				fprintf(itr, " %08X", R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__general_reg[i]);
+		fputc('\n', itr);
+	}
 	state_d = st; halted_d = h;
+	// INTTRACE: every interrupt the CPU takes: PC, PSL, the level and the
+	// request lines when it starts, and the SCB vector it ends up using
+	static int inttrace = getenv("INTTRACE") ? 1 : 0;
+	if (inttrace) {
+		static int d_intr = 0;
+		int di = R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__doing_intr;
+		if (di && !d_intr)
+			printf("\n[%llu] INTR pc %08X psl %08X intlvl %02X hwint %04X swint %04X\n",
+			       (unsigned long long)cycles,
+			       R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__curpc,
+			       R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__psl,
+			       R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__intlvl,
+			       R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__hwint,
+			       R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__swint);
+		if (!di && d_intr)
+			printf("[%llu] INTR end: vector %08X psl %08X\n", (unsigned long long)cycles,
+			       R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__argd[1],
+			       R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__psl);
+		d_intr = di;
+	}
 	// RXTRACE: log the console receiver as the CPU sees it
 	static int rxtrace = getenv("RXTRACE") ? 1 : 0;
 	if (rxtrace) {
@@ -132,6 +223,9 @@ static int scancode(char c, int *shift) {
 	case '-': return 0x4E;
 	case '+': *shift = 1; return 0x55;
 	case '=': return 0x55;
+	case ';': return 0x4C;
+	case ':': *shift = 1; return 0x4C;
+	case '_': *shift = 1; return 0x4E;
 	}
 	return -1;
 }
@@ -263,6 +357,7 @@ int main(int argc, char **argv) {
 	tb->ps2_key = 0; tb->ioctl_download = 0; tb->ioctl_wr = 0;
 	tb->start_200 = getenv("START200") ? 1 : 0;
 	tb->selftest_en = getenv("NOTEST") ? 0 : 1;
+	prof_on = getenv("PROFILE") ? 1 : 0;
 	tb->selftest_go = 0; tb->uart_rxd = 1;
 	tb->rdphase_sel = getenv("PHASE") ? atoi(getenv("PHASE")) : 0;
 	tb->sdram_sz = 0;                       // the HPS reports it later
@@ -444,6 +539,8 @@ int main(int argc, char **argv) {
 	       (unsigned long long)ninst, (unsigned long long)nrun,
 	       ninst ? (double)nrun / ninst : 0.0,
 	       nrun ? 50.0 * ninst / nrun : 0.0);
+	if (itr) fclose(itr);
+	if (prof_on) prof_print();
 	if (const char *tl = getenv("TTOLOG")) {        // everything the CPU printed
 		FILE *f = fopen(tl, "wb");
 		if (f) { fwrite(tto_log.data(), 1, tto_log.size(), f); fclose(f); }

@@ -324,8 +324,9 @@ npass:	.long	0
 nfail:	.long	0
 hexdig:	.ascii	"0123456789ABCDEF"
 s_banner:
-	.ascii	"\r\nMMU test suite: the tests/mmu programs, checked against"
-	.asciz	" simh vax8600\r\n\r\n"
+	.ascii	"\r\nTest suite: the tests/mmu programs (memory management and"
+	.ascii	" privileged\r\narchitecture), checked against simh vax8600"
+	.asciz	"\r\n\r\n"
 s_pass:	.asciz	"PASS\r\n"
 s_fail:	.asciz	"FAIL\r\n"
 s_ind:	.asciz	"    "
@@ -338,10 +339,10 @@ s_sum1:	.asciz	"\r\nPassed: "
 s_sum2:	.asciz	"   Failed: "
 s_sum3:	.asciz	"\r\n"
 s_allok:
-	.asciz	"All memory management tests passed.\r\n"
+	.asciz	"All tests passed.\r\n"
 s_halt:	.ascii	"\r\nLast, t16_isnv: the CPU must halt here with code"
 	.asciz	" 00000004.\r\n"
-s_end:	.asciz	"End of the MMU test suite.\r\n"
+s_end:	.asciz	"End of the test suite.\r\n"
 s_fatal:
 	.asciz	"\r\nRunner: unexpected exception, stopped.\r\n"
 

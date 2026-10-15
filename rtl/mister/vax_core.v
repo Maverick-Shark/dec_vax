@@ -41,6 +41,7 @@ module vax_core #(
 	// console serial lines
 	input             tti_rx,
 	output            tto_tx,
+	input             halt_req,      // console halt request (Ctrl+P, OSD): one clock
 
 	// performance counters
 	output            stat_hit,
@@ -105,6 +106,7 @@ module vax_core #(
 
 		.tto_tx     (tto_tx),
 		.tti_rx     (tti_rx),
+		.halt_req   (halt_req),
 		.cpu_halted (cpu_halted),
 		.cpu_mcheck (mcheck)
 	);

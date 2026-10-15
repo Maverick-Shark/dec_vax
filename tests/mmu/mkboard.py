@@ -16,7 +16,9 @@ machine, runs each test and compares) and boot.s (which moves the runner out
 of the tests' way) are put in front.
 
 A test with ";@ board=halt" (t16_isnv) ends in a processor halt; it runs
-last and is checked by eye: the console must show the halt code.
+last and is checked by eye: the console must show the halt code. Tests with
+";@ board=skip" (other processor halts) are left out. A HALT that is itself
+under test is written as ".byte 0", so that it is not turned into the exit.
 
 Load the result at 1000 and start it there (the OSD defaults). Needs simh's
 vax8600 (SIMH environment variable or ../open-simh/BIN/vax8600).
@@ -134,6 +136,9 @@ def main():
     for src in sorted(glob.glob(os.path.join(HERE, 't*.s'))):
         name = os.path.basename(src)[:-2]
         d = mmurun.directives(src)
+        if d.get('board') == 'skip':
+            print('%-16s left out (board=skip)' % name)
+            continue
         halts = d.get('board') == 'halt'
         ents = [] if halts else expected_entries(d)
         s = os.path.join(work, name + '.s')

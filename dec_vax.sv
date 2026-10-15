@@ -65,6 +65,8 @@ assign VIDEO_ARY = (!ar) ? 12'd3 : 12'd0;
 //  9       power-on memory test (0 = on)
 //  10      run the memory test now (trigger)
 //  13:11   SDRAM read phase: 0 = calibrated, 1..4 = force phase 0..3
+//  14      halt the CPU now (trigger), as Ctrl+P does
+//  15      Ctrl+P: 0 = halts the CPU, 1 = goes to the program as a character
 //  122:121 aspect ratio
 
 `include "build_id.v"
@@ -79,6 +81,8 @@ localparam CONF_STR = {
 	"O[6:5],Text Color,Green,Amber,White;",
 	"O[7],Keyboard,US,ES;",
 	"O[8],UART Console In,Off,On;",
+	"O[15],Ctrl+P,Halts the CPU,Is a character;",
+	"T[14],Halt CPU (Ctrl+P);",
 	"O[122:121],Aspect Ratio,Original,Full Screen,[ARC1],[ARC2];",
 	"-;",
 	"O[9],Power-on Memory Test,On,Off;",
@@ -160,11 +164,14 @@ reg rst_sys = 1;
 always @(posedge clk_sys)
 	rst_sys <= RESET | status[0] | buttons[1];
 
-// the OSD "trigger" bit arrives as a level that flips; make it a pulse
+// the OSD "trigger" bits arrive as a level that flips; make them pulses
 reg st_go = 0, st_d = 0;
+reg hl_go = 0, hl_d = 0;
 always @(posedge clk_sys) begin
 	st_d  <= status[10];
 	st_go <= status[10] & ~st_d;
+	hl_d  <= status[14];
+	hl_go <= status[14] & ~hl_d;
 end
 
 ///////////////////////   SDRAM   ///////////////////////////////
@@ -227,6 +234,8 @@ vax_system #(.CLK_HZ(50000000), .CPB(`CLKPERBIT), .UART_CPB(434), .CACHEIDX(`CAC
 	.color          (status[6:5]),
 	.kbd_es         (status[7]),
 	.uart_console   (status[8]),
+	.ctrlp_halt     (~status[15]),
+	.halt_osd       (hl_go),
 	.selftest_en    (~status[9]),
 	.selftest_go    (st_go),
 	.rdphase_sel    (status[13:11]),

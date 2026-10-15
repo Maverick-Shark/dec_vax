@@ -60,6 +60,7 @@ module tb_top #(
 		.ioctl_wait(ioctl_wait),
 		.load_base(load_base), .start_200(start_200), .autostart(autostart),
 		.color(color), .kbd_es(kbd_es), .uart_console(1'b1),
+		.ctrlp_halt(1'b1), .halt_osd(1'b0),
 		.selftest_en(selftest_en), .selftest_go(selftest_go),
 		.rdphase_sel(rdphase_sel), .sdram_sz(sdram_sz),
 		.ps2_key(ps2_key), .uart_rxd(uart_rxd), .uart_txd(uart_txd),

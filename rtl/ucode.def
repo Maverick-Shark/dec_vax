@@ -46,7 +46,7 @@
 #
 01	NOP
 02	REI
-#
+03	BPT
 04	RET
 05	RSB
 06	LDPCTX
@@ -87,6 +87,7 @@
 3A	LOCC
 #
 3C	MOVZWL
+3D	ACBW
 #
 3E	MOVAW
 3F	PUSHAW
@@ -130,6 +131,7 @@
 9A	MOVZBL
 9B	MOVZBW
 9C	ROTL
+9D	ACBB
 #
 9E	MOVAB
 9F	PUSHAB
@@ -226,6 +228,7 @@ F7	CVTLW
 #
 FA	CALLG
 FB	CALLS
+FC	XFC
 #
 FF	RESIN
 #
@@ -242,6 +245,7 @@ FF	RESIN
 	plus 0 0	goto ksnv	# entry 5: kernel stack not valid
 	plus 0 0	goto resinflt	# entry 6: PSL<FPD> set, instruction can't resume
 	plus 0 0	goto resinflt2	# entry 7: privileged instruction (PC at the opcode)
+	plus 0 0	goto resadflt	# entry 8: reserved addressing mode (PC at the opcode)
 #
 # Interrupt.  Interrupt level tells which vector to use, is in savpsw.
 #
@@ -324,6 +328,12 @@ resinflt2:
 	and 0 0		argp1
 	and 20 20	argd0
 	and 10 10	argd1 goto scb_common
+# Reserved addressing mode (SCB 1C): a fault, the hardware has put the PC,
+# the registers and the PSL back to the start of the instruction.
+resadflt:
+	and 0 0		argp1
+	and 20 20	argd0
+	and 1C 1C	argd1 goto scb_common
 #
 # Memory management fault (SRM 4.9): access-control violation (SCB 20) or
 # translation not valid (SCB 24). The hardware has already put the PC, the
@@ -385,6 +395,7 @@ scb_common2:
 	and 11 11	crn		# SCBB
 	plus civ argd1	cpuaddr rmem phys	# fetch the vector
 	plus rmemdat 0	arg3
+	and arg3 2	nzcond goto scb_v2	# vector<1> set: halt
 # new PSL<31:16> in arg2.  IS = old IS, or vector<0>, or severe.
 	shr arg1 10	arg2
 	and arg2 400	arg2
@@ -438,8 +449,16 @@ scb_psl:
 	and F F		crn
 	bic 3 arg3	crw wreg	# PC <- vector<31:2>
 	minus argp1 1	zcond goto mcheck_1
-	minus argp1 2	zcond goto chmk_1
 	minus argp1 3	zcond goto mmflt_1
+	plus 0 0	eoi
+# SCB vector with bits 1:0 = 2 (service in writable control store, which
+# the 8600 has not got) or 3: the processor halts with code 8 or 7
+scb_v2:	and arg3 1	nzcond goto scb_v3
+	and 73 73	crn
+	and 8 8		crw wipr
+	plus 0 0	eoi
+scb_v3:	and 73 73	crn
+	and 7 7		crw wipr
 	plus 0 0	eoi
 
 #
@@ -449,8 +468,12 @@ add:	plus arg1 arg2		argd0 savnz savc savv eoi
 clr:	plus 0 0		argd0 savnz eoi
 xor:	xor arg1 arg2		argd0 savnz eoi
 sub:	minus arg1 arg2		argd0 savc savv savnz eoi
-bicpsw:	bic arg1 psl		psl eoi
-bispsw:	bis arg1 psl		psl eoi
+# BICPSW, BISPSW: mask<15:8> must be zero, else reserved operand fault
+bicpsw:	and arg1 FF00	nzcond goto psw_ro
+	bic arg1 psl		psl eoi
+bispsw:	and arg1 FF00	nzcond goto psw_ro
+	bis arg1 psl		psl eoi
+psw_ro:	plus 0 0	resopflt eoi
 movpsl:	plus psl 0		argd0 savnz eoi
 bic:	bic arg1 arg2		argd0 savnz eoi
 bis:	bis arg1 arg2		argd0 savnz eoi
@@ -516,6 +539,7 @@ mtpr_2:
 	minus arg2 10	zcond goto mtpr_pa	# PCBB
 	minus arg2 11	zcond goto mtpr_pa	# SCBB
 	minus arg2 13	zcond goto mtpr_ast	# ASTLVL
+	minus arg2 15	zcond goto mtpr_sisr	# SISR
 
 	minus arg2 18	zcond goto mtpr_ok	# ICCS
 	minus arg2 19	zcond goto mtpr_ok	# NICR
@@ -523,10 +547,14 @@ mtpr_2:
 	minus arg2 20	zcond goto mtpr_ok	# RXCS
 	minus arg2 22	zcond goto mtpr_ok	# TXCS
 	minus arg2 23	zcond goto mtpr_ok	# TXDB
-	minus arg2 25	zcond goto mtpr_ok	# 11/750 CADR
-	minus arg2 26	zcond goto mtpr_ok	# 11/750 MCESR
+	minus arg2 28	zcond goto mtpr_end	# ACCS: no accelerator, ignored
+	minus arg2 3D	zcond goto mtpr_pme	# PME
+	minus arg2 40	zcond goto mtpr_end	# 8600 PAMACC: ignored
 	minus arg2 41	zcond goto mtpr_ok	# 8600 PAMLOC
 	minus arg2 42	zcond goto mtpr_ok	# 8600 CSWP
+	minus arg2 45	zcond goto mtpr_ok	# 8600 MDCTL
+	minus arg2 47	zcond goto mtpr_end	# 8600 MERG: ignored
+	minus arg2 48	zcond goto mtpr_end	# 8600 CRBT: ignored
 	minus arg2 4A	zcond goto mtpr_ok	# 8600 EHSR
 
 	minus arg2 38	zcond goto mtpr_mapen	# MAPEN
@@ -547,6 +575,7 @@ mtpr_12:
 	and 15 15	crn			# fetch SISR
 	and arg1 F	arg1			# only soft bits
 	shl 1 arg1	arg1			# make mask
+	bic 1 arg1	arg1			# level 0 does not exist
 	bis civ arg1	crw wipr		# write back SISR
 	plus 0 0	eoi
 
@@ -586,9 +615,13 @@ mtpr_ast:
 	and arg1 7	arg1
 	minus 4 arg1	ncond goto mtpr_resop
 	plus 0 0	goto mtpr_ok
-# MAPEN: only bit 0
+# MAPEN, PME: only bit 0
 mtpr_mapen:
+mtpr_pme:
 	and arg1 1	arg1 goto mtpr_ok
+# SISR: bits 15:1
+mtpr_sisr:
+	and arg1 FFFE	arg1 goto mtpr_ok
 # TBCHK: V set if the TB holds a translation for the page
 mtpr_tbchk:
 	plus arg1 0	cpuaddr rmem probe phys
@@ -634,15 +667,21 @@ mfpr_1:
 	minus arg1 13	zcond goto mfpr_ok	# ASTLVL
 	minus arg1 15	zcond goto mfpr_ok	# SISR
 	minus arg1 18	zcond goto mfpr_ok	# ICCS
+	minus arg1 19	zcond goto mfpr_ok	# NICR
 	minus arg1 1A	zcond goto mfpr_ok	# ICR
 	minus arg1 1B	zcond goto mfpr_ok	# TODR
 	minus arg1 20	zcond goto mfpr_ok	# RXCS
 	minus arg1 21	zcond goto mfpr_ok	# RXDB
 	minus arg1 22	zcond goto mfpr_ok	# TXCS
-	minus arg1 25	zcond goto mfpr_ok	# CADR
+	minus arg1 28	zcond goto mfpr_ok	# ACCS (zero)
 	minus arg1 38	zcond goto mfpr_ok	# MAPEN
+	minus arg1 3D	zcond goto mfpr_ok	# PME
 	minus arg1 40	zcond goto mfpr_ok	# 8600 PAMACC
+	minus arg1 41	zcond goto mfpr_ok	# 8600 PAMLOC
 	minus arg1 42	zcond goto mfpr_ok	# 8600 CSWP
+	minus arg1 45	zcond goto mfpr_ok	# 8600 MDCTL
+	minus arg1 47	zcond goto mfpr_ok	# 8600 MERG (zero)
+	minus arg1 4A	zcond goto mfpr_ok	# 8600 EHSR
 
 	minus arg1 12	nzcond goto mfpr_12	# IPL
 
@@ -699,25 +738,32 @@ rot:
 	shr arg2 arg1 	argd1
 	bis argd1 argd0	argd0 savnz eoi
 #
-# ACBL    rl,rl,ml,ab#b^d(pc),wl#pc
-acb:	plus arg2 arg3		argd0 savv savnz	# addto
-	plus arg4 0		argd1			# dest addr
-
-	# if (arg2 >= 0 && argd0 <= arg1) done();
-	plus arg2 0		ncond goto acb_2	# arg2 < 0
-	minus arg1 argd0	ncond goto acb_2	# limit >= index
-	plus 0 0		wback2 goto acb_done
-
-	# if (arg2 < 0 && argd0 >= arg1) done();
-acb_2:	plus arg2 0		nncond goto acb_done
-	minus argd0 arg1	ncond goto acb_done
-	plus 0 0		wback2
-acb_done:
-	bic 2 psl		psl			# clear V
-	xor arg3 argd0		nncond goto acb_done_1
-	bis 2 psl		psl
-acb_done_1:
-	plus 0 0		eoi
+# ACBx limit, add, index, displ: index <- index + add, then branch if add >= 0
+# and index <= limit, or add < 0 and index >= limit (signed compares). N, Z
+# and V come from the add at the operand's size (setnz setv), C is left
+# alone. The compares use the new index sign-extended to 32 bits and look at
+# the signs first, so that the subtraction cannot overflow.
+acbb:	plus arg2 arg3		argd0 savv savnz use8	# index + add, as bytes
+	shl argd0 18		arg3
+	asr arg3 18		arg3 goto acb_c		# new index, sign-extended
+acbw:	plus arg2 arg3		argd0 savv savnz use16	# as words
+	shl argd0 10		arg3
+	asr arg3 10		arg3 goto acb_c
+acb:	plus arg2 arg3		argd0 savv savnz	# ACBL
+	plus argd0 0		arg3
+acb_c:	plus arg4 0		argd1			# branch destination
+	plus arg2 0		ncond goto acb_neg	# add < 0
+# add >= 0: branch if index <= limit
+	xor arg1 arg3		arg2
+	plus arg2 0		ncond goto acb_pd	# signs differ
+	minus arg1 arg3		nncond wback2 eoi	# limit - index >= 0
+acb_pd:	plus arg1 0		nncond wback2 eoi	# limit >= 0 > index
+# add < 0: branch if index >= limit
+acb_neg:
+	xor arg1 arg3		arg2
+	plus arg2 0		ncond goto acb_nd	# signs differ
+	minus arg3 arg1		nncond wback2 eoi	# index - limit >= 0
+acb_nd:	plus arg3 0		nncond wback2 eoi	# index >= 0 > limit
 #
 aobleq:	bic 2 psl		psl			# clear V
 	plus 1 arg2		argd0 savc savnz	# inc index
@@ -739,6 +785,7 @@ sobgtr:	plus arg2 0	argd1				# save branch addr
 	minus argd0 1	nncond wback2 eoi		# if ix > 0
 #
 # arg1=pos, arg2=base, arg3=displ
+# BLBS, BLBC src.rl, displ: the low bit of a longword (pos 0)
 bbc:	shr arg2 arg1	argd0
 	plus arg3 0	argd1
 	and argd0 1	zcond wback2 eoi
@@ -746,24 +793,70 @@ bbs:	shr arg2 arg1	argd0
 	plus arg3 0	argd1
 	and argd0 1	nzcond wback2 eoi
 #
-# pos, base, displ
-# BBSS	rl,ml,ab#b^d(pc),wl#pc
-bbss:	shl 1 arg1	argd0		# position bit
-	plus 0 arg3	argd1		# save br addr
-	and argd0 arg2	nzcond wback2	# br if set
-	bis argd0 arg2	argd0 eoi	# set bit
-bbsc:	shl 1 arg1	argd0		# position bit
-	plus 0 arg3	argd1		# save br addr
-	and argd0 arg2	nzcond wback2	# br if set
-	bic argd0 arg2	argd0 eoi	# clear bit
-bbcs:	shl 1 arg1	argd0		# position bit
-	plus 0 arg3	argd1		# save br addr
-	and argd0 arg2	zcond wback2	# br if set
-	bis argd0 arg2	argd0 eoi	# set bit
-bbcc:	shl 1 arg1	argd0		# position bit
-	plus 0 arg3	argd1		# save br addr
-	and argd0 arg2	zcond wback2	# br if set
-	bic argd0 arg2	argd0 eoi	# clear bit
+# BBS, BBC pos.rl, base.vb, displ.bb (arg1, argp0, arg2): the bit pos of the
+# field at base. The base comes as a "wb" operand, so argp0 is its address,
+# or a register (bits 31:30 set), whose bit pos must be 0-31 (else a
+# reserved operand fault). In memory the bit is in the byte at base +
+# pos/8 (pos signed), bit pos<2:0>: only that byte is read.
+#
+bbsv:	and 1 1		argd0 goto bbv		# branch if set
+bbcv:	and 0 0		argd0			# branch if clear
+bbv:	shr argp0 1E	arg3
+	minus arg3 3	nzcond goto bbv_mem
+	bic 1F arg1	arg3
+	plus arg3 0	nzcond goto bbv_ro	# register: pos must be 0-31
+	plus argp0 0	crn
+	shr crv arg1	arg3
+	plus 0 0	goto bbv_tst
+bbv_mem:
+	asr arg1 3	arg3
+	plus argp0 arg3	cpuaddr rmem byte	# the byte with the bit
+	and arg1 7	arg1
+	shr rmemdat arg1	arg3
+bbv_tst:
+	plus arg2 0	argd1			# the branch target
+	xor arg3 argd0	arg3
+	and arg3 1	zcond wback2 eoi	# the bit is the one wanted: branch
+bbv_ro:	plus 0 0	resopflt eoi
+#
+# BBSS, BBCS, BBSC, BBCC, BBSSI, BBCCI pos.rl, base.vb, displ.bb: branch on
+# the old bit, which is set or cleared (the interlocked ones are the same
+# here: one processor). argd0<0> branch if set, argd0<1> set the bit.
+# In memory the byte is read with write intent, then written back.
+#
+bbss:	and 3 3		argd0 goto bbm
+bbcs:	and 2 2		argd0 goto bbm
+bbsc:	and 1 1		argd0 goto bbm
+bbcc:	and 0 0		argd0
+bbm:	shr argp0 1E	arg3
+	minus arg3 3	nzcond goto bbm_mem
+	bic 1F arg1	arg3
+	plus arg3 0	nzcond goto bbv_ro	# register: pos must be 0-31
+	shl 1 arg1	arg3			# the bit's mask
+	plus argp0 0	crn
+	plus crv 0	arg4			# the old value
+	and argd0 2	zcond goto bbm_rc
+	bis arg3 arg4	crw wreg		# set
+	plus 0 0	goto bbm_br
+bbm_rc:	bic arg3 arg4	crw wreg		# clear
+	plus 0 0	goto bbm_br
+bbm_mem:
+	asr arg1 3	arg3
+	plus argp0 arg3	argp0			# the byte with the bit
+	plus argp0 0	cpuaddr rmem byte wint
+	and arg1 7	arg1
+	shl 1 arg1	arg3			# the bit's mask
+	plus rmemdat 0	arg4			# the old byte
+	plus argp0 0	cpuaddr byte
+	and argd0 2	zcond goto bbm_mc
+	bis arg3 arg4	crw wmem		# set
+	plus 0 0	goto bbm_br
+bbm_mc:	bic arg3 arg4	crw wmem		# clear
+bbm_br:	plus arg2 0	argd1			# the branch target
+	and arg3 arg4	arg3			# the old bit
+	and argd0 1	nzcond goto bbm_bs
+	and arg3 arg3	zcond wback2 eoi	# branch if it was clear
+bbm_bs:	and arg3 arg3	nzcond wback2 eoi	# branch if it was set
 #
 # INSV arg1=pos,arg2=size,argd0/1=base(val),arg4=src
 #
@@ -942,39 +1035,51 @@ cmpzv_is20:
 # CASEB selector,base,limit
 # tmp = selector - base
 # if (tmp <= limit) PC += SEXT(displ[tmp]) else PC += 2 + 2 * ZEXT(limit)
-caseb:
-	# fixup flags first
-	minus arg1 arg2		argd1			# 335 get numeric val
-	minus argd1 arg3	savnz savc
-
-	and argd1 FF		argd1			# ensure unsigned
-	minus arg3 argd1	ncond goto caseb_end	# 336 inside boundaries?
+#
+# CASEB, CASEW, CASEL (operands sign extended): tmp = selector - base at the
+# operand size; the condition codes are those of CMPx tmp, limit; tmp is in
+# range if it is not above the limit as an unsigned number: then PC = table
+# + the displacement at table + 2 * tmp, else PC = table + 2 * (limit + 1).
+#
+caseb:	minus arg1 arg2		argd1			# selector - base ...
+	shl argd1 18		argd1
+	asr argd1 18		argd1			# ... as a byte
+	minus argd1 arg3	savnz savc		# CMPB tmp, limit
+	and argd1 FF		argd1			# unsigned for the range
+	and arg3 FF		arg3 goto case_rng
+casew:	minus arg1 arg2		argd1
+	shl argd1 10		argd1
+	asr argd1 10		argd1			# as a word
+	minus argd1 arg3	savnz savc		# CMPW tmp, limit
+	and argd1 FFFF		argd1
+	and arg3 FFFF		arg3 goto case_rng
+casel:	minus arg1 arg2		argd1
+	minus argd1 arg3	savc			# CMPL tmp, limit: C
+	xor argd1 arg3		argp1
+	plus argp1 0		ncond goto casel_d
+	minus argd1 arg3	savnz goto case_rng	# same signs: N, Z
+casel_d:
+	bis argd1 1		argp1 savnz		# signs differ: N = tmp<31>, Z = 0
+# tmp <= limit, unsigned: if the top bits differ, tmp must be the one with
+# bit 31 clear; else limit - tmp must not be negative
+case_rng:
+	xor argd1 arg3		argp1
+	plus argp1 0		ncond goto case_tb
+	minus arg3 argd1	nncond goto case_off
+	plus 0 0		goto case_ex
+case_tb:
+	plus argd1 0		nncond goto case_off
+	plus 0 0		goto case_ex
 case_off:
 	shl argd1 1		argd1			# word offset
-	plus argd1 arg4		cpuaddr rmem		# read word
+	plus argd1 arg4		cpuaddr rmem word	# the displacement
 	shl rmemdat 10		arg3			# sign extend...
 	asr arg3 10		arg3
 	plus arg3 arg4		argd0 eoi		# jmp new address
-caseb_end:
-	and arg3 FF		arg3			# zero extend
 case_ex:
 	shl arg3 1		arg3			# word offset
 	plus arg3 2 		arg3			# one word after
 	plus arg3 arg4		argd0 eoi		# set pc
-#
-casew:
-	minus arg1 arg2		argd1			# get numeric val
-	minus argd1 arg3	savnz savc
-
-	minus arg3 argd1	nncond goto case_off	# inside boundaries?
-	and arg3 FFFF		arg3 goto case_ex
-#
-casel:
-	minus arg1 arg2		argd1			# get numeric val
-	minus argd1 arg3	savnz savc
-
-	minus arg3 argd1	nncond goto case_off	# inside boundaries?
-	plus 0 0		goto case_ex
 #
 mul:	mul arg1 arg2		argd0 savnz savv eoi
 #
@@ -1074,6 +1179,13 @@ cvtlw:	bic 2 psl	psl
 	bis psl 2	psl
 cvtlw_1f:
 	plus 0 0	eoi
+# CVTLB, CVTWB: V if the value does not fit in a byte
+cvtlb:	bic 2 psl	psl
+	plus arg1 0	argd0
+	shl arg1 18	arg1
+	asr arg1 18	arg1 savnz
+	minus argd0 arg1 zcond goto cvtlw_1f
+	bis psl 2	psl goto cvtlw_1f
 #
 # EDIV divr,divd,quo,rem (arg1,arg2/3,argp0,argp1)
 # Algorithm here comes from a NOVA programming book.
@@ -1928,19 +2040,84 @@ svp_end:
 #
 # CHMK code.rw (sp in arg2): change mode to kernel through SCB 40.
 # CHME, CHMS, CHMU and the probe of the new stack are not done yet.
-chmk:
-	and arg1 FFFF	argp0		# the code, 16 bits so argp0 stays a value
-	and 40 40	argd1		# vector
-	and 20 20	argd0		# kernel mode, PRV = old mode, IPL kept
-	and 2 2		argp1 goto scb_common	# return
-chmk_1:
-	shl argp0 10	arg1
-	asr arg1 10	arg1		# sign-extended code
+#
+# CHMK, CHME, CHMS, CHMU code (SRM chapter 5, CHM): go to the more privileged
+# of the opcode's mode and the current mode, on that mode's stack, through
+# the SCB vector of the opcode's mode (40, 44, 48, 4C). The new stack is
+# probed for writing in the new mode first, with the new PSL already in
+# place: an access-control violation or translation-not-valid there is an
+# ordinary fault on the CHMx, which puts SP, PC and PSL back. On the
+# interrupt stack the processor halts (8600 halt code A; PC past the CHMx,
+# as simh leaves it), and so it does if the vector has bits 1:0 set (code B,
+# everything put back). Frame: code (sign extended), PC, PSL; the new PSL
+# keeps the IPL and clears everything else.
+# argd1 opcode's mode, arg3 current mode, arg4 new mode, argd0 vector,
+# arg2 new SP, argp1 the PSL to save, arg1 the code.
+#
+chmk:	and 0 0		argd1 goto chm
+chme:	and 1 1		argd1 goto chm
+chms:	and 2 2		argd1 goto chm
+chmu:	and 3 3		argd1
+chm:	shl psl 5	ncond goto chm_is	# PSL<IS>
+	shr psl 18	arg3
+	and arg3 3	arg3			# PSL<CUR_MOD>
+	minus argd1 arg3	nncond goto chm_1
+	plus argd1 0	arg4 goto chm_2		# the opcode's mode is more privileged
+chm_1:	plus arg3 0	arg4			# otherwise the mode stays
+chm_2:	shl argd1 2	arg2
+	plus arg2 40	arg2			# SCB offset 40 + 4 * mode
+	and 11 11	crn			# SCBB
+	plus civ arg2	cpuaddr rmem phys
+	plus rmemdat 0	argd0			# the vector
+	and argd0 3	nzcond goto chm_vec
 	and E E		crn
-	minus crv 4	cpuaddr
-	plus arg1 0	crw wmem xpush	# write reason
-	minus crv 4	crw wreg	# save new sp
+	plus crv 0	crw			# SP ...
+	plus arg3 0	crn wipr		# ... saved in IPR[current mode]
+	plus arg4 0	crn
+	plus civ 0	arg2			# the new mode's stack pointer
+	plus psl 0	argp1			# the PSL to save, CCs included
+	shr psl 10	argd1
+	and argd1 1F	argd1			# IPL, kept
+	shl arg3 6	argp0
+	bis argp0 argd1	argd1			# PRV_MOD <- current mode
+	shl arg4 8	argp0
+	bis argp0 argd1	argd1			# CUR_MOD <- new mode
+	shl argd1 10	psl			# the new PSL: accesses in the new mode
+	and E E		crn
+	plus arg2 0	crw wreg		# SP <- the new stack pointer
+	minus arg2 1	cpuaddr rmem byte wint	# probe SP-1 ...
+	minus arg2 C	cpuaddr rmem byte wint	# ... and SP-12 for writing
+	minus arg2 4	cpuaddr
+	plus argp1 0	crw wmem		# -(SP) <- PSL
+	minus arg2 8	cpuaddr
+	and F F		crn
+	plus crv 0	crw wmem		# -(SP) <- PC of the next instruction
+	minus arg2 C	cpuaddr
+	shl arg1 10	arg1
+	asr arg1 10	crw wmem		# -(SP) <- the code, sign extended
+	and E E		crn
+	minus arg2 C	crw wreg		# SP <- SP - 12
+	and F F		crn
+	bic 3 argd0	crw wreg		# PC <- vector<31:2>
 	plus 0 0	eoi
+chm_is:	and 73 73	crn
+	and A A		crw wipr		# halt A: CHMx on the interrupt stack
+	plus 0 0	eoi
+chm_vec:
+	and 73 73	crn
+	and 10B 10B	crw wipr		# halt B: the CHMx vector has bits 1:0 set
+	plus 0 0	eoi
+#
+# BPT (breakpoint, SCB 2C) and XFC (extended function call, SCB 14): faults,
+# PC at the opcode.
+#
+bpt:	and 2C 2C	argd1 goto bpt_1
+xfc:	and 14 14	argd1
+bpt_1:	and 0 0		argp1		# end in scb_common
+	and 20 20	argd0		# an exception
+	and F F		crn
+	minus crv 1	crw wreg	# PC back to the opcode
+	plus 0 0	goto scb_common
 #
 # CMPC3 len,src1,src2
 cmpc3:
@@ -1980,6 +2157,7 @@ cmpc_regsave:
 NOP	rl#0,rl#0		lbl=add				# 01
 REI	rl#(sp)+,rl#(sp)+,wl#pc	lbl=rei wback			# 02
 #
+BPT	rl#0		lbl=bpt					# 03
 RET	rl#fp			lbl=ret				# 04
 RSB	rl#(sp)+,wl#pc	lbl=mov wback				# 05
 LDPCTX	rl#0		lbl=ldpctx				# 06
@@ -2015,10 +2193,12 @@ CMPC5	0rw,1ab,4rb,2rw,3ab	lbl=cmpc5 setnz setc clv	# 2d
 BSBW	0aw#w^d(pc),2rl#pc,wl#pc,wl#-(sp)	lbl=mov move2 wback wback2 
 BRW	aw#w^d(pc),wl#pc	lbl=mov wback 			# 31
 CVTWL	rw,wl		lbl=mov setnz clv clc clv wback		# 32
+CVTWB	rw,wb		lbl=cvtlb setnz clc wback		# 33
 #
 LOCC	2rb,0rw,1ab	lbl=locc clv clc setnz			# 3a
 #
 MOVZWL	rw,wl		lbl=zwl setnz clv wback			# 3c
+ACBW	rw,rw,mw,aw#w^d(pc),wl#pc lbl=acbw setnz setv wback	# 3d
 #
 MOVAW	aw,wl		lbl=mov setnz clv wback			# 3e
 PUSHAW	aw,wl#-(sp)	lbl=mov setnz clv wback			# 3f
@@ -2057,9 +2237,11 @@ INCB	mb,rl#1		lbl=add setnz setc setv use8 wback	# 96
 DECB	mb,rl#1		lbl=sub setnz setv setc use8 wback	# 97
 #
 CVTBL	rb,wl		lbl=mov setnz clv clc wback		# 99
+CVTBW	rb,ww		lbl=mov setnz clv clc wback		# 99
 MOVZBL	rb,wl		lbl=zbl setnz clv wback			# 9a
 MOVZBW	rb,ww		lbl=zbl setnz clv wback			# 9b
 ROTL	rb,rl,wl	lbl=rot setnz clv wback			# 9c
+ACBB	rb,rb,mb,aw#w^d(pc),wl#pc lbl=acbb setnz setv wback	# 9d
 #
 MOVAB	ab,wl		lbl=mov setnz clv wback			# 93
 PUSHAB	ab,wl#-(sp)	lbl=mov setnz clv wback			# 9f
@@ -2091,7 +2273,10 @@ BISPSW	rw		lbl=bispsw				# b8
 BICPSW	rw		lbl=bicpsw				# b9
 POPR	rw,rl#sp	lbl=popr				# ba
 PUSHR	rw,rl#sp	lbl=pushr				# bb
-CHMK	rw,rl#sp	lbl=chmk				# bc
+CHMK	rw		lbl=chmk				# bc
+CHME	rw		lbl=chme				# bd
+CHMS	rw		lbl=chms				# be
+CHMU	rw		lbl=chmu				# bf
 # 
 ADDL2	rl,ml		lbl=add setnz setc setv wback 		# c0
 ADDL3	rl,rl,wl	lbl=add setnz setc setv wback 		# c1
@@ -2126,14 +2311,14 @@ MOVPSL	wl		lbl=movpsl wback			# dc
 PUSHL	rl,wl#-(sp)	lbl=mov setnz clv wback			# dd
 MOVAL	al,wl		lbl=mov setnz clv wback			# de
 PUSHAL	al,wl#-(sp)	lbl=mov setnz clv wback			# df
-BBS	rl,rl,ab#b^d(pc),wl#pc,wl#pc lbl=bbs 			# e0
-BBC	rl,rl,ab#b^d(pc),wl#pc,wl#pc lbl=bbc 			# e1
-BBSS	rl,ml,ab#b^d(pc),wl#pc lbl=bbss wback			# e2
-BBCS	rl,ml,ab#b^d(pc),wl#pc lbl=bbcs wback			# e3
-BBSC	rl,ml,ab#b^d(pc),wl#pc lbl=bbsc wback			# e4
-BBCC	rl,ml,ab#b^d(pc),wl#pc lbl=bbcc wback			# e5
-BBSSI	rl,ml,ab#b^d(pc),wl#pc lbl=bbss wback			# e6
-BBCCI	rl,ml,ab#b^d(pc),wl#pc lbl=bbcc wback			# e7
+BBS	rl,wb,ab#b^d(pc),wl#pc	lbl=bbsv			# e0
+BBC	rl,wb,ab#b^d(pc),wl#pc	lbl=bbcv			# e1
+BBSS	rl,wb,ab#b^d(pc),wl#pc	lbl=bbss			# e2
+BBCS	rl,wb,ab#b^d(pc),wl#pc	lbl=bbcs			# e3
+BBSC	rl,wb,ab#b^d(pc),wl#pc	lbl=bbsc			# e4
+BBCC	rl,wb,ab#b^d(pc),wl#pc	lbl=bbcc			# e5
+BBSSI	rl,wb,ab#b^d(pc),wl#pc	lbl=bbss			# e6
+BBCCI	rl,wb,ab#b^d(pc),wl#pc	lbl=bbcc			# e7
 BLBS	rl#0,rl,ab#b^d(pc),wl#pc,wl#pc lbl=bbs 			# e8
 BLBC	rl#0,rl,ab#b^d(pc),wl#pc,wl#pc lbl=bbc 			# e9
 FFS	rl,rb,wb,wl lbl=ffs setnz clv clc wback2		# ea
@@ -2152,9 +2337,11 @@ SOBGEQ	ml,ab#b^d(pc),wl#pc lbl=sobgeq setnz setv wback		# f4
 SOBGTR	ml,ab#b^d(pc),wl#pc lbl=sobgtr setnz setv wback		# f5
 #
 CVTLW	rl,ww	lbl=cvtlw setnz clc wback			# f7
+CVTLB	rl,wb	lbl=cvtlb setnz clc wback			# f6
 #
 CALLG	ab,ab,rl#sp	lbl=callg 				# fa
 CALLS	rl,ab,rl#sp	lbl=calls 				# fb
 #
+XFC	rl#0	lbl=xfc						# fc
 RESIN	rl#0	lbl=resinflt					# ff
 #

@@ -2,7 +2,7 @@
 ; the processor (SRM 5.6 note 6; 8600 halt code 4, "interrupt stack
 ; invalid"). simh stops with its own message; PC and PSL are compared.
 ;@ dump=18000:2
-;@ board=halt
+;@ board=halt halt=4
 	.include "mmsetup.inc"
 test:
 	movl	#S0+^x9000, sp			; interrupt stack in page 48

@@ -19,6 +19,12 @@ Each test is a VAX MACRO-subset source for tools/vasm.py. Lines starting with
     ;@ page=18004             longwords compared only for the page (VA<31:9>):
                              the fault VA is "some address in the faulting
                              page" (SRM 4.9), simh and the RTL may differ
+    ;@ halt=6                 the RTL must stop with this halt code (hex)
+    ;@ nosimh                 simh behaves differently on purpose: only the
+                             RTL runs, checked against expect= and rtl=
+    ;@ expect=R6:0,R5:5       register values the RTL must end with (nosimh)
+    ;@ board=halt|skip        for mkboard.py: the test ends in a processor
+                             halt (runs last on the board) / is left out
 
 The program runs from PSL 041F0000 (kernel mode, interrupt stack, IPL 1F) and
 must end in HALT. Both machines are compared on R0..R14, PSL, the PC after the
@@ -36,13 +42,14 @@ import tempfile
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 VASM = os.path.join(ROOT, 'tools', 'vasm.py')
-RTL = os.path.join(ROOT, 'sim', 'obj_cpu', 'Vtb_cpu')
+RTL = os.environ.get('RTLBIN', os.path.join(ROOT, 'sim', 'obj_cpu', 'Vtb_cpu'))
 SIMH = os.environ.get('SIMH', os.path.join(ROOT, '..', 'open-simh', 'BIN', 'vax8600'))
 
 
 def directives(src):
     d = {'dump': [], 'ignore': set(), 'page': set(), 'rtl': {}, 'mask': {},
-         'clocks': '4000000', 'start': None}
+         'clocks': '4000000', 'start': None, 'halt': None, 'nosimh': False,
+         'expect': {}}
     for line in open(src):
         if not line.startswith(';@'):
             continue
@@ -63,6 +70,14 @@ def directives(src):
                     d['mask']['M%08X' % int(a, 16)] = int(m, 16)
             elif k == 'page':
                 d['page'].update('M%08X' % int(x, 16) for x in v.split(','))
+            elif k == 'halt':
+                d['halt'] = int(v, 16)
+            elif k == 'nosimh':
+                d['nosimh'] = True
+            elif k == 'expect':
+                for x in v.split(','):
+                    r, _, val = x.partition(':')
+                    d['expect'][r.strip().upper()] = int(val, 16)
             else:
                 d[k] = v
     return d
@@ -116,6 +131,7 @@ def run_rtl(binf, load, start, dumps, clocks):
             continue
         if f[0] == 'HALT':
             res['stop'] = line
+            res['halt'] = int(f[1])
             res['PC'] = int(f[2], 16)
         elif re.match(r'^(R\d+|PSL)$', f[0]):
             res[f[0]] = int(f[1], 16)
@@ -144,11 +160,19 @@ def main():
                 fails += 1
                 continue
             start = int(d['start'], 16) if d['start'] else load
-            s, sout = run_simh(binf, load, start, d['dump'], tmp)
+            if d['nosimh']:
+                s, sout = dict(d['expect'], stop='(not run: nosimh)'), ''
+            else:
+                s, sout = run_simh(binf, load, start, d['dump'], tmp)
             r, rout = run_rtl(binf, load, start, d['dump'], d['clocks'])
         keys = ['R%d' % i for i in range(15)] + ['PSL', 'PC']
         keys += ['M%08X' % (a + 4 * k) for a, n in d['dump'] for k in range(n)]
+        if d['nosimh']:
+            keys = [k for k in keys if k in d['expect'] or k in d['rtl']]
         diffs = []
+        if d['halt'] is not None and r.get('halt') != d['halt']:
+            diffs.append('  halt code  expected %X  rtl %s' % (
+                d['halt'], '%X' % r['halt'] if 'halt' in r else '--'))
         for k in keys:
             if k in d['ignore']:
                 continue

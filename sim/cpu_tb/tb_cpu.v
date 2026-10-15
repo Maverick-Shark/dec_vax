@@ -59,6 +59,7 @@ module tb_cpu #(
 		.IPR_DAT_O  (ipr_dat),
 		.tto_tx     (tto_tx),
 		.tti_rx     (1'b1),
+		.halt_req   (1'b0),
 		.cpu_halted (halted),
 		.cpu_mcheck (mcheck)
 	);
