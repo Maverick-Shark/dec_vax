@@ -1,9 +1,9 @@
 //============================================================================
 //  vax_core.v - r-vax system for MiSTer (replaces sbi.v of the original board).
 //
-//      cpu --- vcache (aligner) --+-- vax_cache (M10K) --- vax_sdram --- 32 MB
-//                                 |
-//                                 +-- SBI / DW780 / RH780 register stubs
+//      cpu --- vcache (aligner) --- mmu --+-- vax_cache (M10K) --- vax_sdram --- 32 MB
+//                                         |
+//                                         +-- SBI / DW780 / RH780 register stubs
 //
 //  A second master (the HPS program loader or the power-on memory test) can
 //  take the SDRAM over while the CPU is held in reset; dma_en switches the
@@ -67,6 +67,14 @@ module vax_core #(
 	wire        cpu_write, cpu_stb, cpu_ack;
 	wire        cpu_pmem;
 	wire  [1:0] cpu_size;
+	wire        cpu_wint, cpu_probe, cpu_con;
+	wire  [1:0] cpu_mode;
+	wire        mmu_flt, mmu_tnv, mmu_prog;
+	wire [31:0] mmu_va;
+	wire  [2:0] mmu_par;
+	wire        ipr_we;
+	wire  [6:0] ipr_adr;
+	wire [31:0] ipr_dat;
 
 	cpu cpu (
 		.clk        (clk),
@@ -82,6 +90,19 @@ module vax_core #(
 		.CPU_SIZE_O (cpu_size),
 		.CPU_PMEM_O (cpu_pmem),
 
+		.CPU_WINT_O (cpu_wint),
+		.CPU_PROBE_O(cpu_probe),
+		.CPU_MODE_O (cpu_mode),
+		.CPU_CON_O  (cpu_con),
+		.CPU_MMF_I  (mmu_flt),
+		.MMU_VA_I   (mmu_va),
+		.MMU_PAR_I  (mmu_par),
+		.MMU_TNV_I  (mmu_tnv),
+		.MMU_PROG_I (mmu_prog),
+		.IPR_WE_O   (ipr_we),
+		.IPR_ADR_O  (ipr_adr),
+		.IPR_DAT_O  (ipr_dat),
+
 		.tto_tx     (tto_tx),
 		.tti_rx     (tti_rx),
 		.cpu_halted (cpu_halted),
@@ -89,8 +110,8 @@ module vax_core #(
 	);
 
 	/* alignment unit: splits unaligned/partial accesses into longwords */
-	wire        bus_write, bus_stb, bus_ack;
-	wire [31:0] bus_addr, bus_wdata, bus_rdata;
+	wire        va_write, va_stb, va_ack;
+	wire [31:0] va_addr, va_wdata, va_rdata;
 
 	vcache vcache (
 		.clk        (clk),
@@ -106,11 +127,54 @@ module vax_core #(
 		.in_passthru(cpu_pmem),
 		.in_sz      (cpu_size),
 		.in_mcheck  (mcheck),
+		.in_flt     (mmu_flt),
+
+		.UT_STB_O   (va_stb),
+		.UT_ADR_O   (va_addr),
+		.UT_DAT_O   (va_wdata),
+		.UT_WE_O    (va_write),
+		.UT_DAT_I   (va_rdata),
+		.UT_ACK_I   (va_ack)
+	);
+
+	/* memory management: translation buffer, page table walks, faults */
+	wire        bus_write, bus_stb, bus_ack;
+	wire [31:0] bus_addr, bus_wdata, bus_rdata;
+
+	mmu mmu (
+		.clk        (clk),
+		.rst        (rst_cpu),
+
+		.IN_STB_I   (va_stb),
+		.IN_WE_I    (va_write),
+		.IN_ADR_I   (va_addr),
+		.IN_DAT_I   (va_wdata),
+		.IN_DAT_O   (va_rdata),
+		.IN_ACK_O   (va_ack),
+
+		.cpu_stb    (cpu_stb),
+		.in_pmem    (cpu_pmem),
+		.in_wint    (cpu_wint),
+		.in_probe   (cpu_probe),
+		.in_mode    (cpu_mode),
+		.in_con     (cpu_con),
+		.in_mcheck  (mcheck),
+
+		.ipr_we     (ipr_we),
+		.ipr_adr    (ipr_adr),
+		.ipr_dat    (ipr_dat),
+
+		.flt        (mmu_flt),
+		.flt_va     (mmu_va),
+		.flt_par    (mmu_par),
+		.flt_tnv    (mmu_tnv),
+		.progress   (mmu_prog),
+		.mapen_o    (),
 
 		.UT_STB_O   (bus_stb),
+		.UT_WE_O    (bus_write),
 		.UT_ADR_O   (bus_addr),
 		.UT_DAT_O   (bus_wdata),
-		.UT_WE_O    (bus_write),
 		.UT_DAT_I   (bus_rdata),
 		.UT_ACK_I   (bus_ack)
 	);

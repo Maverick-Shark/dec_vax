@@ -56,6 +56,7 @@
 `define ENDINST		19
 `define PREEXEC		20
 `define EXEC		21
+`define XFAULT		22	/* enter microcode for a fault, maybe restoring state */
 
 /* WREG return states */
 `define	WREG_HALT	0
@@ -89,6 +90,7 @@
 `define	HALT_INSN	1
 `define	HALT_MCHECK	2
 `define	HALT_STEP	3
+`define	HALT_ISNV	4	/* interrupt stack not valid (8600 halt code 4) */
 
 module cpu(
 	input clk,
@@ -104,6 +106,20 @@ module cpu(
 	output [1:0]	CPU_SIZE_O,
 
 	output		CPU_PMEM_O,
+
+	/* memory management (mmu.v) */
+	output		CPU_WINT_O,	/* write or modify intent */
+	output		CPU_PROBE_O,	/* PROBEx / TBCHK request */
+	output [1:0]	CPU_MODE_O,	/* access mode for protection */
+	output		CPU_CON_O,	/* console access while halted */
+	input		CPU_MMF_I,	/* access ended in a translation fault */
+	input [31:0]	MMU_VA_I,	/* fault virtual address */
+	input [2:0]	MMU_PAR_I,	/* fault parameter */
+	input		MMU_TNV_I,	/* fault is translation not valid */
+	input		MMU_PROG_I,	/* bus cycle acknowledged (bus timer) */
+	output		IPR_WE_O,	/* IPR write, for the MMU */
+	output [6:0]	IPR_ADR_O,
+	output [31:0]	IPR_DAT_O,
 
 `ifdef DBGCNT
 	input [7:0]	dcount,
@@ -172,19 +188,24 @@ module cpu(
 	reg [31:0]	cpu_addr, cpu_wdata;
 	reg		cpu_write, cpu_stb;
 	reg		cpu_pmem;
-	reg		mcheck, mapen;
+	reg		mcheck;
+	reg		cpu_wint, cpu_probe, cpu_xpush;
 	reg [1:0]	cpu_size;
 	wire		cpu_acki;
 	assign cpu_mcheck  = mcheck;
 	assign cpu_halted  = halted;
 	assign cpu_acki = CPU_ACK_I | mcheck;
 	assign CPU_STB_O = halted & ~(con_reg | con_ipr) ? CON_STB_I : cpu_stb;
-	assign CPU_ADR_O = halted ? CON_ADR_I :
-	    mapen ? cpu_addr : { 2'b0, cpu_addr[29:0] };
+	assign CPU_ADR_O = halted ? CON_ADR_I : cpu_addr;
 	assign CPU_DAT_O = halted ? CON_DAT_I : cpu_wdata;
 	assign CPU_WE_O  = halted ? CON_WE_I  : cpu_write;
 
 	assign CPU_PMEM_O = halted ? con_pmem : cpu_pmem;
+	assign CPU_WINT_O = halted ? CON_WE_I : (cpu_write | cpu_wint);
+	assign CPU_PROBE_O = halted ? 1'b0 : cpu_probe;
+	/* a probe carries its access mode in the low bits of the write data */
+	assign CPU_MODE_O = halted ? 2'd0 : cpu_probe ? cpu_wdata[1:0] : cur_mod;
+	assign CPU_CON_O = halted;
 	assign CPU_SIZE_O = halted ? `O_LONG : cpu_size;
 
 	/*
@@ -192,6 +213,8 @@ module cpu(
 	 */
 	(* ram_style = "DISTRIBUTED" *) (* ramstyle = "logic" *)
 	reg [31:0]	ipr_reg[63:0];
+	/* processor initialization: ASTLVL = 4, no AST pending (SRM 6.3) */
+	initial ipr_reg[6'h13] = 32'd4;		/* ASTLVL */
 
 	wire [6:0]	ipr_regaddr;
 	wire [31:0]	ipr_regwdata;
@@ -215,6 +238,10 @@ module cpu(
 
 	assign ipr_val_tmp = ipr_reg[ipr_regaddr[5:0]];
 
+	assign IPR_WE_O = ipr_write || state == `WRITEIPR;
+	assign IPR_ADR_O = ipr_regaddr;
+	assign IPR_DAT_O = ipr_regwdata;
+
 	always @*
 		case (ipr_regaddr)
 		`IPR_ICR: ipr_val = icr;
@@ -227,6 +254,8 @@ module cpu(
 		`IPR_RXDB: ipr_val = { 24'b0, rxdb };
 		`IPR_PAMACC: ipr_val = { 2'b0, pamloc, 15'b0, pamacc };
 		`IPR_PAMLOC: ipr_val = { 2'b0, pamloc, 20'b0 };
+		`IPR_MMVA: ipr_val = MMU_VA_I;
+		`IPR_MMPAR: ipr_val = { MMU_TNV_I, 28'b0, MMU_PAR_I };
 		default: ipr_val = ipr_val_tmp;
 		endcase
 
@@ -267,15 +296,16 @@ module cpu(
 	// synthesis attribute INIT of state is "0"
 
 /* verilator lint_off UNDRIVEN */
-	reg		psl_is;
+	reg		psl_is, psl_fpd;
 	reg [1:0]	cur_mod, prv_mod;
 	reg [4:0]	psl_ipl;
 	reg [7:0]	psw;
 initial psl_is = 1'b1;
+initial psl_fpd = 1'b0;
 initial psl_ipl = 5'h1f;
 	wire [31:0]	psl;
 	assign psl = 
-	    { 5'd0, psl_is, cur_mod, prv_mod, 1'b0, psl_ipl, 8'b0, psw };
+	    { 4'd0, psl_fpd, psl_is, cur_mod, prv_mod, 1'b0, psl_ipl, 8'b0, psw };
 
 /* verilator lint_on UNDRIVEN */
 
@@ -286,6 +316,17 @@ initial psl_ipl = 5'h1f;
 	reg [7:0]	cur_byte, cur_inst;
 
 	reg		writeback, writeback2;
+	reg		fpd_active;	/* microcode can save its state if a fault hits */
+	reg [10:0]	fpd_vec;	/* ... with the routine at this address */
+	reg		rifault;	/* the reserved operand fault is a reserved
+					   instruction fault (privileged instruction) */
+initial rifault = 1'b0;
+	always @(posedge clk)
+		if ((ipr_write || state == `WRITEIPR) && ipr_regaddr == `IPR_RIFLT)
+			rifault <= 1'b1;
+		else if (state == `XFAULT || state == `S_FETCH)
+			rifault <= 1'b0;
+initial fpd_active = 1'b0;
 	reg		arg_read_step1, arg_read_step2;
 	reg [31:0]	OA, IA, OP, OPu, OAu;
 	reg [31:0]	getbwl_OA, addto_OA, indir_OA;
@@ -348,7 +389,9 @@ initial psl_ipl = 5'h1f;
 		if (CPU_STB_O == 0) begin
 			mchk_cnt <= 0;
 			mcheck <= 0;
-		end else if (CPU_ACK_I == 0)
+		end else if (MMU_PROG_I || CPU_MMF_I)
+			mchk_cnt <= 0;	/* a bus cycle done, or a translation fault */
+		else if (CPU_ACK_I == 0)
 			mchk_cnt <= mchk_cnt + 1;
 		if (&mchk_cnt)
 			mcheck <= 1;
@@ -378,9 +421,29 @@ initial psl_ipl = 5'h1f;
 		default: greg_addr = cur_reg_num_save;
 		endcase
 
+	/*
+	 * Shadow copy of R0-R14, taken at the start of every instruction. A
+	 * fault restores it so that the instruction can be restarted: this
+	 * undoes the auto-increment/decrement of its operand specifiers and
+	 * whatever its microcode wrote before the fault (the 8600 keeps a
+	 * register log in its I-box for the same purpose). Instructions that
+	 * save their progress with PSL<FPD> set are not restored.
+	 */
+	reg [31:0]	gshadow[14:0];
+	reg		xrestore;
+	reg [10:0]	xentry;
+	integer		gi;
+	always @(posedge clk)
+		if (state == `S_FETCH)
+			for (gi = 0; gi < 15; gi = gi + 1)
+				gshadow[gi] <= general_reg[gi];
+
 	always @(posedge clk)
 		if (state == `S_WREG)
 			general_reg[greg_wregnum] <= greg_wbdata;
+		else if (state == `XFAULT && xrestore)
+			for (gi = 0; gi < 15; gi = gi + 1)
+				general_reg[gi] <= gshadow[gi];
 	wire [31:0] cur_reg_val;
 	assign cur_reg_val =
 	    (greg_addr == `REG_PC ? curpc : general_reg[greg_addr]);
@@ -403,11 +466,12 @@ initial psl_ipl = 5'h1f;
 	wire		s_nncond, s_ncond, s_wback2, s_goto, s_rmem, s_phys;
 	wire		s_resopflt, s_wipr, s_wmem, s_wreg, s_use8, s_use16;
 	wire [1:0]	s_size;
+	wire		s_wint, s_probe, s_xpush, i_fpdok;
 	wire [3:0]	s_dest;
-	wire [9:0]	i_stepoff;
+	wire [10:0]	i_stepoff;
 	wire [3:0]	s_op, s_left, s_right;
 	wire [15:0]	s_const, s_addr;
-	reg [9:0]	scounter, s_stepoff;
+	reg [10:0]	scounter, s_stepoff;
 	reg		s_enable;
 
 	assign i_enable = (state == `S_FETCH) && isvalid;
@@ -441,6 +505,7 @@ initial psl_ipl = 5'h1f;
 		.i_setv(i_setv),
 
 
+		.i_fpdok(i_fpdok),
 		.i_stepoff(i_stepoff),
 
 		.i_move2(i_move2),
@@ -475,6 +540,9 @@ initial psl_ipl = 5'h1f;
 		.s_resopflt(s_resopflt),
 		.s_phys(s_phys),
 		.s_size(s_size),
+		.s_wint(s_wint),
+		.s_probe(s_probe),
+		.s_xpush(s_xpush),
 
 		.s_const(s_const),
 		.s_addr(s_addr),
@@ -627,20 +695,26 @@ initial debug = 0;
 	always @* begin
 		case (state)
 		`S_DECODE: begin
-			s_stepoff = i_stepoff;
+			/* with PSL<FPD> set: resume entry, or reserved instruction */
+			s_stepoff = psl_fpd ? (i_fpdok ? i_stepoff + 11'd1 : 11'd6) :
+			    i_stepoff;
+			s_enable = 1;
+		end
+		`XFAULT: begin
+			s_stepoff = xentry;
 			s_enable = 1;
 		end
 		`ENDINST: begin
-			s_stepoff = { 6'b0, vecoff };
+			s_stepoff = { 7'b0, vecoff };
 			s_enable = anyfault | intrq;
 		end
 		`EXEC: begin
 			s_stepoff = (wr_cond_ok && s_goto) ?
-			    s_addr[9:0] : scounter;
+			    s_addr[10:0] : scounter;
 			s_enable = alu_ack;
 		end
 		default: begin
-			s_stepoff = 10'b0;
+			s_stepoff = 11'b0;
 			s_enable = 0;
 		end
 		endcase
@@ -770,6 +844,43 @@ initial debug = 0;
 		.tti_rx(tti_rx)
 	);
 
+	/*
+	 * A memory access ended in a translation fault (access-control
+	 * violation or translation not valid). Normally: restore the state
+	 * of the start of the instruction and dispatch through microcode
+	 * entry 4. While an exception frame is being pushed: on the kernel
+	 * stack this is a kernel-stack-not-valid abort (entry 5), on the
+	 * interrupt stack the processor halts (SRM 5.6, Initiate Exception,
+	 * notes 5 and 6). In an instruction that saves its progress with
+	 * PSL<FPD>, its save routine runs first.
+	 */
+	task mmfault;
+		begin
+			cpu_stb <= 0;
+			cpu_write <= 0;
+			cpu_pmem <= 0;
+			cpu_wint <= 0;
+			cpu_probe <= 0;
+			cpu_xpush <= 0;
+			if (cpu_xpush && psl_is) begin
+				state <= `S_HALT;
+				haltpos <= `HALT_ISNV;
+			end else begin
+				state <= `XFAULT;
+				if (cpu_xpush) begin
+					xentry <= 11'd5;
+					xrestore <= 0;
+				end else if (fpd_active) begin
+					xentry <= fpd_vec;
+					xrestore <= 0;
+				end else begin
+					xentry <= 11'd4;
+					xrestore <= 1;
+				end
+			end
+		end
+	endtask
+
 	always @(posedge clk) begin
 		if (rst)
 			state <= `S_HALT;
@@ -834,6 +945,8 @@ if (debug) $fdisplay(32'h80000002, "FETCH: pc %x curbyte %x inslword %x pc+1 %x\
 				curpc <= pc_plus_1;
 				state <= `S_DECODE;
 			end else begin
+				oldpc <= curpc;	/* for a fault on the opcode fetch */
+				oldpsl <= psl;
 				state <= `S_FILLUP;
 				fupstate <= `FUP_FETCH;
 			end
@@ -850,6 +963,20 @@ if (debug) $fdisplay(32'h80000002, "S_DECODE: i_hasargs %d i_emul %d pc %x\r", i
 			if (i_dohalt) begin
 				state <= `S_HALT;
 				haltpos <= `HALT_INSN;
+			end else if (psl_fpd) begin
+				/*
+				 * The instruction was stopped part way with its
+				 * state in R0-R5: no operand decode, go to its
+				 * resume entry (the step after its first one). Any
+				 * other instruction: reserved instruction fault.
+				 */
+				state <= `PREEXEC;
+				if (i_fpdok)
+					scounter <= i_stepoff + 11'd1;
+				else begin
+					scounter <= 11'd6;
+					doing_intr <= 1;
+				end
 			end else if (i_hasargs == 0)
 				state <= `S_HALT;
 			else
@@ -988,6 +1115,7 @@ if (debug)$fdisplay(32'h80000002, "ARG_READ2: arg_read_add %x indir_OA %x lit %d
 					state <= `S_READMEM;
 				cpu_addr <= arg_read_add;
 				cpu_size <= a_argsz;
+				cpu_wint <= arg_aW;	/* modify operand */
 				rmemstate <= `RMEM_ARG_READ;
 			end else begin
 				if (arg_read_step1 == 0)
@@ -1074,8 +1202,10 @@ if (debug) $fdisplay(32'h80000002, "PREEXEC: op %d sleft %d sright %d scounter %
 			4'b1100: alu_left <= rmem_dat;
 			4'b1101: alu_left <=
 			    { 11'b0, intlvl, tx_intreq, rx_intreq,
-			      10'b0, Ntmp, Ztmp, Vtmp, Ctmp };
+			      intrq, |cur_mod, 8'b0, Ntmp, Ztmp, Vtmp, Ctmp };
+			/* <13>: interrupt pending, <12>: not in kernel mode */
 			4'b1110: alu_left <= alu_upper_res;
+			4'b1111: alu_left <= oldpc;
 			default: alu_left <= 0;
 			endcase
 
@@ -1103,9 +1233,9 @@ if (debug & alu_ack) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d ste
 
 			case (s_dest)
 			0: ;
-			1: { psl_is, cur_mod, prv_mod, psl_ipl, 
+			1: { psl_fpd, psl_is, cur_mod, prv_mod, psl_ipl, 
 			     tx_intack, rx_intack, psw } <=
-			    { alu_res[26], alu_res[25:24], 
+			    { alu_res[27], alu_res[26], alu_res[25:24], 
 			      alu_res[23:22], alu_res[20:16],
 			      alu_res[15:14], alu_res[7:0] };
 			2: argd[0] <= alu_res;
@@ -1134,6 +1264,10 @@ if (debug & alu_ack) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d ste
 			11: begin
 				cpu_addr <= alu_res;
 				cpu_size <= s_size;
+			end
+			13: begin
+				fpd_vec <= alu_res[10:0];
+				fpd_active <= 1;
 			end
 			12: begin
 				ipr_wdata <= alu_res; 
@@ -1187,11 +1321,14 @@ if (debug & alu_ack) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d ste
 					state <= `S_WRITEMEM;
 					wmemstate <= `WMEM_PREEXEC;
 					cpu_pmem <= s_phys;
+					cpu_xpush <= s_xpush;
 				end else if (s_wipr) begin
 					state <= `WRITEIPR;
 				end else if (s_rmem) begin
 					state <= `S_READMEM;
 					cpu_pmem <= s_phys;
+					cpu_wint <= s_wint;
+					cpu_probe <= s_probe;
 					rmemstate <= `RMEM_PREEXEC;
 				end else if (s_eoi) begin
 					state <= `ENDINST;
@@ -1202,7 +1339,7 @@ if (debug & alu_ack) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d ste
 			end
 
 			if (wr_cond_ok && s_goto)
-				scounter <= s_addr[9:0];
+				scounter <= s_addr[10:0];
 			if (wr_cond_ok && s_resopflt)
 				resopflt <= 1;
 
@@ -1235,14 +1372,21 @@ if (debug) $fdisplay(32'h80000002, "ENDINST: pc %x argd[1] %x argpsz[1] %d arg2p
 //if (doing_intr)
 //$fdisplay(32'h80000002, "DOING INTR: i_setnz %d", i_setnz);
 
+			fpd_active <= 0;
 			if (resopflt|mcheck) begin
-				scounter <= { 6'b0, vecoff };
+				scounter <= { 7'b0, vecoff };
 //$fdisplay(32'h80000002, "ENDINST: sc %d anyfault %d s_enable %d s_stepoff %d\r", mcheck ? 1 : resopflt ? 2 : 0, anyfault, s_enable, s_stepoff);
 				state <= `PREEXEC;
 				resopflt <= 0;
 				writeback <= 0;
 				writeback2 <= 0;
 				doing_intr <= 1;
+				if (resopflt && !mcheck && !doing_intr) begin
+					/* a fault: PC and registers as at the start */
+					xentry <= rifault ? 11'd7 : 11'd2;
+					xrestore <= 1;
+					state <= `XFAULT;
+				end
 			end else if (anyfault) begin
 				haltpos <= 5;
 				state <= `S_HALT;
@@ -1301,10 +1445,12 @@ if (debug) $fdisplay(32'h80000002, "WB1: argd1 %x size %d addr %x\r", argd[1], a
 // $fdisplay(32'h80000002, "INTR: pc %x psl %x intlvl %x", oldpc, psl, intlvl);
 //$display("INTR: pc %x psl %x intlvl %x\r", oldpc, psl, intlvl);
 				doing_intr <= 1;
-				scounter <= { 6'b0, vecoff };
+				scounter <= { 7'b0, vecoff };
 				state <= `PREEXEC;
 			end
 			if (doing_intr == 0) begin
+				if (i_fpdok)	/* an instruction that can resume has completed */
+					psl_fpd <= 0;
 				if (i_setcmpnz) begin
 					psw[`PSL_N] <= argd[0][31] ^ Vtmp;
 					psw[`PSL_Z] <= Ztmp;
@@ -1378,12 +1524,23 @@ if (debug) $fdisplay(32'h80000002, "MCODE: ctr %d mc_rv %x\r", mcodectr, mc_rv);
 				state <= `S_HALT;
 				haltpos <= `HALT_MCHECK;
 			end
+			if (CPU_MMF_I)
+				mmfault;
 		end
 
 		`S_WREG: begin 
 // $fdisplay(32'h80000002, "S_WREG: regnum %x wbdata %x\r\n", greg_wregnum, greg_wbdata);
-			if (greg_wregnum == `REG_PC)
+			if (greg_wregnum == `REG_PC) begin
 				curpc <= greg_wbdata;
+				/*
+				 * REI and exception or interrupt dispatch (PC
+				 * written by microcode) start fetching afresh:
+				 * the instruction buffer may hold bytes of the old
+				 * instruction stream at the same address (SRM 7.2).
+				 */
+				if (wregstate == `WREG_PREEXEC || cur_inst == 8'h02)
+					ivalid <= 0;
+			end
 			case (wregstate)
 			`WREG_WRITEMEM: state <= `S_WRITEMEM;
 			`WREG_PREEXEC: state <= `PREEXEC;
@@ -1405,10 +1562,13 @@ if (debug) $fdisplay(32'h80000002, "MCODE: ctr %d mc_rv %x\r", mcodectr, mc_rv);
 			state <= `S_WRITEMEM2;
 		end
 
-		`S_WRITEMEM2: if (cpu_acki) begin
+		`S_WRITEMEM2: if (CPU_MMF_I && !cpu_acki) begin
+			mmfault;
+		end else if (cpu_acki) begin
 			cpu_write <= 0;
 			cpu_stb <= 0;
 			cpu_pmem <= 0;
+			cpu_xpush <= 0;
 //if (debug || cur_inst == 8'hed || cpu_addr == 32'h00000238 || cpu_addr == 32'h0000023c) $fdisplay(32'h80000002, "S_WRITEMEM2: addr %x dat %x pc %x size %d\r", cpu_addr, CPU_DAT_O, oldpc, cpu_size);
 			case (wmemstate)
 			`WMEM_MCODE: state <= `MCODE;
@@ -1429,12 +1589,16 @@ if (debug) $fdisplay(32'h80000002, "S_WRITEMEM2: mcheck %x", cpu_addr);
 			state <= `S_READMEM2;
 		end
 
-		`S_READMEM2: if (cpu_acki) begin
+		`S_READMEM2: if (CPU_MMF_I && !cpu_acki) begin
+			mmfault;
+		end else if (cpu_acki) begin
 if (debug) $fdisplay(32'h80000002, "S_READMEM2: addr %x dat %x pc %x size %d", cpu_addr, CPU_DAT_I, oldpc, cpu_size);
 //if (cpu_addr > 32'h00ffffff && cpu_addr[31:4] != 28'h20001f7) $display("S_READMEM2: addr %x pc %x", cpu_addr, curpc);
 			rmem_dat <= CPU_DAT_I;
 			cpu_stb <= 0;
 			cpu_pmem <= 0;
+			cpu_wint <= 0;
+			cpu_probe <= 0;
 			case (rmemstate)
 			`RMEM_ARG_INDIR: state <= `ARG_INDIR;
 			`RMEM_PREEXEC: state <= `PREEXEC;
@@ -1448,6 +1612,31 @@ if (debug) $fdisplay(32'h80000002, "S_READMEM2: addr %x dat %x pc %x size %d", c
 				state <= `ENDINST;
 //				state <= `S_HALT;
 //				haltpos <= `HALT_MCHECK;
+			end
+		end
+
+		/*
+		 * Enter microcode for a fault: memory management (entry 4),
+		 * reserved operand (2), kernel stack not valid (5), or the save
+		 * routine of an instruction that can stop with PSL<FPD> set.
+		 * xrestore: back to the start of the instruction first.
+		 */
+		`XFAULT: begin
+			scounter <= xentry;
+			state <= `PREEXEC;
+			doing_intr <= 1;
+			writeback <= 0;
+			writeback2 <= 0;
+			resopflt <= 0;
+			fpd_active <= 0;
+			arg_read_step1 <= 0;
+			arg_read_step2 <= 0;
+			OA_isreg <= 0;
+			IA <= 0;
+			if (xrestore) begin
+				curpc <= oldpc;
+				{ psl_fpd, psl_is, cur_mod, prv_mod, psl_ipl, psw } <=
+				    { oldpsl[27:22], oldpsl[20:16], oldpsl[7:0] };
 			end
 		end
 

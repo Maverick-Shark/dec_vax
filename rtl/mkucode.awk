@@ -248,6 +248,7 @@ BEGIN {
 	leftop["rmemdat"] = 12; # rightop["OPu"] = 10;
 	leftop["savpsw"] = 13; # rightop["OPu"] = 10;
 	leftop["ures"] = 14; # rightop["OPu"] = 10;
+	leftop["opc"] = 15;	# PC of the current instruction (oldpc)
 
 	# args to microcode instructions
 	stepargs["wipr"] = 12;	# write to IPR
@@ -270,6 +271,9 @@ BEGIN {
 	stepargs["use16"] = 33;	# Use 16-bit for alu
 	stepargs["phys"] = 34;	# Address physical memory
 	# 35-36 are size
+	stepargs["wint"] = 37;	# rmem with write (modify) intent
+	stepargs["probe"] = 38; # rmem only translates/checks (PROBEx; with phys: TBCHK)
+	stepargs["xpush"] = 39; # wmem pushes an exception/interrupt frame
 
 	# sizes
 	sizeres["byte"] = 0;
@@ -290,6 +294,7 @@ BEGIN {
 	alures["crn"] = 10;
 	alures["cpuaddr"] = 11;
 	alures["crw"] = 12;
+	alures["fpdv"] = 13;	# FPD save routine address, enables FPD faults
 
 	curargoff=0;
 	emuloff = 1;
@@ -329,14 +334,21 @@ BEGIN {
 			shiftoff++;
 			hval = "0000000000000000";
 # print " LOP " $shiftoff;
-			if (ishex($shiftoff)) {
+			# @label: the step address of label as the constant
+			if (substr($shiftoff,1,1) == "@") {
+				lop = leftops("const");
+				constref[stepoff] = substr($shiftoff,2);
+			} else if (ishex($shiftoff)) {
 				lop = leftops("const");
 				hval = hexcvt($shiftoff);
 			} else
 				lop = leftops($(shiftoff));
 			shiftoff++;
 # print " ROP " $shiftoff;
-			if (ishex($shiftoff)) {
+			if (substr($shiftoff,1,1) == "@") {
+				rop = rightops("const");
+				constref[stepoff] = substr($shiftoff,2);
+			} else if (ishex($shiftoff)) {
 				rop = rightops("const");
 				hval = hexcvt($shiftoff);
 # print " ROP2 hval " hval;
@@ -486,11 +498,11 @@ BEGIN {
 				lbl = substr($i,5);
 				if (lbl in steplbl) {
 #printf "lbl %s step %s insl1 %s\n", lbl, steplbl[lbl], inslist[insnr];
-					lbbits = num2bit(steplbl[lbl], 10);
+					lbbits = num2bit(steplbl[lbl], 11);
 #printf "1: %s %s %s\n", substr(inslist[insnr], 1, 64-56), num2bit(steplbl[lbl], 9), substr(inslist[insnr], 1, 64-46);
 					inslist[insnr] = \
-					    substr(inslist[insnr], 1, 64-57) \
-					    num2bit(steplbl[lbl], 10) \
+					    substr(inslist[insnr], 1, 64-58) \
+					    num2bit(steplbl[lbl], 11) \
 					    substr(inslist[insnr], 64-46);
 #printf "lbl2 %s step %s insl1 %s\n", lbl, steplbl[lbl], inslist[insnr];
 				} else
@@ -514,6 +526,13 @@ print "resolving " resolve[i] " pos " i " as " steplbl[resolve[i]];
 		s = ucstep[i];
 		ucstep[i] = substr(s,1,16) num2bit(steplbl[resolve[i]], 16) \
 		    substr(s,33);
+	}
+
+	for (i in constref) {
+		if (!(constref[i] in steplbl))
+			err(constref[i] " not defined");
+		s = ucstep[i];
+		ucstep[i] = num2bit(steplbl[constref[i]], 16) substr(s,17);
 	}
 
 	# print out instructions
@@ -545,7 +564,7 @@ print "resolving " resolve[i] " pos " i " as " steplbl[resolve[i]];
 	# print out microcode steps
 	FN="uc-step.hex";
 	system("rm -f " FN);
-	for (i = 0; i < 1024; i++) {
+	for (i = 0; i < 2048; i++) {
 		if (i in ucstep) {
 			print line2hex(i, ucstep[i], 72) >> FN;
 			numstep++;

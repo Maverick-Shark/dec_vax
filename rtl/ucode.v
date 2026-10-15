@@ -48,7 +48,8 @@
 `define	CLC		28
 `define	SETC		35
 `define	SETV		36
-/* 47-55 is step offset */
+`define	FPDOK		14	/* may resume with PSL<FPD> set (no operand decode) */
+/* 47-57 is step offset */
 
 `define	DOHALT		63
 
@@ -79,11 +80,13 @@ module ucode(
 	output			i_move2,
 	output			i_wback2,
 
-	output [9:0]		i_stepoff,
+	output			i_fpdok,
+
+	output [10:0]		i_stepoff,
 
 	/* Microcode step ROM */
 	input			s_enable,
-	input [9:0]		s_stepoff,
+	input [10:0]		s_stepoff,
 
 	output [3:0]		s_left,
 	output [3:0]		s_right,
@@ -110,6 +113,9 @@ module ucode(
 	output			s_resopflt,
 	output			s_phys,
 	output [1:0]		s_size,
+	output			s_wint,
+	output			s_probe,
+	output			s_xpush,
 
 	output [15:0]		s_const,
 	output [15:0]		s_addr,
@@ -133,7 +139,7 @@ parameter	I_ROM_ADDRS = 256;
 parameter	A_ROM_WIDTH = 64;
 parameter	A_ROM_ADDRS = 256;
 parameter	S_ROM_WIDTH = 72;
-parameter	S_ROM_ADDRS = 1024;
+parameter	S_ROM_ADDRS = 2048;
 
 	(* ramstyle = "M10K" *)
 	reg [I_ROM_WIDTH-1:0] ucinsn_rom [I_ROM_ADDRS-1:0];
@@ -198,6 +204,9 @@ parameter	S_ROM_ADDRS = 1024;
 	assign s_use16 = ucstep_data[33];
 	assign s_phys = ucstep_data[34];
 	assign s_size = ucstep_data[36:35];
+	assign s_wint = ucstep_data[37];	// read with write (modify) intent
+	assign s_probe = ucstep_data[38];	// translate/check only (PROBEx, TBCHK)
+	assign s_xpush = ucstep_data[39];	// exception/interrupt frame push
 	assign s_addr = ucstep_data[55:40];
 	assign s_const = ucstep_data[71:56];
 
@@ -219,7 +228,8 @@ parameter	S_ROM_ADDRS = 1024;
 	assign i_move2 = ucinsn_data[`MOVE2];
 	assign i_wback2 = ucinsn_data[`WBACK2];
 
-	assign i_stepoff = ucinsn_data[56:47];
+	assign i_fpdok = ucinsn_data[`FPDOK];
+	assign i_stepoff = ucinsn_data[57:47];
 
 	assign a_argcode = ucargs_data[2:0];
 	assign a_argsz = ucargs_data[4:3];

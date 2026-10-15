@@ -47,4 +47,8 @@ __pycache__/
 
 # keep the generated microcode ROM images (needed by Quartus)
 !rtl/uc-*.hex
+
+# DEC documents and diagnostics: not ours to publish
+docs/*.pdf
 software/evkaa.exe
+software/VAX_MINIMUM_DIAGS.dsk

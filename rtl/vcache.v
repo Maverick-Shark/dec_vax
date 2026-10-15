@@ -45,6 +45,7 @@
 `define	WRHIGH3		9
 `define	SETTLE		10
 `define	SETTLEWD	11
+`define	FLTWAIT		12
 
 module vcache(
 	input		clk,
@@ -63,6 +64,7 @@ module vcache(
 	input		in_passthru,
 
 	input		in_mcheck,
+	input		in_flt,		/* translation fault from the MMU: give up */
 
 //	output [1:0]	ut_sz,
 
@@ -153,6 +155,16 @@ module vcache(
 			state <= `IDLE;
 			in_ack <= 0;
 			ut_stb <= 0;
+		end else if (in_flt && state != `IDLE && state != `FLTWAIT) begin
+			/*
+			 * The MMU refused one of the longword cycles. Nothing has
+			 * been written yet: a partial or unaligned write reads (with
+			 * write intent) every longword before it writes any. Wait for
+			 * the CPU to drop its strobe.
+			 */
+			ut_stb <= 0;
+			in_ack <= 0;
+			state <= `FLTWAIT;
 		end else
 		case (state)
 		`IDLE: begin
@@ -269,6 +281,11 @@ module vcache(
 			in_rdata <= shifted_bytes;
 			in_ack <= 1;
 			state <= `SETTLE;
+		end
+		`FLTWAIT: begin
+			in_ack <= 0;
+			if (in_stb == 0 && UT_ACK_I == 0)
+				state <= `IDLE;
 		end
 		default: state <= `IDLE;
 		endcase

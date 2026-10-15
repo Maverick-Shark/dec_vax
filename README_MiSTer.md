@@ -7,8 +7,12 @@ MiSTer FPGA platform (Terasic DE10-Nano).
 console monitor, runs programs loaded from the OSD, and **passes EVKAA V8.0,
 DEC's own Hardcore Instruction Test**, in simulation of the full MiSTer core
 (and the first version of this port ran it on a DE10-Nano).
-OpenVMS cannot run yet: there is no MMU, no floating point and no disk
-controller. See *What is missing*.
+It now has **memory management** as the VAX 8600 does it - translation buffer,
+page tables, protection, restartable faults, PROBE, LDPCTX/SVPCTX - checked
+against simh's `vax8600` in simulation ([docs/MMU.md](docs/MMU.md)).
+OpenVMS cannot run yet: there is no floating point, no packed decimal and no
+disk controller. See *What is missing*, and [ROADMAP.md](ROADMAP.md) for the
+plan.
 
 ```
 == r-vax / MiSTer   cache 16 KB   clock 50 MHz
@@ -24,7 +28,8 @@ controller. See *What is missing*.
 | Block | File | Notes |
 |---|---|---|
 | VAX CPU | `rtl/cpu.v` + `rtl/*.v` (r-vax) | Microcoded base instruction set |
-| Microcode ROMs | `rtl/uc-*.hex`, `rtl/ucode.v` | 110 Kbit, forced into M10K block RAM |
+| Microcode ROMs | `rtl/uc-*.hex`, `rtl/ucode.v` | 176 Kbit, forced into M10K block RAM |
+| Memory management | `rtl/mmu.v` | 8600 translation buffer, page table walk, protection ([docs/MMU.md](docs/MMU.md)) |
 | Cache | `rtl/mister/vax_cache.v` | 16 KB, M10K block RAM |
 | Memory | `rtl/mister/vax_sdram.v` | 32 MB on the MiSTer SDRAM module |
 | Bus and I/O stubs | `rtl/mister/vax_core.v` | SBI, DW780 (TR3), RH780 (TR8) registers |
@@ -83,9 +88,9 @@ Wishbone). Everything hangs off it in a flat decode, and the slaves' read data
 is simply OR-ed together, which is r-vax's own convention and is kept here.
 
 ```
-cpu ── vcache ──┬── vax_cache ── vax_sdram ── 32 MB SDRAM      (0000 0000-01FF FFFF)
-   (aligner)    │
-                └── SBI / DW780 / RH780 register stubs          (2000 0000 and up)
+cpu ── vcache ── mmu ──┬── vax_cache ── vax_sdram ── 32 MB SDRAM   (0000 0000-01FF FFFF)
+     (aligner)         │
+                       └── SBI / DW780 / RH780 register stubs       (2000 0000 and up)
 ```
 
 * **`vcache.v`** despite its name is not a cache. It is the alignment unit: the
@@ -93,6 +98,11 @@ cpu ── vcache ──┬── vax_cache ── vax_sdram ── 32 MB SDRAM 
   unaligned CPU access into one or two aligned longword bus cycles, and does
   the read-modify-write for byte and word stores. Everything below it sees
   nothing but full longword transfers.
+
+* **`mmu.v`** translates virtual to physical addresses when `MAPEN` is set,
+  with the VAX 8600's translation buffer (512 entries), and refuses accesses
+  the page tables do not allow; the CPU then takes the fault and restarts the
+  instruction. With mapping off it is a wire. See [docs/MMU.md](docs/MMU.md).
 
 * **`vax_cache.v`** is the real cache, added by this port (see below).
 
@@ -114,8 +124,9 @@ cpu ── vcache ──┬── vax_cache ── vax_sdram ── 32 MB SDRAM 
 
 Both now live in Cyclone V M10K block RAM, as you asked.
 
-**Microcode.** The three ROMs in `ucode.v` are 256x64, 256x64 and 1024x72 bits,
-about 110 Kbit in total. `tools/patch_rvax.py` marks them `ramstyle = "M10K"`,
+**Microcode.** The three ROMs in `ucode.v` are 256x64, 256x64 and 2048x72 bits,
+about 176 Kbit in total (the step store was 1024 words in r-vax; memory
+management needed more). `tools/patch_rvax.py` marks them `ramstyle = "M10K"`,
 because left to itself Quartus may decide to build a ROM that size out of
 logic, which costs thousands of ALMs and ruins the timing. The CPU register
 file and the IPR file are deliberately kept *out* of block RAM (`ramstyle =
@@ -124,7 +135,8 @@ file and the IPR file are deliberately kept *out* of block RAM (`ramstyle =
 **Cache.** `vax_cache.v` is new. It sits between the aligner and the SDRAM:
 
 * 16 KB, direct mapped, 16-byte lines (four longwords), physically indexed and
-  tagged - with no MMU there is no aliasing to worry about.
+  tagged. It sits after the MMU and only ever sees physical addresses, so
+  there is no aliasing to worry about.
 * Write through, no write allocate, with a one-entry posted write buffer, so a
   write costs the CPU about two clocks instead of fourteen. A write that hits
   also updates the cached line, and a line fill is held back while the write
@@ -152,8 +164,8 @@ speed, not a memory problem. For scale, a real VAX-11/780 is 1 VUP, roughly
 0.5 MIPS, so the core already runs at about 2.4 times the machine it imitates.
 
 The cache size is the `CACHEIDX` macro in `files.qip` (10 = 1024 lines = 16 KB).
-The device has 553 M10K blocks and the whole core uses 37, so there is room to
-go much larger if a future MMU makes it worthwhile.
+The device has 553 M10K blocks and the whole core uses fewer than 50, so there
+is room to go much larger if it ever pays off.
 
 ## Memory: the SDRAM module
 
@@ -271,9 +283,13 @@ setup slack on `clk_sys` at 50 MHz (slow 85 C model).
 
 Do not edit anything under `sys/` - it is the unmodified MiSTer framework.
 
-Resource estimate from an independent synthesis (Yosys, Cyclone V target):
-about 6 500 LUTs, 3 270 registers, 37 M10K, 112 MLAB, 4 DSP. That is roughly
-10-15 % of the logic and 7 % of the block RAM on the DE10-Nano.
+Resource estimate from an independent synthesis (Yosys `synth_intel_alm`,
+Cyclone V, with the register files in logic as their `ramstyle` asks): about
+11 100 LUTs, 8 100 registers, 47 M10K and 4 DSP blocks, of which the memory
+management accounts for about 2 750 LUTs, 1 550 registers and 8 M10K (the
+same run before it gave 8 300 LUTs, 6 500 registers, 39 M10K). That is
+roughly 15-25 % of the logic and 9 % of the block RAM on the DE10-Nano; the
+Quartus fitter report is the number that counts.
 
 ### What `dec_vax.sdc` constrains
 
@@ -410,7 +426,7 @@ store it.
 | Command | Action |
 |---|---|
 | `nP` or `n/` | Open the physical memory longword at `n` |
-| `nV` | Open a virtual memory longword (identical - there is no MMU) |
+| `nV` | Open a virtual memory longword: with `MAPEN` set, translated through the current page tables in kernel mode (a page that does not translate reads as 0 and ignores a deposit); with `MAPEN` clear, the same as `P` |
 | `nR` | Open general register `n`. `ER` = SP (14), `FR` = PC (15) |
 | `nI` | Open internal processor register `n` |
 | `G` | Continue at the current PC |
@@ -427,6 +443,7 @@ reserved operand flag, the low byte is why the CPU stopped:
 | `00000001` | A `HALT` instruction - **or an opcode this CPU does not implement** |
 | `00000002` | Machine check: a bus access got no answer within 128 clocks |
 | `00000003` | Single step finished (after `S`) |
+| `00000004` | Interrupt stack not valid: a fault while pushing an exception frame onto the interrupt stack (the VAX 8600's own code for this) |
 | `00000005` | Fault while already handling a fault |
 | `00000007` | CPU reached an undefined state (a bug) |
 | `000001xx` | The same, plus a reserved operand fault |
@@ -527,9 +544,11 @@ suite uses to certify its VAX emulation. It ships with simh:
 
 The same directory holds `VAX_MINIMUM_DIAGS.dsk`, the disk image the Diagnostic
 Supervisor boots to run EVKAB (basic instructions), EVKAC (floating point),
-EVKAD (compatibility mode) and EVKAE (privileged architecture). Those need a
-disk controller and an MMU, so they are for a later milestone. These are DEC
-programs, distributed for use with simulators; they are not mine to relicense.
+EVKAD (compatibility mode) and EVKAE (privileged architecture, memory
+management among it). Those need a disk controller, so they are for a later
+milestone (see [docs/MMU.md](docs/MMU.md) for what EVKAE does on simh). These
+are DEC programs, distributed for use with simulators; they are not mine to
+relicense.
 
 To run EVKAA on the core:
 
@@ -538,7 +557,7 @@ To run EVKAA on the core:
    *Autostart* = Yes.
 3. *Load Program* -> `evkaa.exe`.
 4. The banner appears and it asks `Hit any key to continue`. Press Enter.
-5. After about six seconds it should print:
+5. Almost at once it prints:
 
 ```
 EVKAA V8.0 pass # 1(X) done!
@@ -549,10 +568,23 @@ looks for. EVKAA then keeps running further passes quietly. Anything else, or a
 return to the `>` prompt with a halt code, is a failure worth sending me
 together with `1ER` and `1CR`.
 
-**Ctrl+C** stops EVKAA's loop and asks `Input breakpoint:` - it echoes what you
-type there (a test number to stop at). To get back to the console monitor use
-the OSD *Reset*; memory is kept, so `FR200` + `G` restarts EVKAA without
-loading it again.
+**Ctrl+C** makes EVKAA print `Input breakpoint:` (it looks for the key between
+passes, so it can take a moment). That prompt is EVKAA's own breakpoint
+editor, not the console monitor:
+
+* **Enter** on its own resumes the test.
+* A hex address (capital letters) and Enter plants a breakpoint there - EVKAA
+  writes a `BPT` instruction into its own code - and asks again. `X` and an
+  address removes that breakpoint, `X` alone removes them all. r-vax does not
+  implement `BPT`, so when the program reaches one the CPU simply halts with
+  code `00000001`, and EVKAA has to be loaded again before the next run.
+
+Nothing in EVKAA returns to the console monitor: the monitor only takes over
+when the CPU halts, and the core has no equivalent of the Ctrl+P that gets a
+real VAX console's attention. To get back to `>`, use the OSD *Reset*. Memory
+is kept, so EVKAA can be restarted without loading it: type `FR` (the monitor
+shows the PC), then `200` and Enter, then `G`. *Load Program* also works
+straight away, without the reset.
 
 **If EVKAA prints `DS>` instead of its banner**, it found bit 31 set in the
 longword at `FE00h` and believes the VAX Diagnostic Supervisor loaded it. In
@@ -564,13 +596,56 @@ memory test's pattern at `FE00h` and always started EVKAA that way; the test
 now leaves zeros. If it ever happens again (another program left data there),
 run the memory test from the OSD, or deposit `FE00P` = `0`, and reload.
 
+## Testing the memory management on the core
+
+`software/mmutest.bin` runs the 19 programs of `tests/mmu` on the core itself
+and checks each one against the results simh `vax8600` gave for the same
+program, which are stored inside the file.
+
+1. OSD: *Load Address* = `0x00001000`, *Start Address* = *Load address*,
+   *Autostart* = Yes (the settings for `hello.bin`).
+2. *Load Program* -> `mmutest.bin`. About two seconds later the screen shows:
+
+```
+MMU test suite: the tests/mmu programs, checked against simh vax8600
+
+t00_harness....... PASS
+t01_xlate......... PASS
+   ...
+t18_rei........... PASS
+
+Passed: 18   Failed: 00
+All memory management tests passed.
+
+Last, t16_isnv: the CPU must halt here with code 00000004.
+t16_isnv.......... 00000004
+>
+```
+
+The last two lines are the point of `t16_isnv`: a fault while an exception
+frame is pushed onto the interrupt stack halts the processor, and the 8600's
+halt code for that is 4. A failing test prints `FAIL` and up to six lines
+such as `R05   is 00001234, expected 00001200`, or `[00018004] is ...` for a
+longword of memory; those lines are what to send me.
+
+Before each test the program puts the machine back in the state simh starts
+from - memory 0-47FFF cleared, mapping off, timer stopped, R0-R13 zero, PSL
+`041F0000` - copies the test to 1000 and runs it; the test ends by saving
+its registers and PSL and returning. The runner itself sits at 300000, out of
+the tests' way. After changing a test, `python3 tests/mmu/mkboard.py` rebuilds
+the file (it needs simh's `vax8600` to produce the expected values).
+
 ## What is missing
 
-- **Memory management.** `MAPEN` is ignored, there is no translation buffer and
-  no page tables, and no instruction restart after a translation fault. This is
-  the single biggest piece of work before VMS.
+The plan for all of this, in order, is in [ROADMAP.md](ROADMAP.md).
+
 - **Floating point** (F, D, G, H), packed decimal, and several string
   instructions. An unimplemented opcode halts the CPU with code 1.
+- **The rest of the privileged architecture**: CHME, CHMS and CHMU, trace,
+  BPT, arithmetic traps, the reserved instruction fault for unimplemented
+  opcodes, HALT as a privileged instruction, the 8600's own registers and
+  machine-check frame. Memory management, LDPCTX/SVPCTX, PROBE, REI's checks
+  and ASTs are in ([docs/MMU.md](docs/MMU.md)).
 - **Mass storage.** An MSCP/UDA50 or Massbus disk behind the MiSTer SD
   interface (`sd_lba`/`sd_rd`) is the next large step.
 - **Terminal.** No scrolling regions (`ESC [ t;b r`), no insert/delete line, no
@@ -585,6 +660,10 @@ run the memory test from the OSD, or deposit `FE00P` = `0`, and reload.
 make -C sim                      # full system: CPU + cache + SDRAM model + terminal
 make -C sim unit                 # terminal and keyboard only
 make -C sim nocache              # same, with the cache forced to always miss
+make -C sim cputb                # CPU, aligner, MMU and plain memory, for tests/mmu
+python3 tests/mmu/run.py         # memory management tests, compared with simh vax8600
+NOTEST=1 UNTIL="00000004" BUDGET=400000000 TTOLOG=mmu.txt \
+    sim/obj/Vtb_top software/mmutest.bin 0 ""         # the same tests on the full system
 
 sim/obj/Vtb_top software/hello.bin 0 "1000P~"        # load, autostart, then type
 NOAUTO=1 SESSION="2000P~|2000PDEADBEEF~|2000P~" sim/obj/Vtb_top software/hello.bin 0 ""
@@ -606,6 +685,7 @@ leftover contents. In key strings `~` is Enter, `^C` is Ctrl+C and `{` is the
 cursor-up key; in `SESSION`, `@text` waits for text to appear, `!R` is an OSD
 reset and `!Wn` waits n clocks. `PRELOAD=file@hexaddr` puts a file into memory
 after the memory test, as if an earlier program had left it there.
+`TTOLOG=file` writes everything the CPU sent to the console line into a file.
 
 `tb.cpp` plays the part of `hps_io`: it downloads through the ioctl port, sends
 PS/2 events, decodes both the internal console line and the MiSTer UART, counts
@@ -621,7 +701,8 @@ them.
 
 ## Regenerating generated files
 
-- Microcode ROMs: in `rtl/`, `rm -f uc-*.hex && awk -f mkucode.awk`.
+- Microcode ROMs: in `rtl/`, `rm -f uc-*.hex && awk -f mkucode.awk` (the
+  source is `rtl/ucode.def`).
 - Font ROM: `python3 tools/mkfont.py spleen-8x16.bdf rtl/mister/vt_font.v`.
 - Self-test text: `python3 tools/mkmsg.py rtl/mister/vax_msg.v`.
 - r-vax source fixes: `python3 tools/patch_rvax.py` (idempotent) - four
@@ -636,6 +717,12 @@ them.
 - MiSTer framework (`sys/`) and `dec_vax.sv`: from Template_MiSTer, GPL v2 or later.
 - Terminal font: Spleen 8x16 (c) Frederic Cambus, BSD 2-Clause
   (`rtl/mister/LICENSE.spleen`).
-- MiSTer glue (`rtl/mister/`, `tools/`, `sim/`, `software/`): BSD 2-Clause.
-- `software/evkaa.exe`, if you copy it here, is a DEC diagnostic obtained from
-  the simh distribution; it is not covered by this repository's license.
+- MiSTer glue and the memory management (`rtl/mister/`, `rtl/mmu.v`, the
+  port's changes to r-vax, `tools/`, `sim/`, `software/`, `tests/`, `docs/MMU.md`):
+  BSD 2-Clause.
+- The DEC manuals the design follows (listed in [docs/MMU.md](docs/MMU.md))
+  are DEC's documents, not covered by this license; `.gitignore` keeps the
+  PDFs in `docs/` out of the repository.
+- `software/evkaa.exe` and `software/VAX_MINIMUM_DIAGS.dsk`, if you copy them
+  here, are DEC diagnostics obtained from the simh distribution; they are not
+  covered by this repository's license, and `.gitignore` keeps them out of it.

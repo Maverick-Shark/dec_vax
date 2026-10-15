@@ -49,6 +49,8 @@
 #
 04	RET
 05	RSB
+06	LDPCTX
+07	SVPCTX
 #
 0C	PROBER
 0D	PROBEW
@@ -236,6 +238,10 @@ FF	RESIN
 	plus 0 0	goto mcheck	# entry 1
 	plus 0 0	goto resop	# entry 2
 	plus 0 0	goto intrq	# entry 3
+	plus 0 0	goto mmflt	# entry 4: memory management fault
+	plus 0 0	goto ksnv	# entry 5: kernel stack not valid
+	plus 0 0	goto resinflt	# entry 6: PSL<FPD> set, instruction can't resume
+	plus 0 0	goto resinflt2	# entry 7: privileged instruction (PC at the opcode)
 #
 # Interrupt.  Interrupt level tells which vector to use, is in savpsw.
 #
@@ -275,88 +281,166 @@ intrq_14_2:
 	plus 0 0	resopflt eoi
 
 #
-# Machine check.  Frame has pc+psl+argcnt, argcnt is 0.
-# Ignore stack change for now.
+# Machine check (SCB 04, the vector must have bit 0 set).
+# Frame: the VAX 8600 one, 0x58 bytes of 0 and a byte count.
 #
 mcheck:
-	and 1F 1F	argd0		# psl set to 1F
+	and 20 20	argd0		# an exception
 	and 4 4		argd1		# vector 04
 	and 1 1		argp1 goto scb_common	# return here
 mcheck_1:
-# Write some sort of VAX8600 mcheck frame (0x58 bytes of 0 + one long count)
 	and E E		crn		# fetch stack pointer
 	plus crv 0	arg2		# sp in arg2
 	and 16 16	arg1		# 0x16 longs on stack
 mcheck_2:
 	minus arg2 4 	arg2		# next stack position
 	plus arg2 0	cpuaddr		# prepare for write
-	and 0 0		crw wmem	# write 0
+	and 0 0		crw wmem xpush	# write 0
 	minus arg1 1	arg1 nzcond goto mcheck_2 # count to 22
 
 	minus arg2 4	cpuaddr		# last word onstack
-	and 58 58	crw wmem	# write 0x58
+	and 58 58	crw wmem xpush	# write 0x58
 	and E E		crn		# stack pointer
 	minus arg2 4	crw wreg	# write back
-# ...may save data here...
 	plus 0 0	eoi		# Done!
-	
-# Reserved operand
+
+#
+# Reserved operand (SCB 18). The hardware has already backed the PC up to
+# the opcode and restored the registers and the PSL.
 resop:
 	and 0 0		argp1		# end in scb_common
-	shr psl 10	argd0		# 19 no change to PSL
-	and 18 18	argd1 goto scb_common # 20
+	and 20 20	argd0		# an exception
+	and 18 18	argd1 goto scb_common
 #
-# Reserved instruction, handled entirely in microcode.
-# No parameters are pushed.
+# Reserved instruction (SCB 10), handled entirely in microcode.
+# No parameters are pushed. The PC points after the opcode: back it up.
 resinflt:
 	and 0 0		argp1		# end in scb_common
-	shr psl 10	argd0		# 21 no change to PSL
-	and F F		crn		# 22 set PC
-	minus crv 1	crw wreg	# 23 sub one from PC
-	and 10 10	argd1 goto scb_common	# 24 vector 10
+	and 20 20	argd0		# an exception
+	and F F		crn		# set PC
+	minus crv 1	crw wreg	# sub one from PC
+	and 10 10	argd1 goto scb_common	# vector 10
+resinflt2:
+	and 0 0		argp1
+	and 20 20	argd0
+	and 10 10	argd1 goto scb_common
 #
-# Vector in argd1
-# upper word in IPL in argd0.
-# arg4 (and argd1) are scratched.
+# Memory management fault (SRM 4.9): access-control violation (SCB 20) or
+# translation not valid (SCB 24). The hardware has already put the PC, the
+# registers and the PSL back as they were at the start of the instruction
+# (unless the instruction saved its progress with PSL<FPD>). The MMU keeps
+# the virtual address and the fault parameter in internal registers 70/71.
+# Frame: parameter, virtual address, PC, PSL.
+#
+mmflt:
+	and 71 71	crn
+	plus civ 0	ncond goto mmflt_tnv	# MMPAR<31>: translation not valid
+	and 20 20	argd1 goto mmflt_2	# access-control violation
+mmflt_tnv:
+	and 24 24	argd1
+mmflt_2:
+	and 20 20	argd0		# an exception
+	and 3 3		argp1 goto scb_common	# push the parameters, mmflt_1
+mmflt_1:
+	and 70 70	crn
+	plus civ 0	arg1		# virtual address
+	and 71 71	crn
+	and civ 7	arg2		# fault parameter
+	and E E		crn
+	minus crv 4	cpuaddr
+	plus arg1 0	crw wmem xpush	# -(SP) <- virtual address
+	minus crv 8	cpuaddr
+	plus arg2 0	crw wmem xpush	# -(SP) <- parameter
+	minus crv 8	crw wreg
+	plus 0 0	eoi
+#
+# Kernel stack not valid (SCB 08): a push on the kernel stack failed while
+# an exception or interrupt was being initiated. The PSL is already the new
+# one (kernel mode), arg1 still holds the PSL that was being saved and the PC
+# has not changed yet. Start again on the interrupt stack (IPL 1F) with
+# those two; any parameters of the original event are lost (SRM 5.6, Initiate
+# Exception or Interrupt, note 5).
+#
+ksnv:
+	and 8 8		argd1
+	and 60 60	argd0		# severe: interrupt stack, IPL 1F
+	and 0 0		argp1 goto scb_common2
+#
+# Initiate an exception or interrupt (SRM 5.6, "Initiate Exception or
+# Interrupt"):
+#	argd1	SCB offset
+#	argd0	0-1F: interrupt, new IPL
+#		20: exception (fault, trap, abort)
+#		60: severe exception (KSNV): interrupt stack, IPL 1F
+#	argp1	pushed after PSL and PC: 0 nothing, 1 machine check frame,
+#		2 CHMx code (in argp0), 3 memory management parameters
+# The new PSL is loaded before the frame is pushed, so the pushes are made
+# in kernel mode; they are flagged so that a fault on them becomes a
+# kernel-stack-not-valid abort (or halts the CPU on the interrupt stack).
+# Uses arg1 (saved PSL), arg2 (new PSL<31:16>), arg3 (vector), arg4.
 #
 scb_common:
-# begin with saving old SP in IPR.
-	and E E		crn		# 48 SP
-	plus crv 0	crw		# 49 save to write in IPR
-	shr psl 18	arg4		# 50 Fetch IS+CURMOD from PSL
-	and arg4 7	crn wipr	# 51 write old stack to IPR
-# set new stack
-# unless vector bit0==0 and psl.is==0 it will be on the interrupt stack.
-	and 11 11	crn		# 52
-	plus civ argd1	cpuaddr rmem phys # 53 fetch vector
-	shr psl 1A	arg4		# 54 get IS bit in pos0
-	bis rmemdat arg4 arg4		# 55 merge with stack bit in vector
-	plus arg4 0	argd1		# 56 remember new PC address
-	and arg4 1	arg4		# 57
-	and arg4 1	crn zcond goto scb_1 # 58 KSP
-	and 4 4		crn		# 59 nope, ISP
-scb_1:
-# save old PC+PSL.  new SP in civ
-	bis arg4 argd1	argd1		# 60 save IS flag as low bit.
-	plus civ 0	arg4		# 61
-	minus arg4 4	cpuaddr		# 62 prepare to push
-	plus psl 0	crw wmem	# 63 push PSL
-	minus arg4 8	cpuaddr		# 64 sub 4 more
-	and F F		crn		# 65 fetch PC
-	plus crv 0	crw wmem	# 66 push PC
-	and E E		crn		# 67
-	minus arg4 8	crw wreg	# 68 write back stack
-# update new PC.
-	and F F		crn		# 69
-	bic 3 argd1	crw wreg	# 70 write new PC
-# update PSL.
-	and argd1 1	arg4		# 71 get stack bit
-	shl arg4 A	arg4		# 72
-	bis arg4 argd0	arg4		# 73
-	shl arg4 10	psl		# 74
-	minus argp1 1	zcond goto mcheck_1 #
-	minus argp1 2	zcond goto chmk_1 #
-	plus 0 0	eoi		# 75
+	plus psl 0	arg1		# saved PSL
+scb_common2:
+	and 11 11	crn		# SCBB
+	plus civ argd1	cpuaddr rmem phys	# fetch the vector
+	plus rmemdat 0	arg3
+# new PSL<31:16> in arg2.  IS = old IS, or vector<0>, or severe.
+	shr arg1 10	arg2
+	and arg2 400	arg2
+	and arg3 1	arg4
+	shl arg4 A	arg4
+	bis arg4 arg2	arg2
+	and argd0 40	zcond goto scb_2
+	bis 400 arg2	arg2
+scb_2:
+	and argd0 60	zcond goto scb_int
+# exception: CUR = kernel, PRV = old CUR, IPL = 1F onto the interrupt stack
+# by vector<0> (or severe), else unchanged
+	shr arg1 12	arg4		# PSL<25:24> -> <7:6> of the upper word
+	and arg4 C0	arg4
+	bis arg4 arg2	arg2
+	and argd0 40	nzcond goto scb_ipl1f
+	and arg3 1	nzcond goto scb_ipl1f
+	shr arg1 10	arg4
+	and arg4 1F	arg4		# old IPL
+	bis arg4 arg2	arg2 goto scb_sp
+scb_ipl1f:
+	bis 1F arg2	arg2 goto scb_sp
+# interrupt: CUR = PRV = kernel, IPL = the new one
+scb_int:
+	and argd0 1F	arg4
+	bis arg4 arg2	arg2
+# unless on the interrupt stack: save SP, load the kernel or interrupt SP
+scb_sp:
+	shl psl 5	ncond goto scb_psl	# PSL<IS>
+	and E E		crn
+	plus crv 0	crw
+	shr psl 18	arg4
+	and arg4 3	crn wipr	# IPR[PSL<CUR>] <- SP
+	and 0 0		crn		# KSP
+	and arg2 400	zcond goto scb_ldsp
+	and 4 4		crn		# ISP
+scb_ldsp:
+	plus civ 0	arg4
+	and E E		crn
+	plus arg4 0	crw wreg	# SP <- new stack pointer
+scb_psl:
+	shl arg2 10	psl		# the new PSL
+	and E E		crn
+	minus crv 4	cpuaddr
+	plus arg1 0	crw wmem xpush	# -(SP) <- saved PSL
+	minus crv 8	cpuaddr
+	and F F		crn
+	plus crv 0	crw wmem xpush	# -(SP) <- PC
+	and E E		crn
+	minus crv 8	crw wreg
+	and F F		crn
+	bic 3 arg3	crw wreg	# PC <- vector<31:2>
+	minus argp1 1	zcond goto mcheck_1
+	minus argp1 2	zcond goto chmk_1
+	minus argp1 3	zcond goto mmflt_1
+	plus 0 0	eoi
 
 #
 mov:	plus arg1 0		argd0 savnz eoi
@@ -394,9 +478,17 @@ sbwc:	minus arg2 arg1	argd0 savc savv	# save C and V
 
 #
 # mtpr arg1=val,arg2=ipr
+#
+# Register numbers above 7F do not exist (reserved operand). The memory
+# management registers are checked the way the 8600 does it (the 780's
+# patched microcode: simh vax860_defs.h) and stored masked; mmu.v keeps its
+# own copy of them by watching the IPR write.
 mtpr:
+	and savpsw 1000	nzcond goto priv_flt	# kernel mode only
 	plus arg1 0	savnz			# NZ flags
 	bic 2 psl	psl			# clear V
+	minus 7F arg2	savc			# register number above 7F?
+	and savpsw 1	nzcond goto mtpr_resop	# no such register
 	and arg2 arg2	nzcond goto mtpr_1	# KSP?
 	shr psl 1A	arg3			# IS set?
 	and arg3 1	nzcond goto mtpr_ok	# if so, fine
@@ -415,15 +507,15 @@ mtpr_3:
 	plus arg3 E	argp0 wback
 	and arg1 arg1	argd0 goto mtpr_ok
 mtpr_2:
-	minus arg2 8	zcond goto mtpr_ok	# P0BR
-	minus arg2 9	zcond goto mtpr_ok	# P0LR
-	minus arg2 A	zcond goto mtpr_ok	# P1BR
-	minus arg2 B	zcond goto mtpr_ok	# P1LR
-	minus arg2 C	zcond goto mtpr_ok	# SBR
-	minus arg2 D	zcond goto mtpr_ok	# SLR
-	minus arg2 10	zcond goto mtpr_ok	# PCBB
-	minus arg2 11	zcond goto mtpr_ok	# SCBB
-	minus arg2 13	zcond goto mtpr_ok	# ASTLVL
+	minus arg2 8	zcond goto mtpr_p0br	# P0BR
+	minus arg2 9	zcond goto mtpr_lr	# P0LR
+	minus arg2 A	zcond goto mtpr_p1br	# P1BR
+	minus arg2 B	zcond goto mtpr_lr	# P1LR
+	minus arg2 C	zcond goto mtpr_pa	# SBR
+	minus arg2 D	zcond goto mtpr_lr	# SLR
+	minus arg2 10	zcond goto mtpr_pa	# PCBB
+	minus arg2 11	zcond goto mtpr_pa	# SCBB
+	minus arg2 13	zcond goto mtpr_ast	# ASTLVL
 
 	minus arg2 18	zcond goto mtpr_ok	# ICCS
 	minus arg2 19	zcond goto mtpr_ok	# NICR
@@ -437,11 +529,11 @@ mtpr_2:
 	minus arg2 42	zcond goto mtpr_ok	# 8600 CSWP
 	minus arg2 4A	zcond goto mtpr_ok	# 8600 EHSR
 
-	minus arg2 38	nzcond goto mtpr_38	# MAPEN
-	and arg1 arg1	zcond goto mtpr_ok	# turn off -> OK
-	plus 0 0	resopflt eoi
+	minus arg2 38	zcond goto mtpr_mapen	# MAPEN
+	minus arg2 39	zcond goto mtpr_ok	# TBIA
+	minus arg2 3A	zcond goto mtpr_ok	# TBIS
+	minus arg2 3F	zcond goto mtpr_tbchk	# TBCHK
 
-mtpr_38:
 	minus arg2 12	nzcond goto mtpr_12	# skip if not IPRIPL
 	and 1F 1F	arg4
 	and arg4 arg1	arg1
@@ -451,17 +543,59 @@ mtpr_38:
 	bis arg3 psl	psl goto mtpr_ok
 
 mtpr_12:
-	minus arg2 14	nzcond goto mtpr_14	# SIRR
+	minus arg2 14	nzcond goto mtpr_resop	# SIRR
 	and 15 15	crn			# fetch SISR
 	and arg1 F	arg1			# only soft bits
 	shl 1 arg1	arg1			# make mask
 	bis civ arg1	crw wipr		# write back SISR
 	plus 0 0	eoi
-	
 
-mtpr_14:
+mtpr_resop:
 	plus 0 0	resopflt eoi
 
+# P0BR: must be an S0 address (bit 31 set, bit 30 clear), longword aligned
+mtpr_p0br:
+	plus arg1 0	arg3
+mtpr_brtest:
+	plus arg3 0	nncond goto mtpr_resop
+	shl arg3 1	ncond goto mtpr_resop
+	and arg3 3	nzcond goto mtpr_resop
+	plus 0 0	goto mtpr_ok
+# P1BR: the same test, on P1BR + 2**23 (the PTE address of P1 page 0 of a
+# full-size P1 region is 2**23 below the base it would have)
+mtpr_p1br:
+	and 80 80	arg4
+	shl arg4 10	arg4
+	plus arg1 arg4	arg3 goto mtpr_brtest
+# P0LR, P1LR, SLR: 22 bits are kept, a length above 2**21 is reserved
+mtpr_lr:
+	and 3F 3F	arg4
+	shl arg4 10	arg4
+	bis arg4 FFFF	arg4
+	and arg1 arg4	arg1			# value<21:0>
+	and 20 20	arg4
+	shl arg4 10	arg4			# 2**21
+	minus arg4 arg1	ncond goto mtpr_resop
+	plus 0 0	goto mtpr_ok
+# SBR, PCBB, SCBB: physical longword address
+mtpr_pa:
+	and arg1 3	nzcond goto mtpr_resop
+	plus 0 0	goto mtpr_ok
+# ASTLVL: 0-4
+mtpr_ast:
+	and arg1 7	arg1
+	minus 4 arg1	ncond goto mtpr_resop
+	plus 0 0	goto mtpr_ok
+# MAPEN: only bit 0
+mtpr_mapen:
+	and arg1 1	arg1 goto mtpr_ok
+# TBCHK: V set if the TB holds a translation for the page
+mtpr_tbchk:
+	plus arg1 0	cpuaddr rmem probe phys
+	and rmemdat 1	zcond goto mtpr_end
+	bis 2 psl	psl
+mtpr_end:
+	plus 0 0	eoi
 
 # OK to write to IPR
 mtpr_ok:
@@ -471,6 +605,9 @@ mtpr_ok:
 
 # mfpr arg1=ipr,arg2=dest
 mfpr:
+	and savpsw 1000	nzcond goto priv_flt	# kernel mode only
+	minus 7F arg1	savc			# register number above 7F?
+	and savpsw 1	nzcond goto mfpr_12	# no such register
 	plus arg1 0	crn nzcond goto mfpr_0	# KSP?
 	shl psl 5	ncond goto mfpr_ok	# On ISP just end
 	and E E		crn
@@ -485,11 +622,16 @@ mfpr_1:
 	minus arg1 1	zcond goto mfpr_ok	# SSP
 	minus arg1 2	zcond goto mfpr_ok	# ESP
 	minus arg1 3	zcond goto mfpr_ok	# USP
+	minus arg1 4	zcond goto mfpr_isp	# ISP
 	minus arg1 8	zcond goto mfpr_ok	# P0BR
 	minus arg1 9	zcond goto mfpr_ok	# P0LR
 	minus arg1 A	zcond goto mfpr_ok	# P1BR
 	minus arg1 B	zcond goto mfpr_ok	# P1LR
 	minus arg1 C	zcond goto mfpr_ok	# SBR
+	minus arg1 D	zcond goto mfpr_ok	# SLR
+	minus arg1 10	zcond goto mfpr_ok	# PCBB
+	minus arg1 11	zcond goto mfpr_ok	# SCBB
+	minus arg1 13	zcond goto mfpr_ok	# ASTLVL
 	minus arg1 15	zcond goto mfpr_ok	# SISR
 	minus arg1 18	zcond goto mfpr_ok	# ICCS
 	minus arg1 1A	zcond goto mfpr_ok	# ICR
@@ -498,6 +640,7 @@ mfpr_1:
 	minus arg1 21	zcond goto mfpr_ok	# RXDB
 	minus arg1 22	zcond goto mfpr_ok	# TXCS
 	minus arg1 25	zcond goto mfpr_ok	# CADR
+	minus arg1 38	zcond goto mfpr_ok	# MAPEN
 	minus arg1 40	zcond goto mfpr_ok	# 8600 PAMACC
 	minus arg1 42	zcond goto mfpr_ok	# 8600 CSWP
 
@@ -506,6 +649,11 @@ mfpr_1:
 	shr psl 10	argd0
 	and argd0 1F	argd0 savnz eoi
 
+# ISP: the SP register while on the interrupt stack
+mfpr_isp:
+	shl psl 5	nncond goto mfpr_ok
+	and E E		crn
+	plus crv 0	argd0 eoi savnz
 
 mfpr_12:
 	plus 0 0	resopflt eoi
@@ -1062,157 +1210,235 @@ mcom:
 	minus 0 arg2	arg2
 	xor arg2 arg1	argd0 savnz eoi
 #
-# REI pc=arg1, psl=arg2
+# REI pc=arg1, psl=arg2 (SRM 5.7)
 rei:
-	# validity checks
-	# if (arg2.is == 1 && arg2.ipl == 0) resopflt();
-	# if (arg2.ipl > 0 && arg2.cur_mod != 0) resopflt();
-	# if (arg2.prv_mod < arg2.cur_mod) resopflt();
-	# if (arg2 & IPL_MBZ) resopflt();
-	# if (arg2.cm) resopflt();
-	# if (arg2.cur_mod < psl.cur_mod) resopflt();
-	# if (arg2.is == 1 && psl.is == 0) resopflt();
-	# if (arg2.ipl > psl.ipl) resopflt();
+# the popped PSL must be consistent and no more privileged than the current
+# one, else reserved operand fault (the hardware undoes the pops):
+	shr arg2 10	arg3			# new PSL<31:16>
+	and arg2 FF00	nzcond goto rei_bad	# MBZ <15:8>
+	and arg3 B020	nzcond goto rei_bad	# CM (not implemented), MBZ <29:28>, <21>
+	and arg3 1F	argd1			# new IPL
+	shr arg3 8	arg4
+	and arg4 3	arg4			# new CUR_MOD
+	and arg3 400	zcond goto rei_c2
+	and argd1 argd1	zcond goto rei_bad	# IS with IPL 0
+rei_c2:
+	and argd1 argd1	zcond goto rei_c3
+	and arg4 arg4	nzcond goto rei_bad	# IPL > 0 outside kernel mode
+rei_c3:
+	shr arg3 6	argd0
+	and argd0 3	argd0			# new PRV_MOD
+	minus argd0 arg4	ncond goto rei_bad	# PRV_MOD < CUR_MOD
+	shr psl 18	argd0
+	and argd0 3	argd0			# current CUR_MOD
+	minus arg4 argd0	ncond goto rei_bad	# to a more privileged mode
+	and arg3 400	zcond goto rei_c7
+	shl psl 5	nncond goto rei_bad	# onto the interrupt stack
+rei_c7:
+	shr psl 10	argd0
+	and argd0 1F	argd0
+	minus argd0 argd1	ncond goto rei_bad	# to a higher IPL
 
 	# save old SP
-	and E E		crn		# 480
-	plus crv 0	crw		# 481
-	shr psl 18	arg4		# 482
-	and arg4 7	crn wipr	# 483
+	and E E		crn
+	plus crv 0	crw
+	shr psl 18	arg3
+	and arg3 7	crn wipr		# IPR[IS'CUR_MOD] <- SP
 
 	# Write PC+PSL
 	plus arg2 0	psl
 	plus arg1 0	argd0
 
-	# stack change
+	# stack change, and AST delivery check
 	shl psl 5	ncond goto rei_2 # can only change stack if !IS
-	shr psl 18	arg4
 	and arg4 3	crn
 	plus civ 0	crw
-	and E E		crn wreg
+	and E E		crn wreg		# SP <- IPR[CUR_MOD]
+	and 13 13	crn
+	plus civ 0	argd1			# ASTLVL
+	minus arg4 argd1	ncond goto rei_2	# CUR_MOD < ASTLVL: no AST
+	and 15 15	crn
+	bis civ 4	crw wipr		# request the IPL 2 interrupt
 rei_2:
 	plus 0 0	eoi
+rei_bad:
+	plus 0 0	resopflt eoi
 #
-# code from the vax arch manual
-# XXX merge with movc5
+# MOVC3 len.rw, srcaddr.ab, dstaddr.ab               (arg1, arg2, arg3)
+# MOVC5 srclen.rw, srcaddr.ab, fill.rb, dstlen.rw, dstaddr.ab
+#                                          (arg1, arg2, argd0, arg3, arg4)
+# One engine for both: MOVC3 is MOVC5 with dstlen = srclen and no fill.
+#
+# Registers while the move runs:
+#	arg1 srclen left (S), arg2 source (A1), arg3 dstlen left (D),
+#	arg4 destination (A2), argp0 fill, argp1 direction (1 = backward),
+#	argd0 MIN(srclen, dstlen) and argd1 dstlen (backward only).
+# A memory management fault or an interrupt in the middle saves them in
+# R0-R5 and sets PSL<FPD> (SRM 5.3: the general registers then hold an
+# implementation-specific state); the PC stays at the opcode. When the
+# instruction is fetched again with PSL<FPD> set, the CPU skips the operand
+# decode and starts at the step after the entry, movcN_fpd:
+#	R0 = dstlen<31:16>'srclen<15:0>    R1 = source
+#	R2 = direction<8>'fill<7:0>        R3 = destination
+#	R4 = dstlen<31:16>'min<15:0>       R5 = PC of the next instruction
+# Every loop does its memory references before it updates the counters, so
+# a resumed loop redoes exactly the iteration that faulted.
+#
 movc3:
-	minus arg3 arg2	savc	# copy from back or forward?
-	and savpsw 1	zcond goto movc3_backw
-# forward copy
-movc3_f_loop:
-	and arg1 arg1	zcond goto movc3_done
+	plus 0 0	goto movc3_0
+movc3_fpd:
+	plus 0 0	goto movc_resume
+movc3_0:
+	plus arg3 0	arg4			# destination
+	plus arg1 0	arg3			# dstlen = srclen
+	and 0 0		argp0 goto movc_start	# no fill
 
-	and arg2 arg2	cpuaddr rmem byte	#
+movc5:
+	plus 0 0	goto movc5_0
+movc5_fpd:
+	plus 0 0	goto movc_resume
+movc5_0:
+	and argd0 FF	argp0			# fill
+movc_start:
+	minus arg1 arg3	savc savnz		# srclen : dstlen (signed words)
+	bic F psl	psl
+	and savpsw D	argd1			# N Z C, V = 0
+	bis argd1 psl	psl
+	and arg1 FFFF	arg1			# ZEXT
+	and arg3 FFFF	arg3
+	minus arg4 arg2	savc			# destination below the source?
+	and savpsw 1	nzcond goto movc_fwd0
+# backward: start at the ends.  m = MIN(srclen, dstlen)
+	and 1 1		argp1
+	plus arg1 0	argd0
+	minus arg3 arg1	nncond goto movc_b0
+	plus arg3 0	argd0
+movc_b0:
+	plus arg3 0	argd1
+	plus arg2 argd0	arg2
+	plus arg4 arg3	arg4
+	and @movc_save @movc_save	fpdv		# from here faults save the state
+	plus 0 0	goto movc_bwd2
+movc_fwd0:
+	and 0 0		argp1
+	and 0 0		argd0
+	and 0 0		argd1
+	and @movc_save @movc_save	fpdv
+# forward: copy while both lengths are left, then fill
+movc_fwd1:
+	and arg1 arg1	zcond goto movc_fwd2
+	and arg3 arg3	zcond goto movc_fwd2
+	and savpsw 2000	nzcond goto movc_intr	# interrupt pending
+	plus arg2 0	cpuaddr rmem byte
 	plus rmemdat 0	crw
-	and arg3 arg3	cpuaddr wmem byte
-
+	plus arg4 0	cpuaddr wmem byte
 	minus arg1 1	arg1
 	plus arg2 1	arg2
-	plus arg3 1	arg3 goto movc3_f_loop
-
-movc3_backw:
-	and arg1 FFFF	arg1	# ZEXT arg1
-	plus arg1 0	arg4	# save arg1 in arg4
-	plus arg2 arg1	arg2	# arg2 to end
-	plus arg3 arg1	arg3	# arg3 to end
-movc3_b_loop:
-	and arg1 arg1	zcond goto movc3_b_done
+	minus arg3 1	arg3
+	plus arg4 1	arg4 goto movc_fwd1
+movc_fwd2:
+	and arg3 arg3	zcond goto movc_done
+	and savpsw 2000	nzcond goto movc_intr
+	plus argp0 0	crw
+	plus arg4 0	cpuaddr wmem byte
+	minus arg3 1	arg3
+	plus arg4 1	arg4 goto movc_fwd2
+# backward: fill the part of the destination beyond the source from the
+# top, then copy downwards
+movc_bwd2:
+	minus arg1 arg3	nncond goto movc_bwd3	# srclen >= dstlen: copy
+	and savpsw 2000	nzcond goto movc_intr
+	plus argp0 0	crw
+	minus arg4 1	cpuaddr wmem byte
+	minus arg3 1	arg3
+	minus arg4 1	arg4 goto movc_bwd2
+movc_bwd3:
+	and arg3 arg3	zcond goto movc_bwd4
+	and savpsw 2000	nzcond goto movc_intr
+	minus arg2 1	cpuaddr rmem byte
+	plus rmemdat 0	crw
+	minus arg4 1	cpuaddr wmem byte
 	minus arg1 1	arg1
 	minus arg2 1	arg2
 	minus arg3 1	arg3
-
-	and arg2 arg2	cpuaddr rmem byte	#
-	plus rmemdat 0	crw
-	and arg3 arg3	cpuaddr wmem byte
-	plus 0 0	goto movc3_b_loop
-
-movc3_b_done:
-	plus arg2 arg4	arg2
-	plus arg3 arg4	arg3
-#
-# Write R0,R2,R4,R5 == 0, R1=tmp2, R3=tmp3
-#
-movc3_done:
-	and 0 0		crn savnz	# Z flag set
-	and 0 0		crw wreg
-movc3_donex:
+	minus arg4 1	arg4 goto movc_bwd3
+movc_bwd4:
+	plus arg2 argd0	arg2			# R1: source + min
+	plus arg4 argd1	arg4			# R3: destination + dstlen
+# R0 = srclen left, R1, R3 as above, R2 = R4 = R5 = 0
+movc_done:
+	and 0 0		crn
+	plus arg1 0	crw wreg
+	and 1 1		crn
+	plus arg2 0	crw wreg
 	and 2 2		crn
 	and 0 0		crw wreg
+	and 3 3		crn
+	plus arg4 0	crw wreg
 	and 4 4		crn
 	and 0 0		crw wreg
 	and 5 5		crn
 	and 0 0		crw wreg
-	and 1 1		crn
-	and arg2 arg2	crw wreg
-	and 3 3		crn
-	and arg3 arg3	crw wreg
 	plus 0 0	eoi
 #
-movc5:
-	minus arg1 arg3	savc savnz	# save flags early
-	and arg1 FFFF	arg1		# zero-extend srclen
-	and arg3 FFFF	arg3		# zero-extend dstlen
-	bic F psl	psl
-	bis savpsw psl	psl
-	and argd0 FF	argp0		# 452 save fill byte
-	minus arg4 arg2	savc		# 453 copy from back or forward?
-	and savpsw 1	zcond goto movc5_backw # 454
-# forward
-movc5_f_loop1:
-	and arg1 arg1	zcond goto movc5_f_loop2 # 455
-	and arg3 arg3	zcond goto movc5_f_loop2 # 456
-
-	and arg2 arg2	cpuaddr rmem byte	#
-	plus rmemdat 0	crw
-	and arg4 arg4	cpuaddr wmem byte
-
-	minus arg1 1	arg1			# 457
-	plus arg2 1	arg2			# 458
-	minus arg3 1	arg3			# 459
-	plus arg4 1	arg4 goto movc5_f_loop1	# 460
-movc5_f_loop2:
-	and arg3 arg3	zcond goto movc5_done	# 461
-	plus argp0 0	crw	# fill byte	# 462
-	plus arg4 0	cpuaddr wmem byte	# 463
-
-	minus arg3 1	arg3			# 464
-	plus arg4 1	arg4 goto movc5_f_loop2	# 465
-
-movc5_backw:
-# tmp5 <= MINU(tmp1, tmp3)
-	plus arg1 0	argd0
-	minus arg3 arg1	nncond goto movc5_backw_1
-	plus arg3 0	argd0
-movc5_backw_1:
-	plus arg3 0	argd1
-	plus arg2 argd0	arg2
-	plus arg4 argd1	arg4
-# Fill from above
-movc5_backw_2:
-	minus arg1 arg3	nncond goto movc5_backw_3
-	minus arg4 1	arg4
-	plus argp0 0	crw
-	plus arg4 0	cpuaddr wmem byte
-	minus arg3 1	arg3 goto movc5_backw_2
-movc5_backw_3:
-# Copy
-	and arg3 arg3	zcond goto movc5_backw_4
-	minus arg1 1	arg1
-	minus arg2 1	arg2
-	minus arg4 1	arg4
-
-	and arg2 arg2	cpuaddr rmem byte
-	plus rmemdat 0	crw
-	and arg4 arg4	cpuaddr wmem byte
-	minus arg3 1	arg3 goto movc5_backw_3
-movc5_backw_4:
-	plus arg2 argd0	arg2
-	plus arg4 argd1	arg4
-# FALLTHROUGH
-movc5_done:
-	and arg4 arg4	arg3	# for movc3
+# Resume with PSL<FPD> set: state from R0-R5
+movc_resume:
 	and 0 0		crn
-	and arg1 arg1	crw wreg goto movc3_donex
+	and crv FFFF	arg1
+	shr crv 10	arg3
+	and 1 1		crn
+	plus crv 0	arg2
+	and 2 2		crn
+	and crv FF	argp0
+	shr crv 8	argp1
+	and argp1 1	argp1
+	and 3 3		crn
+	plus crv 0	arg4
+	and 4 4		crn
+	and crv FFFF	argd0
+	shr crv 10	argd1
+	and 5 5		crn
+	plus crv 0	crw
+	and F F		crn wreg		# PC: after the instruction
+	and @movc_save @movc_save	fpdv
+	and argp1 1	nzcond goto movc_bwd2
+	plus 0 0	goto movc_fwd1
+#
+# Fault (fpd_vec) or interrupt: state into R0-R5, PSL<FPD>, PC back to the
+# opcode, then the fault or interrupt dispatch.
+# memory management fault:
+movc_save:
+	and 0 0		crn
+	shl arg3 10	arg3
+	bis arg3 arg1	crw wreg		# R0 = dstlen'srclen
+	and 0 0		arg1 goto movc_sv1	# then the fault dispatch
+# interrupt pending:
+movc_intr:
+	and 0 0		crn
+	shl arg3 10	arg3
+	bis arg3 arg1	crw wreg
+	and 1 1		arg1			# then the interrupt dispatch
+movc_sv1:
+	and 1 1		crn
+	plus arg2 0	crw wreg		# R1
+	and 2 2		crn
+	shl argp1 8	arg3
+	bis argp0 arg3	crw wreg		# R2 = direction'fill
+	and 3 3		crn
+	plus arg4 0	crw wreg		# R3
+	and 4 4		crn
+	shl argd1 10	arg3
+	bis arg3 argd0	crw wreg		# R4 = dstlen'min
+	and F F		crn
+	plus crv 0	crw			# the next PC...
+	and 5 5		crn wreg		# ...into R5
+	and F F		crn
+	plus opc 0	crw wreg		# PC back to the opcode
+	and 800 800	arg3
+	shl arg3 10	arg3
+	bis arg3 psl	psl			# PSL<FPD>
+	and arg1 arg1	nzcond goto intrq
+	plus 0 0	goto mmflt
 #
 # 
 cmpc5:
@@ -1534,19 +1760,185 @@ remque_1:
 	plus rmemdat 0	arg4
 	minus arg3 arg4	argd0 savc savv savnz eoi
 #
-probew:
-	bic E psl	psl eoi
+# PROBER/PROBEW mode.rb, len.rw, base.ab (arg1, arg2, arg3), SRM 4.10.
+# The mode is the less privileged of mode<1:0> and PSL<PRV_MOD>; the first
+# and the last byte are checked. The MMU answers a probe request in bit 0 of
+# the data (1 = accessible); the mode travels in the write data. A probe
+# faults only if the system PTE that maps a process page table is invalid.
 #
-# CHMK rw (sp in arg2)
+prober:
+	and 0 0		arg4 goto probe		# read
+probew:
+	and 1 1		arg4			# write
+probe:
+	shr psl 16	argd0			# PSL<23:22>
+	and argd0 3	argd0			# PRV_MOD
+	and arg1 3	arg1
+	minus argd0 arg1 ncond goto probe_1
+	plus argd0 0	arg1			# PRV_MOD is less privileged
+probe_1:
+	and arg2 FFFF	arg2			# ZEXT(len)
+	bic 3 arg3	argd1			# first byte
+	plus arg1 0	crw			# probe mode
+	and arg4 arg4	nzcond goto probe_w1
+	plus argd1 0	cpuaddr rmem probe
+	plus 0 0	goto probe_2
+probe_w1:
+	plus argd1 0	cpuaddr rmem probe wint
+probe_2:
+	and rmemdat 1	zcond goto probe_no
+	plus arg3 arg2	argd1
+	minus argd1 1	argd1			# last byte, base + len - 1
+	bic 3 argd1	argd1
+	plus arg1 0	crw
+	and arg4 arg4	nzcond goto probe_w2
+	plus argd1 0	cpuaddr rmem probe
+	plus 0 0	goto probe_3
+probe_w2:
+	plus argd1 0	cpuaddr rmem probe wint
+probe_3:
+	and rmemdat 1	zcond goto probe_no
+	bic E psl	psl eoi			# accessible: N = Z = V = 0
+probe_no:
+	bic E psl	psl
+	bis 4 psl	psl eoi			# not accessible: Z = 1
+#
+# Privileged instruction outside kernel mode: reserved instruction fault
+# (SRM 8.4: MTPR, MFPR; 6.4: LDPCTX, SVPCTX). Internal register 72 turns
+# the reserved operand fault that follows into a reserved instruction
+# fault; either way the hardware first backs the PC up to the opcode and
+# restores the registers.
+priv_flt:
+	and 72 72	crn
+	and 0 0		crw wipr
+	plus 0 0	resopflt eoi
+#
+# LDPCTX (SRM 6.4): load the process context from the PCB (physical
+# address in PCBB). Writing P0BR..P1LR flushes the process half of the TB.
+# Then from the interrupt stack to the process's kernel stack, where the PC
+# and PSL of the PCB are pushed for the REI that must follow.
+ldpctx:
+	and savpsw 1000	nzcond goto priv_flt
+	and 10 10	crn
+	plus civ 0	arg1			# PCBB
+	and 0 0		arg2
+ldp_sp:
+	plus arg1 0	cpuaddr rmem phys	# KSP, ESP, SSP, USP
+	plus arg2 0	crn
+	plus rmemdat 0	crw wipr
+	plus arg1 4	arg1
+	plus arg2 1	arg2
+	minus arg2 4	nzcond goto ldp_sp
+	and 0 0		arg2
+ldp_r:
+	plus arg1 0	cpuaddr rmem phys	# R0-R13
+	plus arg2 0	crn
+	plus rmemdat 0	crw wreg
+	plus arg1 4	arg1
+	plus arg2 1	arg2
+	minus arg2 E	nzcond goto ldp_r
+	plus arg1 0	cpuaddr rmem phys	# PC
+	plus rmemdat 0	arg3
+	plus arg1 4	cpuaddr rmem phys	# PSL
+	plus rmemdat 0	arg4
+	plus arg1 8	cpuaddr rmem phys	# P0BR
+	and 8 8		crn
+	plus rmemdat 0	crw wipr
+	and 3F 3F	argd0
+	shl argd0 10	argd0
+	bis argd0 FFFF	argd0			# length mask 3FFFFF
+	plus arg1 C	cpuaddr rmem phys	# P0LR, ASTLVL
+	and 9 9		crn
+	and rmemdat argd0	crw wipr
+	shr rmemdat 18	argd1
+	and 13 13	crn
+	and argd1 7	crw wipr
+	plus arg1 10	cpuaddr rmem phys	# P1BR
+	and A A		crn
+	plus rmemdat 0	crw wipr
+	plus arg1 14	cpuaddr rmem phys	# P1LR (PME not kept)
+	and B B		crn
+	and rmemdat argd0	crw wipr
+	and E E		crn
+	plus crv 0	crw
+	and 4 4		crn wipr		# ISP <- SP
+	and 400 400	argd1
+	shl argd1 10	argd1
+	bic argd1 psl	psl			# PSL<IS> <- 0
+	and 0 0		crn
+	plus civ 0	argd1			# KSP
+	minus argd1 4	cpuaddr
+	plus arg4 0	crw wmem		# -(SP) <- PSL
+	minus argd1 8	cpuaddr
+	plus arg3 0	crw wmem		# -(SP) <- PC
+	and E E		crn
+	minus argd1 8	crw wreg		# SP
+	plus 0 0	eoi
+#
+# SVPCTX (SRM 6.4): save the process context in the PCB, popping the PC and
+# PSL from the stack; from the kernel stack, go to the interrupt stack at
+# IPL 1 or more.
+svpctx:
+	and savpsw 1000	nzcond goto priv_flt
+	and 10 10	crn
+	plus civ 0	arg1			# PCBB
+	and 0 0		arg2
+svp_sp:
+	plus arg2 0	crn			# KSP, ESP, SSP, USP
+	plus civ 0	crw
+	plus arg1 0	cpuaddr wmem phys
+	plus arg1 4	arg1
+	plus arg2 1	arg2
+	minus arg2 4	nzcond goto svp_sp
+	and 0 0		arg2
+svp_r:
+	plus arg2 0	crn			# R0-R13
+	plus crv 0	crw
+	plus arg1 0	cpuaddr wmem phys
+	plus arg1 4	arg1
+	plus arg2 1	arg2
+	minus arg2 E	nzcond goto svp_r
+	and E E		crn
+	plus crv 0	cpuaddr rmem
+	plus rmemdat 0	crw
+	plus arg1 0	cpuaddr wmem phys	# PC <- (SP)+
+	plus crv 4	cpuaddr rmem
+	plus rmemdat 0	crw
+	plus arg1 4	cpuaddr wmem phys	# PSL <- (SP)+
+	plus crv 8	crw wreg
+	shl psl 5	ncond goto svp_end	# already on the interrupt stack
+	shr psl 10	argd0
+	and argd0 1F	nzcond goto svp_ipl
+	and 1 1		argd0
+	shl argd0 10	argd0
+	bis argd0 psl	psl			# IPL 0 -> 1
+svp_ipl:
+	and E E		crn
+	plus crv 0	crw
+	minus arg1 48	cpuaddr wmem phys	# (PCB) <- SP
+	and 0 0		crn wipr		# KSP <- SP
+	and 400 400	argd1
+	shl argd1 10	argd1
+	bis argd1 psl	psl			# PSL<IS> <- 1
+	and 4 4		crn
+	plus civ 0	crw
+	and E E		crn wreg		# SP <- ISP
+svp_end:
+	plus 0 0	eoi
+#
+# CHMK code.rw (sp in arg2): change mode to kernel through SCB 40.
+# CHME, CHMS, CHMU and the probe of the new stack are not done yet.
 chmk:
-# IS -> HALT XXX
+	and arg1 FFFF	argp0		# the code, 16 bits so argp0 stays a value
 	and 40 40	argd1		# vector
-	and 0 0		argd0		# PSL upper word
+	and 20 20	argd0		# kernel mode, PRV = old mode, IPL kept
 	and 2 2		argp1 goto scb_common	# return
 chmk_1:
+	shl argp0 10	arg1
+	asr arg1 10	arg1		# sign-extended code
 	and E E		crn
 	minus crv 4	cpuaddr
-	plus arg1 0	crw wmem	# write reason
+	plus arg1 0	crw wmem xpush	# write reason
 	minus crv 4	crw wreg	# save new sp
 	plus 0 0	eoi
 #
@@ -1590,7 +1982,10 @@ REI	rl#(sp)+,rl#(sp)+,wl#pc	lbl=rei wback			# 02
 #
 RET	rl#fp			lbl=ret				# 04
 RSB	rl#(sp)+,wl#pc	lbl=mov wback				# 05
+LDPCTX	rl#0		lbl=ldpctx				# 06
+SVPCTX	rl#0		lbl=svpctx				# 07
 #
+PROBER	rb,rw,ab	lbl=prober				# 0c
 PROBEW	rb,rw,ab	lbl=probew				# 0d
 INSQUE	ab,ab		lbl=insque setcmpnz clv setc		# 0e
 REMQUE	ab,wl#pc,wl	lbl=remque setcmpnz setc wback2		# 0f
@@ -1611,10 +2006,10 @@ BVS	ab#b^d(pc),rl#2,wl#pc	lbl=bset 			# 1d
 BGEQU	ab#b^d(pc),rl#1,wl#pc	lbl=bclr			# 1e
 BLSSU	ab#b^d(pc),rl#1,wl#pc	lbl=bset			# 1f
 #
-MOVC3	rw,ab,ab	lbl=movc3 setnz clc clv			# 28
+MOVC3	rw,ab,ab	lbl=movc3 fpdok				# 28
 CMPC3	rw,ab,ab	lbl=cmpc3 setnz setc clv		# 29
 #
-MOVC5	0rw,1ab,4rb,2rw,3ab	lbl=movc5			# 2c
+MOVC5	0rw,1ab,4rb,2rw,3ab	lbl=movc5 fpdok		# 2c
 CMPC5	0rw,1ab,4rb,2rw,3ab	lbl=cmpc5 setnz setc clv	# 2d
 #
 BSBW	0aw#w^d(pc),2rl#pc,wl#pc,wl#-(sp)	lbl=mov move2 wback wback2 

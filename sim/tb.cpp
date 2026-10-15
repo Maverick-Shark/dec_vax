@@ -444,6 +444,10 @@ int main(int argc, char **argv) {
 	       (unsigned long long)ninst, (unsigned long long)nrun,
 	       ninst ? (double)nrun / ninst : 0.0,
 	       nrun ? 50.0 * ninst / nrun : 0.0);
+	if (const char *tl = getenv("TTOLOG")) {        // everything the CPU printed
+		FILE *f = fopen(tl, "wb");
+		if (f) { fwrite(tto_log.data(), 1, tto_log.size(), f); fclose(f); }
+	}
 	delete tb;
 	return 0;
 }
