@@ -1,6 +1,7 @@
 ; t16_isnv - a fault while the frame is pushed on the interrupt stack halts
 ; the processor (SRM 5.6 note 6; 8600 halt code 4, "interrupt stack
-; invalid"). simh stops with its own message; PC and PSL are compared.
+; invalid"). The reference simulator stops with its own message; PC and PSL
+; are compared.
 ;@ dump=18000:2
 ;@ board=halt halt=4
 	.include "mmsetup.inc"

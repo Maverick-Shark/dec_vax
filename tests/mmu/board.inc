@@ -5,9 +5,10 @@
 ; NEXP, the number of entries in the table of expected values.
 ;
 ; finish saves R0-R14 and the PSL as they are at the end of the test - the
-; point where run.py compares simh and the RTL - turns memory management off
+; point where run.py compares the reference simulator and the RTL - turns memory management off
 ; and returns to the runner (runner.s, at 300008), which compares them and
-; the memory the test names with what simh vax8600 gave for the same program.
+; the memory the test names with what the reference simulator gave for the
+; same program.
 ; The comparison table (exptab) is filled in by mkboard.py:
 ;
 ;   .long  n                     number of entries, then n times:

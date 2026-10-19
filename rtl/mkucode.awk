@@ -31,11 +31,11 @@
 #
 # uc-insn.hex is 256 rows of 64 (72) bits each.
 # Bit definition (right to left)
-#	0-7	offset into uc-args
+#	0-7	offset into uc-args (bit 8 of it in bit 15)
 #	8	instruction has args
 #	9	instruction is emulated (calling macrocode)
 #
-# uc-args.hex is 256 rows of 64 (72) bits each.
+# uc-args.hex is 512 rows of 64 (72) bits each.
 # Each row has bit 0-4 for each arg.
 # Of them 0-2 are address mode;
 #	read:   100
@@ -239,8 +239,8 @@ BEGIN {
 	leftop["arg4"] = rightop["arg4"] = 3;
 	leftop["argd0"] = rightop["argd0"] = 4;
 	leftop["argd1"] = rightop["argd1"] = 5;
-	leftop["argp0"] = 6; # rightop["argp0"] = 6;
-	leftop["argp1"] = 7; # rightop["argp1"] = 7;
+	leftop["argp0"] = rightop["argp0"] = 6;	# a register operand reads as
+	leftop["argp1"] = rightop["argp1"] = 7;	# C0000000 + its number
 	leftop["psl"] = rightop["psl"] = 8;
 	leftop["const"] = rightop["const"] = 9;
 	leftop["civ"] = 10; #  rightop["OPu"] = 10;
@@ -295,6 +295,7 @@ BEGIN {
 	alures["cpuaddr"] = 11;
 	alures["crw"] = 12;
 	alures["fpdv"] = 13;	# FPD save routine address, enables FPD faults
+	alures["jmp"] = 14;	# computed goto: the next step is the result
 
 	curargoff=0;
 	emuloff = 1;
@@ -423,9 +424,11 @@ BEGIN {
 	}
 	
 
+		if (gotnum >= 512)
+			err("argument ROM full");
 		inslist[insnr] = "0000000000000000000000000000000000000000" \
-		    "000000000000000" \
-		    ($2 != "-" ? "1" : "0") num2bit(gotnum,8);
+		    "00000000" (gotnum >= 256 ? "1" : "0") "000000" \
+		    ($2 != "-" ? "1" : "0") num2bit(gotnum % 256,8);
 
 	if (got_skip == 0) {
 		n = split($2,a,",");
@@ -498,11 +501,9 @@ BEGIN {
 				lbl = substr($i,5);
 				if (lbl in steplbl) {
 #printf "lbl %s step %s insl1 %s\n", lbl, steplbl[lbl], inslist[insnr];
-					lbbits = num2bit(steplbl[lbl], 11);
-#printf "1: %s %s %s\n", substr(inslist[insnr], 1, 64-56), num2bit(steplbl[lbl], 9), substr(inslist[insnr], 1, 64-46);
 					inslist[insnr] = \
-					    substr(inslist[insnr], 1, 64-58) \
-					    num2bit(steplbl[lbl], 11) \
+					    substr(inslist[insnr], 1, 64-59) \
+					    num2bit(steplbl[lbl], 12) \
 					    substr(inslist[insnr], 64-46);
 #printf "lbl2 %s step %s insl1 %s\n", lbl, steplbl[lbl], inslist[insnr];
 				} else
@@ -551,7 +552,9 @@ print "resolving " resolve[i] " pos " i " as " steplbl[resolve[i]];
 	# print out arguments
 	FN="uc-args.hex";
 	system("rm -f " FN);
-	for (i = 0; i < 256; i++) {
+	if (curargoff > 512)
+		err("argument ROM full");
+	for (i = 0; i < 512; i++) {
 		if (i in arglist) {
 			print line2hex(i, arglist[i], 64) >> FN;
 			numargs++;
@@ -564,7 +567,9 @@ print "resolving " resolve[i] " pos " i " as " steplbl[resolve[i]];
 	# print out microcode steps
 	FN="uc-step.hex";
 	system("rm -f " FN);
-	for (i = 0; i < 2048; i++) {
+	if (stepoff > 4096)
+		err("microcode step ROM full");
+	for (i = 0; i < 4096; i++) {
 		if (i in ucstep) {
 			print line2hex(i, ucstep[i], 72) >> FN;
 			numstep++;

@@ -1,5 +1,5 @@
 ; t29_resad - reserved addressing mode faults (SCB 1C), with the cases
-; the SRM leaves UNPREDICTABLE as simh decides them for the 8600: a literal
+; the SRM leaves UNPREDICTABLE, decided for the 8600 this way: a literal
 ; for anything but a read operand, a register for an address operand, PC as
 ; a register or with register deferred, autodecrement or as an index
 ; register, a literal, register or index base for index mode, a quadword in

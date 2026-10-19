@@ -3,7 +3,7 @@
 // No SDRAM, video or console terminal: the C++ driver (tb_cpu.cpp) loads a
 // program straight into the memory array, starts the CPU at a given PC and
 // dumps registers and memory when it halts. Used to compare the RTL with
-// simh's vax8600 on small test programs (tests/mmu).
+// a VAX 8600 reference simulator on small test programs (tests/mmu).
 //
 // Memory: 8 MB at physical 0. Every access takes MEMLAT clocks; addresses
 // beyond the memory and I/O space are never acknowledged, so they end in the

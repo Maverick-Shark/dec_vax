@@ -75,8 +75,25 @@
 `define	IPR_CRBT	7'h48
 `define	IPR_EHSR	7'h4a
 
-/* internal registers, not reachable with MTPR/MFPR (microcode only) */
-`define IPR_MMVA	7'h70	/* memory management fault: virtual address */
-`define IPR_MMPAR	7'h71	/* memory management fault: parameter */
-`define IPR_RIFLT	7'h72	/* write: next reserved operand fault is a reserved instruction fault */
-`define IPR_HALT	7'h73	/* write: halt the processor; <7:0> halt code, <8> with the registers, PC and PSL put back to the start of the instruction */
+/*
+ * Internal registers, not reachable with MTPR/MFPR (microcode only). A
+ * `define ends at the end of its line, so each one's comment is above it.
+ */
+/* memory management fault: virtual address */
+`define IPR_MMVA	7'h70
+/* memory management fault: parameter */
+`define IPR_MMPAR	7'h71
+/* write: the next reserved operand fault is a reserved instruction fault */
+`define IPR_RIFLT	7'h72
+/* write: halt the processor; <7:0> halt code, <8> with the registers, PC
+   and PSL put back to the start of the instruction */
+`define IPR_HALT	7'h73
+/* 60-6F: the decimal unit (decunit.v): 60 command and status, 61 A in /
+   top byte out, 62 B in / nibble out, 63 binary operand / result */
+`define IPR_DU		7'h60
+/* arithmetic trap requested by the instruction (type code <3:0>, SCB 34);
+   reads 1, integer overflow, when none */
+`define IPR_ARITH	7'h74
+/* write: the next reserved operand fault is a reserved addressing mode
+   fault (a bit field from R14 or PC) */
+`define IPR_RAFLT	7'h75

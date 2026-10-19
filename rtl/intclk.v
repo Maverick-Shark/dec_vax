@@ -71,7 +71,7 @@ parameter CLKINIT =	8'h4f;	// 50MHz clock to microseconds: 79..128 = 50 states
 parameter TODRCNTINIT =	15'h18f1; // 10 ms clock: 6385..16384 = 10000 us
 
 	reg [31:0]	nicr;
-	reg		running, error, inten, intreq, lastcry;
+	reg		running, error, inten, intreq;
 
 	/* load NICR */
 	always @(posedge clk)
@@ -119,17 +119,22 @@ parameter TODRCNTINIT =	15'h18f1; // 10 ms clock: 6385..16384 = 10000 us
 	end
 
 	/*
-	 * interval count register.
+	 * Interval count register (SRM 8.x, interval clock): incremented
+	 * every microsecond while RUN is set, or once by writing SGL with RUN
+	 * clear. When an increment overflows, ICR is reloaded from NICR and
+	 * INT is set (ERR too if INT still is). XFR loads ICR from NICR, which
+	 * is not an overflow: ICR = FFFFFFFF interrupts at the next increment.
 	 */
 	wire [32:0]	nexticr;
+	wire		icrstep, icrovf;
 	assign nexticr = { 1'b0, icr } + 1;
+	assign icrstep = uspulse || (wriccs && iprdb[`SGL] && !running);
+	assign icrovf = icrstep && nexticr[32] && !(wriccs && iprdb[`XFR]);
 	always @(posedge clk) begin
-		if (uspulse || ((iprdb[`SGL]|iprdb[`XFR]) && wriccs)) begin
-			if (nexticr[32] | (wriccs & iprdb[`XFR]))
-				icr <= nicr;
-			else
-				icr <= nexticr[31:0];
-		end
+		if (wriccs && iprdb[`XFR])
+			icr <= nicr;
+		else if (icrstep)
+			icr <= nexticr[32] ? nicr : nexticr[31:0];
 	end
 
 	/*
@@ -140,13 +145,11 @@ parameter TODRCNTINIT =	15'h18f1; // 10 ms clock: 6385..16384 = 10000 us
 			error <= 0;
 		if (wriccs && iprdb[`INT])
 			intreq <= 0;
-		if (nexticr[32] && lastcry == 0) begin
-//$fdisplay(32'h80000002, "NEXTICR: run %d ie %d xfr %d intreq %d error %d inten %d" , iprdb[`RUN], iprdb[`IE], iprdb[`XFR], intreq, error, inten);
+		if (icrovf) begin
 			intreq <= 1;
 			if (intreq)
 				error <= 1;
 		end
-		lastcry <= nexticr[32];
 	end
 
 	assign intrq = intreq & inten;

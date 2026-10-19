@@ -4,10 +4,18 @@
 //  Works on every MiSTer SDRAM module (32 / 64 / 128 MB). All of them present
 //  at least 13 row bits, 4 banks and 9 column bits on the chip selected by
 //  SDRAM_nCS = 0, which is the 32 MB this core uses. The 64/128 MB modules
-//  carry bigger (or two) chips; the extra capacity needs either the 10th/11th
-//  column bit or the nCS chip-select trick of the 128 MB boards, neither of
-//  which is used here - a VAX-11/780 could not address more than 32 MB of
-//  physical memory anyway.
+//  carry bigger (or two) chips; the extra capacity needs either the 10th
+//  column bit or the second chip of the 128 MB boards (selected by
+//  SDRAM_nCS = 1), neither of which is used here. The second chip only ever
+//  sees nCS high with NOP on RAS/CAS/WE, so it stays idle.
+//
+//  BYTE MASKS. On some modules (the 128 MB ones among them) the chips'
+//  DQML/DQMH inputs are not wired to the SDRAM_DQML/DQMH pins but to the
+//  address lines A11/A12, which the chips do not use in READ and WRITE
+//  commands - MiSTer's own memory test drives them that way. So the masks
+//  go out on both: on DQML/DQMH, and on A11 (low byte) and A12 (high byte)
+//  in the WRITE cycle and the cycle of its second word. In every other cycle
+//  in which the chip moves data A12:A11 is 00 (a read is never masked).
 //
 //      word address WA[23:0] = {longword address, 1'b0}
 //      column = WA[8:0]   bank = WA[10:9]   row = WA[23:11]
@@ -297,8 +305,9 @@ module vax_sdram #(
 				sd_ba <= bk;
 				if (we_l) begin
 					// one burst of two words, auto precharge
+					// A12:A11 carry the byte mask too (see above)
 					{sd_ncs, sd_nras, sd_ncas, sd_nwe} <= CMD_WRITE;
-					sd_a     <= {2'b00, 1'b1, 1'b0, col};
+					sd_a     <= {~sel_l[1], ~sel_l[0], 1'b1, 1'b0, col};
 					sd_dq_oe <= 1'b1;
 					sd_dq_o  <= dat_l[15:0];
 					{sd_dqmh, sd_dqml} <= ~sel_l[1:0];
@@ -348,6 +357,7 @@ module vax_sdram #(
 				sd_dq_oe <= 1'b1;
 				sd_dq_o  <= dat_l[31:16];
 				{sd_dqmh, sd_dqml} <= ~sel_l[3:2];
+				sd_a[12:11] <= ~sel_l[3:2];      // a NOP: only the mask counts
 				req_done <= 1'b1;
 				nwait    <= 4'd4;                // tWR + tRP
 				cnt      <= 16'd0;

@@ -1,6 +1,6 @@
 ; t22_chmis - a CHMx on the interrupt stack halts the processor (SRM chapter
-; 5, CHM; 8600 halt code A), with PC at the CHMx and nothing changed. simh
-; stops there as well.
+; 5, CHM; 8600 halt code A), with PC at the CHMx and nothing changed. The
+; reference simulator stops there as well.
 ;@ dump=18000:4 halt=A board=skip
 	.include "mmsetup.inc"
 test:

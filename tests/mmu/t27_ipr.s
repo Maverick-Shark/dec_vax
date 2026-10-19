@@ -1,5 +1,5 @@
 ; t27_ipr - the VAX 8600 internal processor registers that are not memory
-; management ones (DEC STD 032 table B-25, simh vax860_abus.c): what reads
+; management ones (DEC STD 032 table B-25): what reads
 ; back after writing all ones, and which register numbers do not exist
 ; (reserved operand fault): the 11/780 and 11/750 ones, the 8600 M-box and
 ; E-box ones that are not implemented, write-only ones for MFPR and read-only

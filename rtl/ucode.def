@@ -51,7 +51,10 @@
 05	RSB
 06	LDPCTX
 07	SVPCTX
-#
+08	CVTPS
+09	CVTSP
+0A	INDEX
+0B	CRC
 0C	PROBER
 0D	PROBEW
 0E	INSQUE
@@ -72,25 +75,46 @@
 1D	BVS
 1E	BGEQU
 1F	BLSSU
-#
+20	ADDP4
+21	ADDP6
+22	SUBP4
+23	SUBP6
+24	CVTPT
+25	MULP
+26	CVTTP
+27	DIVP
 28	MOVC3
 29	CMPC3
-#
+2A	SCANC
+2B	SPANC
 2C	MOVC5
 2D	CMPC5
-#
+2E	MOVTC
+2F	MOVTUC
 30	BSBW
 31	BRW
 32	CVTWL
 33	CVTWB
-#
+34	MOVP
+35	CMPP3
+36	CVTPL
+37	CMPP4
+38	EDITPC
+39	MATCHC
 3A	LOCC
-#
+3B	SKPC
 3C	MOVZWL
 3D	ACBW
 #
 3E	MOVAW
 3F	PUSHAW
+#
+58	ADAWI
+#
+5C	INSQHI
+5D	INSQTI
+5E	REMQHI
+5F	REMQTI
 #
 78	ASHL
 79	ASHQ
@@ -225,6 +249,8 @@ F4	SOBGEQ
 F5	SOBGTR
 F6	CVTLB
 F7	CVTLW
+F8	ASHP
+F9	CVTLP
 #
 FA	CALLG
 FB	CALLS
@@ -246,6 +272,8 @@ FF	RESIN
 	plus 0 0	goto resinflt	# entry 6: PSL<FPD> set, instruction can't resume
 	plus 0 0	goto resinflt2	# entry 7: privileged instruction (PC at the opcode)
 	plus 0 0	goto resadflt	# entry 8: reserved addressing mode (PC at the opcode)
+	plus 0 0	goto arithtrap	# entry 9: arithmetic trap (after the instruction)
+	plus 0 0	goto tracef	# entry 10: trace fault (before the instruction)
 #
 # Interrupt.  Interrupt level tells which vector to use, is in savpsw.
 #
@@ -335,6 +363,31 @@ resadflt:
 	and 20 20	argd0
 	and 1C 1C	argd1 goto scb_common
 #
+# Arithmetic trap (SCB 34): the instruction has stored its results and the
+# PC is that of the next one. The type code, 1 integer overflow, 2 integer
+# divide by zero or 7 subscript range, comes from internal register
+# IPR_ARITH (74), which is cleared; it is pushed after the PSL and the PC.
+arithtrap:
+	and 74 74	crn
+	plus civ 0	argp0		# the type code
+	and 0 0		crw wipr	# taken
+	and 20 20	argd0		# an exception
+	and 34 34	argd1
+	and 4 4		argp1 goto scb_common	# push the code: arith_1
+arith_1:
+	and E E		crn
+	minus crv 4	cpuaddr
+	plus argp0 0	crw wmem xpush	# -(SP) <- type code
+	minus crv 4	crw wreg
+	plus 0 0	eoi
+#
+# Trace fault (SCB 28): PSL<TP> was set at the start of an instruction. The
+# hardware has cleared TP; the PC is that of the instruction, not started.
+tracef:
+	and 0 0		argp1
+	and 20 20	argd0
+	and 28 28	argd1 goto scb_common
+#
 # Memory management fault (SRM 4.9): access-control violation (SCB 20) or
 # translation not valid (SCB 24). The hardware has already put the PC, the
 # registers and the PSL back as they were at the start of the instruction
@@ -383,7 +436,8 @@ ksnv:
 #		20: exception (fault, trap, abort)
 #		60: severe exception (KSNV): interrupt stack, IPL 1F
 #	argp1	pushed after PSL and PC: 0 nothing, 1 machine check frame,
-#		2 CHMx code (in argp0), 3 memory management parameters
+#		3 memory management parameters, 4 arithmetic trap code
+#		(in argp0)
 # The new PSL is loaded before the frame is pushed, so the pushes are made
 # in kernel mode; they are flagged so that a fault on them becomes a
 # kernel-stack-not-valid abort (or halts the CPU on the interrupt stack).
@@ -450,6 +504,7 @@ scb_psl:
 	bic 3 arg3	crw wreg	# PC <- vector<31:2>
 	minus argp1 1	zcond goto mcheck_1
 	minus argp1 3	zcond goto mmflt_1
+	minus argp1 4	zcond goto arith_1
 	plus 0 0	eoi
 # SCB vector with bits 1:0 = 2 (service in writable control store, which
 # the 8600 has not got) or 3: the processor halts with code 8 or 7
@@ -481,31 +536,44 @@ and:	and arg1 arg2		argd0 savnz eoi
 zwl:	and arg1 FFFF		argd0 savnz eoi
 zbl:	and arg1 FF		argd0 savnz eoi
 #
-adwc:	plus arg1 arg2	argd0 savc savv	# save C and V
-	and psl 1	arg3		# fetch old C
-	and savpsw 3	arg4		# store them
-	plus arg3 argd0	argd0 savc savv savnz	# save all status bits
-	bis savpsw arg4	arg4		# or them into saved bits
-	and arg4 3	arg4		# clean all other bits
-	bic 3 psl	psl		# clean CV  from psl
-	bis psl arg4	psl eoi		# replace with newly calculated
-
-sbwc:	minus arg2 arg1	argd0 savc savv	# save C and V
-	and psl 1	arg3		# fetch old C
-	and savpsw 3	arg4		# store calc CV
-	minus argd0 arg3 argd0 savc savv savnz	# save all status bits
-	bis savpsw arg4	arg4		# or them into saved bits
-	and arg4 3	arg4		# clean all other bits
-	bic 3 psl	psl		# clean CV  from psl
-	bis psl arg4	psl eoi		# replace with newly calculated
+# ADWC add.rl, sum.ml (arg1, arg2): sum <- sum + add + C. C is the carry
+# out of either add (both cannot carry); V is set when add and sum have the
+# same sign and the result has the other one (an overflow of the first add
+# can be undone by the second).
+adwc:	and psl 1	arg3		# old C
+	plus arg1 arg2	argd0 savc	# add + sum
+	and savpsw 1	arg4		# its carry
+	plus arg3 argd0	argd0 savc savnz	# + C
+	bis savpsw arg4	arg4
+	and arg4 1	arg4		# C
+	xor arg1 arg2	arg3
+	plus arg3 0	ncond goto adwc_cc	# signs differ: no overflow
+	xor argd0 arg1	nncond goto adwc_cc	# result of the same sign
+	bis 2 arg4	arg4		# V
+adwc_cc:
+	bic 3 psl	psl
+	bis psl arg4	psl eoi
+# SBWC sub.rl, dif.ml (arg1, arg2): dif <- dif - sub - C. C is the borrow
+# of either subtract; V is set when sub and dif have different signs and
+# the result has not the sign of dif.
+sbwc:	and psl 1	arg3		# old C
+	minus arg2 arg1	argd0 savc	# dif - sub
+	and savpsw 1	arg4		# its borrow
+	minus argd0 arg3 argd0 savc savnz	# - C
+	bis savpsw arg4	arg4
+	and arg4 1	arg4		# C
+	xor arg1 arg2	arg3
+	plus arg3 0	nncond goto adwc_cc	# same signs: no overflow
+	xor argd0 arg2	nncond goto adwc_cc	# result of the sign of dif
+	bis 2 arg4	arg4 goto adwc_cc	# V
 
 #
 # mtpr arg1=val,arg2=ipr
 #
 # Register numbers above 7F do not exist (reserved operand). The memory
-# management registers are checked the way the 8600 does it (the 780's
-# patched microcode: simh vax860_defs.h) and stored masked; mmu.v keeps its
-# own copy of them by watching the IPR write.
+# management registers are checked (P0BR, P1BR in S0 and longword aligned,
+# SBR, PCBB, SCBB aligned, a length above 2^21 reserved) and stored masked;
+# mmu.v keeps its own copy of them by watching the IPR write.
 mtpr:
 	and savpsw 1000	nzcond goto priv_flt	# kernel mode only
 	plus arg1 0	savnz			# NZ flags
@@ -765,24 +833,29 @@ acb_neg:
 	minus arg3 arg1		nncond wback2 eoi	# index - limit >= 0
 acb_nd:	plus arg3 0		nncond wback2 eoi	# index >= 0 > limit
 #
-aobleq:	bic 2 psl		psl			# clear V
-	plus 1 arg2		argd0 savc savnz	# inc index
-	xor arg2 argd0		nncond goto aobleq_1	# overflow?
-	bis 2 psl		psl			# set V
-aobleq_1:
-	plus arg3 0		argd1			# save branch addr
-	minus arg1 argd0 	nncond wback2 eoi	# br if !(ix > l)
+# AOBLSS, AOBLEQ limit.rl, index.ml, displ.bb (arg1, arg2, arg3): index + 1,
+# N Z V from the add (setv), C unchanged; branch if index < limit (AOBLSS) or
+# index <= limit (AOBLEQ), signed: with different signs the negative one is
+# the smaller, else the subtraction cannot overflow.
+aobleq:	plus 1 arg2		argd0 savv savnz	# index + 1
+	plus arg3 0		argd1			# branch destination
+	xor argd0 arg1		ncond goto aob_d	# signs differ
+	minus arg1 argd0 	nncond wback2 eoi	# limit - index >= 0
 #
-aoblss:	plus 1 arg2		argd0 savc savnz	# inc index
-	plus arg3 0		argd1			# save branch addr
-	minus argd0 arg1 	ncond wback2 eoi	# br if (ix < l)
+aoblss:	plus 1 arg2		argd0 savv savnz	# index + 1
+	plus arg3 0		argd1			# branch destination
+	xor argd0 arg1		ncond goto aob_d	# signs differ
+	minus argd0 arg1 	ncond wback2 eoi	# index - limit < 0
+aob_d:	plus argd0 0		ncond wback2 eoi	# index < 0 <= limit
 #
+# SOBGEQ, SOBGTR index.ml, displ.bb: index - 1; branch if >= 0 or > 0
 sobgeq:	plus arg2 0	argd1				# save branch addr
 	minus arg1 1	argd0 savv savnz nncond wback2 eoi	# dec index
 #
 sobgtr:	plus arg2 0	argd1				# save branch addr
-	minus arg1 1	argd0 savv savnz 		# dec index
-	minus argd0 1	nncond wback2 eoi		# if ix > 0
+	minus arg1 1	argd0 savv savnz ncond goto sob_end	# negative
+	plus argd0 0	nzcond wback2 eoi		# > 0: not zero
+sob_end: plus 0 0	eoi
 #
 # arg1=pos, arg2=base, arg3=displ
 # BLBS, BLBC src.rl, displ: the low bit of a longword (pos 0)
@@ -795,14 +868,13 @@ bbs:	shr arg2 arg1	argd0
 #
 # BBS, BBC pos.rl, base.vb, displ.bb (arg1, argp0, arg2): the bit pos of the
 # field at base. The base comes as a "wb" operand, so argp0 is its address,
-# or a register (bits 31:30 set), whose bit pos must be 0-31 (else a
-# reserved operand fault). In memory the bit is in the byte at base +
+# or a register (savpsw<4>), whose bit pos must be 0-31 (else a reserved
+# operand fault). In memory the bit is in the byte at base +
 # pos/8 (pos signed), bit pos<2:0>: only that byte is read.
 #
 bbsv:	and 1 1		argd0 goto bbv		# branch if set
 bbcv:	and 0 0		argd0			# branch if clear
-bbv:	shr argp0 1E	arg3
-	minus arg3 3	nzcond goto bbv_mem
+bbv:	and savpsw 10	zcond goto bbv_mem	# argp0 is not a register
 	bic 1F arg1	arg3
 	plus arg3 0	nzcond goto bbv_ro	# register: pos must be 0-31
 	plus argp0 0	crn
@@ -828,8 +900,7 @@ bbss:	and 3 3		argd0 goto bbm
 bbcs:	and 2 2		argd0 goto bbm
 bbsc:	and 1 1		argd0 goto bbm
 bbcc:	and 0 0		argd0
-bbm:	shr argp0 1E	arg3
-	minus arg3 3	nzcond goto bbm_mem
+bbm:	and savpsw 10	zcond goto bbm_mem	# argp0 is not a register
 	bic 1F arg1	arg3
 	plus arg3 0	nzcond goto bbv_ro	# register: pos must be 0-31
 	shl 1 arg1	arg3			# the bit's mask
@@ -842,12 +913,12 @@ bbm_rc:	bic arg3 arg4	crw wreg		# clear
 	plus 0 0	goto bbm_br
 bbm_mem:
 	asr arg1 3	arg3
-	plus argp0 arg3	argp0			# the byte with the bit
-	plus argp0 0	cpuaddr rmem byte wint
+	plus argp0 arg3	argd1			# the byte with the bit
+	plus argd1 0	cpuaddr rmem byte wint
 	and arg1 7	arg1
 	shl 1 arg1	arg3			# the bit's mask
 	plus rmemdat 0	arg4			# the old byte
-	plus argp0 0	cpuaddr byte
+	plus argd1 0	cpuaddr byte
 	and argd0 2	zcond goto bbm_mc
 	bis arg3 arg4	crw wmem		# set
 	plus 0 0	goto bbm_br
@@ -858,24 +929,34 @@ bbm_br:	plus arg2 0	argd1			# the branch target
 	and arg3 arg3	zcond wback2 eoi	# branch if it was clear
 bbm_bs:	and arg3 arg3	nzcond wback2 eoi	# branch if it was set
 #
-# INSV arg1=pos,arg2=size,argd0/1=base(val),arg4=src
+# INSV src.rl, pos.rl, size.rb, base.vb (arg4, arg1, arg2, argp0): size 0
+# does nothing, a size above 32 is a reserved
+# operand; in registers a position above 31 (unsigned) is a reserved operand
+# and a field that would go on from R14 or PC a reserved addressing mode; in
+# memory the second longword is read (and written) only if the field
+# reaches it. argd0, argd1 the two longwords, argp0, argp1 where they go.
 #
-insv:	shr argp0 1E	argd0		# 132
-	minus argd0 3	argd0 		# 133
-	plus argd0 argd0 nzcond goto insv_mem	# 134
-#
-# value is in register
-# First check whether a resopflt should be generated
-	and arg2 arg2	zcond goto insv_zero # no check if size zero
-	minus arg1 20	nncond resopflt	# resopflt if size > 31
-insv_zero:
+insv:	and arg2 FF	arg2			# the size, unsigned
+	plus arg2 0	zcond goto insv_z	# 0: nothing at all
+	minus 20 arg2	ncond goto insv_ro	# above 32
+	and savpsw 10	zcond goto insv_mem	# argp0 is not a register
+	bic 1F arg1	arg3
+	plus arg3 0	nzcond goto insv_ro	# a position above 31
+	plus arg1 arg2	arg3
+	minus 20 arg3	nncond goto insv_r1	# within the register
+	and argp0 F	arg3
+	minus arg3 E	ncond goto insv_r1	# the next register exists
+	and 75 75	crn
+	and 0 0		crw wipr		# R14 or PC: reserved addressing
+insv_ro: plus 0 0	resopflt eoi
+insv_z:	plus 0 0	eoi
+insv_r1:
 	plus argp0 0	crn		# 59 set cur reg num
 	plus crv 0	argd0		# 60 move val to dest
 	plus argp0 0	argp0		# Set to longword
 	plus argp0 1	argp1		# if two regs
 	plus argp0 1	crn		# if two regs
 	plus crv 0	argd1 goto insv_common 		# 60 move val to dest
-#	and arg1 arg1	goto insv_common # 60 move val to dest
 insv_mem:
 # Normalize first
 	asr arg1 3	arg3		# get byte offset
@@ -887,7 +968,10 @@ insv_mem:
 	bic 3 argd0	argp0		# clear byte offset bits in ptr
 	plus argp0 0	cpuaddr rmem	# fetch low long
 	plus rmemdat 0	argd0		# dat now in argd0
-	plus argp0 4	argp1 rmem	# fetch high long
+	plus argp0 4	argp1		# the next longword
+	and 0 0		argd1
+	plus arg1 arg2	arg3
+	minus 20 arg3	nncond goto insv_common	# the field ends in the first
 	plus argp1 0	cpuaddr rmem	# fetch high long
 	plus rmemdat 0	argd1		# dat now in argd1
 
@@ -930,22 +1014,31 @@ insv_sz:
 # extract bitfield based on (pos,size,base) in (arg1,arg2,argp0)
 # return field in argd0, return addr in argp1. Trashes arg1+arg3.
 #
+# A size above 32 is a reserved operand, size 0 gives 0;
+# in registers a position above 31 (unsigned) is a reserved operand and a
+# field that would go on from R14 or PC a reserved addressing mode; in
+# memory the second longword is read only if the field reaches it.
 bfield:
-# sanity: size > 32?
 	and 0 0 	argd0			# 177
+	and arg2 FF	arg2			# the size, unsigned
 	minus arg2 21	arg3			# 178
-	and arg3 arg3	nncond resopflt		# 179
+	and arg3 arg3	nncond goto bf_ro	# above 32
 	and arg2 arg2	zcond goto bf_done	# 180
 # Check whether read from mem or reg?
-	shr argp0 1E	argd0			# 181
-	minus argd0 3	argd0 nzcond goto bf_mem	# 182
-# Ok, get from reg.  
-	minus arg1 20	nncond resopflt	# resopflt if pos > 31
-	plus argp0 0	crn		# 59 set cur reg num
+	and savpsw 10	zcond goto bf_mem	# argp0 is not a register
+	bic 1F arg1	arg3
+	plus arg3 0	nzcond goto bf_ro	# a position above 31
+	plus arg1 arg2	arg3
+	minus 20 arg3	nncond goto bf_r1	# within the register
+	and argp0 F	arg3
+	minus arg3 E	ncond goto bf_r1	# the next register exists
+	and 75 75	crn
+	and 0 0		crw wipr		# R14 or PC: reserved addressing
+bf_ro:	plus 0 0	resopflt eoi
+bf_r1:	plus argp0 0	crn		# 59 set cur reg num
 	plus crv 0	argd0		# 60 move val to dest
 	plus argp0 1	crn		# if two regs
 	plus crv 0	arg3 goto bf_common	# 60 move val to dest
-#	and arg1 arg1	goto bf_common	# just jump
 bf_mem:
 # Normalize first
 	asr arg1 3	arg3		# 189 get byte offset
@@ -957,8 +1050,11 @@ bf_mem:
 	bic 3 argd0	argp0		# 195 clear byte offset bits in ptr
 	plus argp0 0	cpuaddr rmem	# 196 fetch low long
 	plus rmemdat 0	argd0		# 197 dat now in argd0
+	plus arg1 arg2	arg3
+	minus 20 arg3	nncond goto bf_m1	# the field ends in the first
 	plus argp0 4	cpuaddr rmem	# 198 next long
-	plus rmemdat 0	arg3		# 199 XXX should check if needed
+	plus rmemdat 0	arg3 goto bf_common
+bf_m1:	and 0 0		arg3
 bf_common:
 # create long in argd0
 	shr argd0 arg1	argd0		# 200 right-adjust low bits
@@ -1089,7 +1185,12 @@ mul:	mul arg1 arg2		argd0 savnz savv eoi
 div:	
 	bic 2 psl	psl			# clear V
 	plus arg1 0	nzcond goto div_nz	# skip if no division by 0
-	bis 2 psl	psl			# div by 0, set V
+# divide by zero: the quotient is the dividend, V, and an integer divide by
+# zero trap (SRM: arithmetic trap type 2)
+	bis 2 psl	psl
+	and 74 74	crn
+	and 2 2		crw wipr
+	plus arg2 0	argd0 savnz eoi
 div_nz:
 	# check if -MAXSHORT/-1
 	plus arg1 1	nzcond goto div_done	# jump if not -1
@@ -1108,24 +1209,27 @@ div_2f:
 div_3f:	and argd0 argd0 savnz eoi		# set flags
 #
 #
+# ASHL cnt.rb, src.rl, dst.wl (arg1, arg2): cnt >= 0 shifts left, V when
+# bits are lost (the result shifted back is not src; 32 or more gives 0, V
+# unless src is 0); cnt < 0 shifts right with the sign (31 or more as 31).
 ashl:	bic 2 psl	psl			# clear V
-	plus arg2 0	argd0
 	plus arg1 0	nncond goto ashl_left	# negative shifts right
 	minus 0 arg1	arg1			# make positive
 	minus arg1 1F	ncond goto ashl_1f	# less than 31?
 	and 1F 1F	arg1			# set to 31
 ashl_1f:
 	asr arg2 arg1	argd0 savnz eoi		# right shift
-
 ashl_left:
-	and arg1 arg1	zcond goto ashl_ret	# save and return
-	xor arg2 argd0	nncond goto ashl_skip	# check if sign bit changed
-	bis psl 2	psl
-ashl_skip:
-	shl argd0 1	argd0
-	minus arg1 1	arg1 goto ashl_left
-ashl_ret:
-	plus argd0 0	savnz eoi
+	minus arg1 20	nncond goto ashl_big	# 32 or more
+	shl arg2 arg1	argd0 savnz
+	asr argd0 arg1	arg3			# shifted back
+	xor arg3 arg2	nzcond goto ashl_v	# bits lost
+	plus 0 0	eoi
+ashl_v:	bis psl 2	psl eoi
+ashl_big:
+	plus 0 0	argd0 savnz		# 0
+	plus arg2 0	nzcond goto ashl_v
+	plus 0 0	eoi
 #
 # ASHQ  arg1,argp0,argp1
 # Read in value in arg3/arg4 first, shift it, then 
@@ -1160,7 +1264,7 @@ ashq_ret:
 		
 
 ashq_left:
-	and arg1 arg1	zcond goto ashq_ret	# save and return
+	and arg1 arg1	zcond goto ashq_lend	# shifted
 	xor arg4 argd1	nncond goto ashq_skip
 	bis psl 2	psl
 ashq_skip:
@@ -1170,6 +1274,10 @@ ashq_skip:
 ashq_4f:
 	shl argd0 1	argd0			# shift left low word
 	minus arg1 1	arg1 goto ashq_left
+# V if the sign changed at any step, the last one included
+ashq_lend:
+	xor arg4 argd1	nncond goto ashq_ret
+	bis psl 2	psl goto ashq_ret
 #
 cvtlw:	bic 2 psl	psl
 	plus arg1 0	argd0
@@ -1194,6 +1302,12 @@ cvtlb:	bic 2 psl	psl
 #
 ediv:
 	bic 3 psl	psl		# 326 clear C+V
+	plus arg1 0	nzcond goto ediv_0
+# divide by zero: trap type 2; the overflow path below gives quotient = low
+# dividend, remainder 0 and V, as for an overflow
+	and 74 74	crn
+	and 2 2		crw wipr
+ediv_0:
 	plus 0 0	arg4		# 327 clear a4
 	and arg2 arg2	argd0		# 328 set d0 (future quotient)
 #
@@ -1357,8 +1471,12 @@ rei_c7:
 	shr psl 18	arg3
 	and arg3 7	crn wipr		# IPR[IS'CUR_MOD] <- SP
 
-	# Write PC+PSL
-	plus arg2 0	psl
+	# Write PC+PSL. PSL<TP> stays set if it is (TP <- TP OR saved TP):
+	# REI itself may be traced.
+	shr psl 10	arg3
+	and arg3 4000	arg3
+	shl arg3 10	arg3
+	bis arg3 arg2	psl
 	plus arg1 0	argd0
 
 	# stack change, and AST delivery check
@@ -1546,15 +1664,20 @@ movc_sv1:
 	and 5 5		crn wreg		# ...into R5
 	and F F		crn
 	plus opc 0	crw wreg		# PC back to the opcode
-	and 800 800	arg3
+	and 4000 4000	arg3
 	shl arg3 10	arg3
-	bis arg3 psl	psl			# PSL<FPD>
+	bic arg3 psl	psl			# PSL<TP> cleared (SRM 5.4.4:
+	and 800 800	arg3			# an interrupt in the middle of
+	shl arg3 10	arg3			# an instruction clears it, as
+	bis arg3 psl	psl			# a fault does); PSL<FPD>
 	and arg1 arg1	nzcond goto intrq
 	plus 0 0	goto mmflt
 #
 # 
 cmpc5:
 	and argd0 FF		argp0	# save fill byte
+	and 0 0			argd0	# two empty strings are equal
+	and 0 0			argd1
 
 	# while {tmp1 NEQU 0 } and {tmp3 NEQU 0}
 cmpc5_loop1:
@@ -1588,7 +1711,7 @@ cmpc5_loop3:
 	and arg1 arg1	nzcond goto cmpc5_exit
 	and arg3 arg3	zcond goto cmpc5_exit
 
-	and arg2 arg2		cpuaddr rmem byte
+	and arg4 arg4		cpuaddr rmem byte	# string 2 against the fill
 	and rmemdat FF		argd1
 	and argp0 FF		argd0
 	minus argd0 argd1	nzcond goto cmpc5_exit
@@ -1596,20 +1719,14 @@ cmpc5_loop3:
 	plus arg4 1		arg4 goto cmpc5_loop3
 
 cmpc5_exit:
-	and 0 0			crn
-	plus arg1 0		crw wreg
-	and 1 1			crn
-	plus arg2 0		crw wreg
-	and 2 2			crn
-	plus arg3 0		crw wreg
-	and 3 3			crn
-	plus arg4 0		crw wreg
-	minus argd0 argd1	savnz savc eoi
+	plus 0 0		goto cmpc_regsave
 #
 # CALLS arg1,arg2,arg3 (numarg, dst, sp(fake))
 #
 calls:
 	and 2000 2000		argp0	# CALLS
+	and arg2 arg2		cpuaddr rmem word	# the entry mask first
+	and rmemdat 3000	nzcond goto call_bad	# <13:12> must be zero
 	plus arg1 0		crw
 	minus arg3 4		cpuaddr wmem long # store numarg on stack
 	minus arg3 4		arg3		# push on stack
@@ -1624,7 +1741,7 @@ callg_1:
 	and arg3 3		argp1	# 527 stack align bits
 	bic 3 arg3		arg3	# arg3 now aligned stack
 	and arg2 arg2		cpuaddr rmem word # reg mask
-
+	and rmemdat 3000	nzcond goto call_bad	# <13:12> must be zero
 	and rmemdat FFFF	argd1	# 530 save entry word
 	shl rmemdat 14		arg4	# entry mask left shifted
 	and B B			argd0	# 11 regs
@@ -1681,12 +1798,15 @@ callg_3:
 	and F F			crn
 	plus arg2 2		crw wreg # set PC
 	plus 0 0		eoi	# DONE
+call_bad:
+	plus 0 0		resopflt eoi	# reserved operand fault
 #
 # arg1 is fp on entry
 ret:
 	plus arg1 4	argd1		# 579 SP now in argd1
 	plus argd1 0	cpuaddr rmem
 	plus rmemdat 0	arg1		# 581 tmp1
+	and arg1 FF00	nzcond goto call_bad	# saved PSW<15:8> must be zero
 
 	plus argd1 4	cpuaddr rmem	# 582 fetch AP val from stack
 	and C C		crn		# set AP as dest reg
@@ -1730,9 +1850,9 @@ ret_regs1:
 ret_2:
 	and E E		crn		# 611
 	plus argd1 0	crw wreg
-	bic FFFF psl	psl
-	and arg1 FFFF	arg1
-	bis arg1 psl	arg1 eoi	# 615
+	bic FF psl	psl		# PSW <- the saved one: DV FU IV T, CCs
+	and arg1 FF	arg1
+	bis arg1 psl	psl eoi	# 615
 #
 # PUSHR arg1=mask, arg2=sp
 pushr:
@@ -1795,13 +1915,18 @@ ff_found:
 ff_notfound:
 	plus arg1 argd1	argd1 eoi	# 651
 #
-# field size 0
+# field size 0: nothing found (N = 0, Z = 1), findpos = startpos
 ff_zero:
-	plus arg1 0	argd1 savnz eoi
+	plus arg1 0	argd1
+	and 0 0		savnz eoi
 #
-# LOCC arg3,arg1,arg2
+# LOCC, SKPC char.rb, len.rw, addr.ab (arg3, arg1, arg2): the first byte
+# equal to char (LOCC) or not equal to it (SKPC). R0 = the bytes left, that
+# one included (0 if none), R1 = its address (the end if none); N = 0,
+# Z = (R0 = 0), V = C = 0. The length is unsigned.
 locc:
 	and arg3 FF	arg3	# ensure zero-extended
+	and arg1 FFFF	arg1	# the length, unsigned
 locc_2:
 	and arg1 arg1	zcond goto locc_1	# zero len
 	plus arg2 0	cpuaddr rmem byte
@@ -1809,6 +1934,435 @@ locc_2:
 	minus arg4 arg3	zcond goto locc_1	# equality?
 	minus arg1 1	arg1
 	plus arg2 1	arg2 goto locc_2
+skpc:
+	and arg3 FF	arg3
+	and arg1 FFFF	arg1
+skpc_2:
+	and arg1 arg1	zcond goto locc_1
+	plus arg2 0	cpuaddr rmem byte
+	and rmemdat FF	arg4
+	minus arg4 arg3	nzcond goto locc_1	# not equal
+	minus arg1 1	arg1
+	plus arg2 1	arg2 goto skpc_2
+#
+# SCANC, SPANC len.rw, addr.ab, tbladdr.ab, mask.rb (arg1-arg4): the first
+# byte whose table entry ANDed with mask is not zero (SCANC) or is zero
+# (SPANC). R0 = the bytes left (0 if none), R1 = the byte's address, R2 = 0,
+# R3 = tbladdr; N = 0, Z = (R0 = 0), V = C = 0.
+scanc:	and arg1 FFFF	arg1
+	and arg4 FF	arg4
+scanc_1:
+	and arg1 arg1	zcond goto scan_e
+	plus arg2 0	cpuaddr rmem byte
+	and rmemdat FF	argd0
+	plus arg3 argd0	cpuaddr rmem byte	# the table entry
+	and rmemdat arg4	nzcond goto scan_e	# AND mask not zero
+	minus arg1 1	arg1
+	plus arg2 1	arg2 goto scanc_1
+spanc:	and arg1 FFFF	arg1
+	and arg4 FF	arg4
+spanc_1:
+	and arg1 arg1	zcond goto scan_e
+	plus arg2 0	cpuaddr rmem byte
+	and rmemdat FF	argd0
+	plus arg3 argd0	cpuaddr rmem byte
+	and rmemdat arg4	zcond goto scan_e	# AND mask zero
+	minus arg1 1	arg1
+	plus arg2 1	arg2 goto spanc_1
+scan_e:	and 2 2		crn
+	and 0 0		crw wreg		# R2 = 0
+	and 3 3		crn
+	plus arg3 0	crw wreg		# R3 = tbladdr
+	plus 0 0	goto locc_1		# R0, R1
+#
+# MOVTC srclen.rw, srcaddr.ab, fill.rb, tbladdr.ab, dstlen.rw, dstaddr.ab
+# (arg1-arg4, argd0, argd1): the first MIN(srclen, dstlen) bytes of the
+# destination get the table entries of the source bytes, the rest the
+# fill. Backward when the source is below the destination, so that
+# overlapping strings come out right. N Z C from CMPW srclen, dstlen, V = 0.
+# R0 = srclen - MIN, R1 = srcaddr + MIN, R2 = 0, R3 = tbladdr, R4 = 0,
+# R5 = dstaddr + dstlen, written first (a fault puts them back). Every page
+# of the source bytes used, of the table and of the destination is probed
+# before anything is moved, so that a fault cannot come in the middle: a
+# translation in place (or between overlapping strings) must not be done
+# twice when the instruction starts again.
+movtc:	minus arg1 argd0	savc savnz	# srclen : dstlen (signed words)
+	bic F psl	psl
+	and savpsw D	argp0			# N Z C
+	bis argp0 psl	psl
+	and arg1 FFFF	arg1			# the lengths, unsigned
+	and argd0 FFFF	argd0
+	and arg3 FF	arg3
+	plus arg1 0	argp0			# m = MIN(srclen, dstlen)
+	minus argd0 arg1	nncond goto movtc_0
+	plus argd0 0	argp0
+movtc_0:
+	and 64 64	crn
+	plus arg1 0	crw wipr		# U0 = srclen
+	and 65 65	crn
+	plus argd0 0	crw wipr		# U1 = dstlen
+	and 66 66	crn
+	plus argd1 0	crw wipr		# U2 = dstaddr
+	plus argp0 0	zcond goto movtc_pw0	# nothing translated
+	plus arg4 0	cpuaddr rmem byte	# the table
+	plus arg4 FF	cpuaddr rmem byte
+	plus arg2 0	arg1			# the m source bytes
+	plus argp0 0	argd0
+movtc_pr:
+	plus arg1 0	cpuaddr rmem byte	# a byte of this page
+	bis arg1 1FF	argp1
+	minus argp1 arg1	argp1
+	plus argp1 1	argp1			# bytes to the end of the page
+	minus argd0 argp1	ncond goto movtc_pw0	# ends in it
+	minus argd0 argp1	argd0
+	plus arg1 argp1	arg1
+	plus argd0 0	nzcond goto movtc_pr
+movtc_pw0:
+	and 66 66	crn
+	plus civ 0	arg1			# the destination
+	and 65 65	crn
+	plus civ 0	argd0
+movtc_pw:
+	plus argd0 0	zcond goto movtc_pe
+	plus arg1 0	cpuaddr rmem byte wint	# writable
+	bis arg1 1FF	argp1
+	minus argp1 arg1	argp1
+	plus argp1 1	argp1
+	minus argd0 argp1	ncond goto movtc_pe
+	minus argd0 argp1	argd0
+	plus arg1 argp1	arg1 goto movtc_pw
+movtc_pe:
+	and 64 64	crn
+	plus civ 0	arg1			# srclen, dstlen, dstaddr back
+	and 65 65	crn
+	plus civ 0	argd0
+	and 66 66	crn
+	plus civ 0	argd1
+movtc_1:
+	and 0 0		crn
+	minus arg1 argp0	crw wreg
+	and 1 1		crn
+	plus arg2 argp0	crw wreg
+	and 2 2		crn
+	and 0 0		crw wreg
+	and 3 3		crn
+	plus arg4 0	crw wreg
+	and 4 4		crn
+	and 0 0		crw wreg
+	and 5 5		crn
+	plus argd1 argd0	crw wreg
+	minus arg2 argd1	savc		# the source below the destination?
+	and savpsw 1	nzcond goto movtc_b
+movtc_f:
+	and argp0 argp0	zcond goto movtc_fl
+	plus arg2 0	cpuaddr rmem byte
+	and rmemdat FF	argp1
+	plus arg4 argp1	cpuaddr rmem byte	# the table entry
+	plus rmemdat 0	crw
+	plus argd1 0	cpuaddr wmem byte
+	plus arg2 1	arg2
+	plus argd1 1	argd1
+	minus argd0 1	argd0
+	minus argp0 1	argp0 goto movtc_f
+movtc_b:
+	plus argd1 argp0	arg1		# where the fill starts
+	minus argd0 argp0	argd0		# its length
+movtc_b1:
+	and argp0 argp0	zcond goto movtc_b2
+	minus argp0 1	argp0
+	plus arg2 argp0	cpuaddr rmem byte
+	and rmemdat FF	argp1
+	plus arg4 argp1	cpuaddr rmem byte
+	plus rmemdat 0	crw
+	plus argd1 argp0	cpuaddr wmem byte goto movtc_b1
+movtc_b2:
+	plus arg1 0	argd1
+movtc_fl:
+	and argd0 argd0	zcond goto movtc_e
+	plus arg3 0	crw
+	plus argd1 0	cpuaddr wmem byte
+	plus argd1 1	argd1
+	minus argd0 1	argd0 goto movtc_fl
+movtc_e:
+	plus 0 0	eoi
+#
+# MOVTUC srclen.rw, srcaddr.ab, esc.rb, tbladdr.ab, dstlen.rw, dstaddr.ab:
+# translate source bytes into the destination until either string ends or
+# a byte translates to the escape character (V, that byte not moved). N Z C
+# from CMPW srclen, dstlen. R0 = source bytes left, R1 = their address,
+# R2 = 0, R3 = tbladdr, R4 = destination bytes left, R5 = their address.
+#
+# MOVTUC, MATCHC and CRC keep their progress in R0-R3 (R0-R5 for MOVTUC)
+# and set PSL<FPD> when a memory management fault or an interrupt stops
+# them part way, as MOVC3 does: the instruction's length
+# (to find the next PC when it resumes) in bits 31:24 of R0 (R2 for CRC).
+# Each loop does all its memory references before it changes its state, so
+# a resumed loop does again exactly the step that faulted. For MOVTUC this
+# is not just speed: a translation in place (source and destination at the
+# same address, which the SRM defines) done again from the start would
+# translate the bytes before the fault twice.
+#	MOVTUC	R0 = length'esc'srclen  R1 = srcaddr  R2 = 0  R3 = tbladdr
+#		R4 = dstlen  R5 = dstaddr  (N Z C are in the PSL by then)
+#	MATCHC	R0 = length'objlen  R1 = objaddr  R2 = srclen left
+#		R3 = the source position being compared (done again)
+#	CRC	R0 = the CRC  R1 = tbladdr  R2 = length'strlen left
+#		R3 = the next byte of the stream
+movtuc:	plus 0 0	goto movtuc_0
+movtuc_fpd:
+	plus 0 0	goto movtuc_r
+movtuc_0:
+	minus arg1 argd0	savc savnz
+	bic F psl	psl
+	and savpsw D	argp0
+	bis argp0 psl	psl
+	and arg1 FFFF	arg1
+	and argd0 FFFF	argd0
+	and arg3 FF	arg3
+	and @movtuc_save @movtuc_save	fpdv	# from here faults save the state
+movtuc_1:
+	and arg1 arg1	zcond goto movtuc_e
+	and argd0 argd0	zcond goto movtuc_e
+	and savpsw 2000	nzcond goto movtuc_intr	# an interrupt is pending
+	plus arg2 0	cpuaddr rmem byte
+	and rmemdat FF	argp1
+	plus arg4 argp1	cpuaddr rmem byte
+	and rmemdat FF	argp1		# translated
+	minus argp1 arg3	zcond goto movtuc_v	# the escape character
+	plus argp1 0	crw
+	plus argd1 0	cpuaddr wmem byte
+	minus arg1 1	arg1
+	plus arg2 1	arg2
+	minus argd0 1	argd0
+	plus argd1 1	argd1 goto movtuc_1
+movtuc_v:
+	bis 2 psl	psl
+movtuc_e:
+	and 0 0		crn
+	plus arg1 0	crw wreg
+	and 1 1		crn
+	plus arg2 0	crw wreg
+	and 2 2		crn
+	and 0 0		crw wreg
+	and 3 3		crn
+	plus arg4 0	crw wreg
+	and 4 4		crn
+	plus argd0 0	crw wreg
+	and 5 5		crn
+	plus argd1 0	crw wreg
+	plus 0 0	eoi
+# resumed with PSL<FPD> set: the state from R0-R5, PC after the instruction
+movtuc_r:
+	and 0 0		crn
+	and crv FFFF	arg1
+	shr crv 10	arg3
+	and arg3 FF	arg3
+	shr crv 18	argp1		# the instruction's length
+	plus opc argp1	crw
+	and F F		crn wreg		# PC
+	and 1 1		crn
+	plus crv 0	arg2
+	and 3 3		crn
+	plus crv 0	arg4
+	and 4 4		crn
+	and crv FFFF	argd0
+	and 5 5		crn
+	plus crv 0	argd1
+	and @movtuc_save @movtuc_save	fpdv
+	plus 0 0	goto movtuc_1
+# a memory management fault (the fpdv routine) or an interrupt
+movtuc_save:
+	and 0 0		argp0 goto movtuc_s1
+movtuc_intr:
+	and 1 1		argp0
+movtuc_s1:
+	and F F		crn
+	plus opc 0	argp1
+	minus crv argp1	argp1		# the instruction's length
+	shl argp1 8	argp1
+	bis argp1 arg3	argp1
+	shl argp1 10	argp1
+	bis argp1 arg1	crw
+	and 0 0		crn wreg		# R0 = length'esc'srclen
+	and 1 1		crn
+	plus arg2 0	crw wreg
+	and 2 2		crn
+	and 0 0		crw wreg
+	and 3 3		crn
+	plus arg4 0	crw wreg
+	and 4 4		crn
+	plus argd0 0	crw wreg
+	and 5 5		crn
+	plus argd1 0	crw wreg
+	plus argp0 0	arg1 goto fpd_end
+#
+# The end of the FPD save of MOVTUC, MATCHC and CRC: PC back to the opcode,
+# PSL<TP> cleared (SRM 5.4.4: as after a fault, the resumed instruction is
+# traced when it completes) and PSL<FPD> set, then the interrupt (arg1 not
+# zero) or the fault dispatch.
+fpd_end:
+	and F F		crn
+	plus opc 0	crw wreg
+	and 4000 4000	arg3
+	shl arg3 10	arg3
+	bic arg3 psl	psl
+	and 800 800	arg3
+	shl arg3 10	arg3
+	bis arg3 psl	psl
+	and arg1 arg1	nzcond goto intrq
+	plus 0 0	goto mmflt
+#
+# MATCHC objlen.rw, objaddr.ab, srclen.rw, srcaddr.ab (arg1-arg4): the first
+# occurrence of the object string in the source string. Found: R0 = 0,
+# R1 = objaddr + objlen, R2 = source bytes left after it, R3 = the address
+# after it; not found: R0 = objlen, R1 = objaddr, R2 = 0, R3 = srcaddr +
+# srclen. N Z from R0, V = C = 0. An empty object is found at once. The
+# condition codes are set here, not by the end of instruction, so that an
+# interrupt taken part way does not set them in the new PSL.
+matchc:	plus 0 0	goto matchc_0
+matchc_fpd:
+	plus 0 0	goto matchc_r
+matchc_0:
+	and arg1 FFFF	arg1
+	and arg3 FFFF	arg3
+	and @matchc_save @matchc_save	fpdv
+matchc_1:
+	minus arg3 arg1	ncond goto matchc_no	# less left than the object
+	and 0 0		argd0
+matchc_2:
+	minus argd0 arg1	zcond goto matchc_yes
+	and savpsw 2000	nzcond goto matchc_intr
+	plus arg2 argd0	cpuaddr rmem byte
+	and rmemdat FF	argd1
+	plus arg4 argd0	cpuaddr rmem byte
+	and rmemdat FF	argp0
+	minus argd1 argp0	nzcond goto matchc_3	# differ
+	plus argd0 1	argd0 goto matchc_2
+matchc_3:
+	minus arg3 1	arg3
+	plus arg4 1	arg4 goto matchc_1
+matchc_yes:
+	plus arg2 arg1	arg2
+	minus arg3 arg1	arg3
+	plus arg4 arg1	arg4
+	and 0 0		arg1 goto matchc_e
+matchc_no:
+	plus arg4 arg3	arg4
+	and 0 0		arg3
+matchc_e:
+	and 1 1		crn
+	plus arg2 0	crw wreg
+	and 2 2		crn
+	plus arg3 0	crw wreg
+	and 3 3		crn
+	plus arg4 0	crw wreg
+	and 0 0		crn
+	plus arg1 0	crw wreg savnz
+str_nz:
+	bic F psl	psl			# N Z from the last result,
+	and savpsw C	argp0			# V = C = 0
+	bis argp0 psl	psl
+	plus 0 0	eoi
+matchc_r:
+	and 0 0		crn
+	and crv FFFF	arg1
+	shr crv 18	argp1
+	plus opc argp1	crw
+	and F F		crn wreg		# PC
+	and 1 1		crn
+	plus crv 0	arg2
+	and 2 2		crn
+	and crv FFFF	arg3
+	and 3 3		crn
+	plus crv 0	arg4
+	and @matchc_save @matchc_save	fpdv
+	plus 0 0	goto matchc_1
+matchc_save:
+	and 0 0		argp0 goto matchc_s1
+matchc_intr:
+	and 1 1		argp0
+matchc_s1:
+	and F F		crn
+	plus opc 0	argp1
+	minus crv argp1	argp1
+	shl argp1 18	argp1
+	bis argp1 arg1	crw
+	and 0 0		crn wreg		# R0 = length'objlen
+	and 1 1		crn
+	plus arg2 0	crw wreg
+	and 2 2		crn
+	plus arg3 0	crw wreg
+	and 3 3		crn
+	plus arg4 0	crw wreg
+	plus argp0 0	arg1 goto fpd_end
+#
+# CRC tbl.ab, inicrc.rl, strlen.rw, stream.ab (arg1-arg4): the CRC of the
+# stream with the 16-longword table, four bits at a time. R0 = the CRC,
+# R1 = R2 = 0, R3 = the address after the stream; N Z from R0, V = C = 0.
+# The CRC of a byte is worked out in argd1 and stored only when its table
+# lookups are done.
+crc:	plus 0 0	goto crc_0
+crc_fpd:
+	plus 0 0	goto crc_r
+crc_0:
+	and arg3 FFFF	arg3
+	and @crc_save @crc_save	fpdv
+crc_1:	and arg3 arg3	zcond goto crc_e
+	and savpsw 2000	nzcond goto crc_intr
+	plus arg4 0	cpuaddr rmem byte
+	and rmemdat FF	argd0
+	xor arg2 argd0	argd1			# CRC xor the byte
+	and argd1 F	argd0
+	shl argd0 2	argd0
+	plus arg1 argd0	cpuaddr rmem		# the table entry
+	shr argd1 4	argd1
+	xor rmemdat argd1	argd1
+	and argd1 F	argd0
+	shl argd0 2	argd0
+	plus arg1 argd0	cpuaddr rmem
+	shr argd1 4	argd1
+	xor rmemdat argd1	arg2
+	minus arg3 1	arg3
+	plus arg4 1	arg4 goto crc_1
+crc_e:	and 1 1		crn
+	and 0 0		crw wreg
+	and 2 2		crn
+	and 0 0		crw wreg
+	and 3 3		crn
+	plus arg4 0	crw wreg
+	and 0 0		crn
+	plus arg2 0	crw wreg savnz goto str_nz
+crc_r:
+	and 0 0		crn
+	plus crv 0	arg2			# the CRC
+	and 1 1		crn
+	plus crv 0	arg1			# the table
+	and 2 2		crn
+	and crv FFFF	arg3
+	shr crv 18	argp1
+	plus opc argp1	crw
+	and F F		crn wreg		# PC
+	and 3 3		crn
+	plus crv 0	arg4
+	and @crc_save @crc_save	fpdv
+	plus 0 0	goto crc_1
+crc_save:
+	and 0 0		argp0 goto crc_s1
+crc_intr:
+	and 1 1		argp0
+crc_s1:
+	and 0 0		crn
+	plus arg2 0	crw wreg		# R0 = the CRC
+	and 1 1		crn
+	plus arg1 0	crw wreg		# R1 = the table
+	and F F		crn
+	plus opc 0	argp1
+	minus crv argp1	argp1
+	shl argp1 18	argp1
+	bis argp1 arg3	crw
+	and 2 2		crn wreg		# R2 = length'strlen
+	and 3 3		crn
+	plus arg4 0	crw wreg
+	plus argp0 0	arg1 goto fpd_end
 
 locc_1:
 	and 0 0		crn
@@ -1871,6 +2425,173 @@ remque_1:
 	plus arg1 4	cpuaddr rmem long
 	plus rmemdat 0	arg4
 	minus arg3 arg4	argd0 savc savv savnz eoi
+#
+# INSQHI, INSQTI entry.ab, header.aq (arg1 = d, arg2 = h); REMQHI,
+# REMQTI header.aq, addr.wl (arg1 = h, addr at argp0): the interlocked
+# queue instructions on a self-relative queue (links are offsets). Reserved
+# operand fault when the header, the entry or a link that is used is not
+# quadword aligned, the entry is the header, or addr is the header. When
+# the interlock bit (h)<0> is set nothing is done: C (insert), V and C
+# (remove). With one processor nothing else can look at the queue while the
+# instruction runs, so the interlock is not set in memory; every page that
+# is written is checked for write access before the first write, so a fault
+# leaves the queue as it was.
+#
+# INSQHI: insert d after the header. Z if the queue was empty.
+insqhi:	minus arg1 arg2	zcond goto q_bad	# entry = header
+	bis arg1 arg2	arg3
+	and arg3 7	nzcond goto q_bad	# not quadword aligned
+	plus arg1 0	cpuaddr rmem byte wint	# write check d
+	plus arg2 0	cpuaddr rmem wint	# ar <- (h)
+	plus rmemdat 0	arg3
+	and arg3 6	nzcond goto q_bad
+	and arg3 1	nzcond goto q_busy
+insqh_e:
+	plus arg3 arg2	arg4			# a = ar + h
+	plus arg4 0	cpuaddr rmem wint	# write check a
+	minus arg1 arg4	crw
+	plus arg4 4	cpuaddr wmem		# (a+4) <- d-a
+	minus arg4 arg1	crw
+	plus arg1 0	cpuaddr wmem		# (d) <- a-d
+	minus arg2 arg1	crw
+	plus arg1 4	cpuaddr wmem		# (d+4) <- h-d
+	minus arg1 arg2	crw
+	plus arg2 0	cpuaddr wmem		# (h) <- d-h
+	bic F psl	psl
+	plus arg3 0	nzcond goto q_end
+	bis 4 psl	psl			# Z: the queue was empty
+q_end:	plus 0 0	eoi
+q_busy:	bic F psl	psl
+	bis 1 psl	psl eoi			# C: interlocked, nothing done
+q_vbusy:
+	bic F psl	psl
+	bis 3 psl	psl eoi			# V C: interlocked, nothing done
+q_bad:	plus 0 0	resopflt eoi
+#
+# INSQTI: insert d before the header (at the tail); into an empty queue as
+# INSQHI. NZVC = 0 otherwise.
+insqti:	minus arg1 arg2	zcond goto q_bad
+	bis arg1 arg2	arg3
+	and arg3 7	nzcond goto q_bad
+	plus arg1 0	cpuaddr rmem byte wint	# write check d
+	plus arg2 0	cpuaddr rmem wint	# ar <- (h)
+	plus rmemdat 0	arg3
+	plus arg3 0	zcond goto insqh_e	# empty
+	and arg3 6	nzcond goto q_bad
+	and arg3 1	nzcond goto q_busy
+	plus arg2 4	cpuaddr rmem		# (h+4)
+	plus rmemdat arg2	arg4		# c = (h+4) + h
+	and arg4 7	nzcond goto q_bad
+	plus arg4 0	cpuaddr rmem wint	# write check c
+	minus arg1 arg4	crw
+	plus arg4 0	cpuaddr wmem		# (c) <- d-c
+	minus arg2 arg1	crw
+	plus arg1 0	cpuaddr wmem		# (d) <- h-d
+	minus arg4 arg1	crw
+	plus arg1 4	cpuaddr wmem		# (d+4) <- c-d
+	minus arg1 arg2	crw
+	plus arg2 4	cpuaddr wmem		# (h+4) <- d-h
+	bic F psl	psl eoi
+#
+# REMQHI: remove the entry after the header, its address to addr (h if
+# the queue is empty: Z and V). Z if the queue is empty now.
+remqhi:	and arg1 7	nzcond goto q_bad
+	and savpsw 10	nzcond goto remqh_1	# addr is a register
+	minus argp0 arg1	zcond goto q_bad	# addr = header
+	plus argp0 0	cpuaddr rmem wint	# write check addr
+remqh_1:
+	plus arg1 0	cpuaddr rmem wint	# ar <- (h)
+	plus rmemdat 0	arg2
+	and arg2 6	nzcond goto q_bad
+	and arg2 1	nzcond goto q_vbusy
+	plus arg2 0	zcond goto remq_e	# empty
+remqh_a:
+	plus arg2 arg1	arg3			# a = ar + h
+	plus arg3 0	cpuaddr rmem		# (a)
+	plus rmemdat arg3	arg4		# b = (a) + a
+	and arg4 7	nzcond goto q_bad
+	plus arg4 0	cpuaddr rmem wint	# write check b
+	minus arg1 arg4	crw
+	plus arg4 4	cpuaddr wmem		# (b+4) <- h-b
+	minus arg4 arg1	crw
+	plus arg1 0	cpuaddr wmem		# (h) <- b-h
+	bic F psl	psl
+	minus arg4 arg1	nzcond goto remqh_2
+	bis 4 psl	psl			# Z: empty now
+remqh_2:
+	plus arg3 0	argd0 wback eoi		# addr <- a
+remq_e:	bic F psl	psl
+	bis 6 psl	psl			# Z V: the queue was empty
+	plus arg1 0	argd0 wback eoi		# addr <- h
+#
+# REMQTI: remove the entry before the header (the tail); a queue of one
+# entry as REMQHI.
+remqti:	and arg1 7	nzcond goto q_bad
+	and savpsw 10	nzcond goto remqt_1
+	minus argp0 arg1	zcond goto q_bad
+	plus argp0 0	cpuaddr rmem wint
+remqt_1:
+	plus arg1 0	cpuaddr rmem wint	# ar <- (h)
+	plus rmemdat 0	arg2
+	and arg2 6	nzcond goto q_bad
+	and arg2 1	nzcond goto q_vbusy
+	plus arg2 0	zcond goto remq_e	# empty
+	plus arg1 4	cpuaddr rmem		# (h+4)
+	plus rmemdat 0	arg3
+	minus arg2 arg3	zcond goto remqh_a	# one entry
+	and arg3 7	nzcond goto q_bad
+	plus arg3 arg1	arg3			# c = (h+4) + h
+	plus arg3 4	cpuaddr rmem		# (c+4)
+	plus rmemdat arg3	arg4		# b = (c+4) + c
+	and arg4 7	nzcond goto q_bad
+	plus arg4 0	cpuaddr rmem wint	# write check b
+	minus arg1 arg4	crw
+	plus arg4 0	cpuaddr wmem		# (b) <- h-b
+	minus arg4 arg1	crw
+	plus arg1 4	cpuaddr wmem		# (h+4) <- b-h
+	bic F psl	psl
+	plus arg3 0	argd0 wback eoi		# addr <- c
+#
+# INDEX subscript.rl, low.rl, high.rl, size.rl, indexin.rl, indexout.wl
+# (arg1-arg4, argd0): indexout <- (indexin + subscript) * size, N Z from it,
+# V = C = 0; then a subscript range trap (type 7) if subscript < low or
+# subscript > high (signed compares that cannot overflow).
+index:	plus argd0 arg1	argd0
+	mul argd0 arg4	argd0 savnz		# indexout
+	xor arg1 arg2	argd1
+	plus argd1 0	ncond goto index_ld	# signs differ
+	minus arg1 arg2	ncond goto index_r	# subscript < low
+	plus 0 0	goto index_h
+index_ld:
+	plus arg1 0	ncond goto index_r	# subscript < 0 <= low
+index_h:
+	xor arg1 arg3	argd1
+	plus argd1 0	ncond goto index_hd
+	minus arg3 arg1	ncond goto index_r	# high < subscript
+	plus 0 0	eoi
+index_hd:
+	plus arg3 0	ncond goto index_r	# high < 0 <= subscript
+	plus 0 0	eoi
+index_r:
+	and 74 74	crn
+	and 7 7		crw wipr		# subscript range trap
+	plus 0 0	eoi
+#
+# ADAWI add.rw, sum.mw (arg1; sum as a write operand, argp0, so that the
+# alignment is checked before it is read): sum <- sum + add as ADDW2. In
+# memory sum must be word aligned (reserved operand fault); it is read with
+# write intent and written back (interlocked: one processor here).
+adawi:	and savpsw 10	zcond goto adawi_m	# argp0 is not a register
+	plus argp0 0	crn
+	shl crv 10	arg2			# the register's low word ...
+	plus 0 0	goto adawi_a
+adawi_m:
+	and argp0 1	nzcond goto q_bad	# odd address
+	plus argp0 0	cpuaddr rmem word wint
+	shl rmemdat 10	arg2
+adawi_a:
+	asr arg2 10	arg2			# ... sign extended
+	plus arg1 arg2	argd0 savnz savc savv eoi
 #
 # PROBER/PROBEW mode.rb, len.rw, base.ab (arg1, arg2, arg3), SRM 4.10.
 # The mode is the less privileged of mode<1:0> and PSL<PRV_MOD>; the first
@@ -2047,8 +2768,8 @@ svp_end:
 # probed for writing in the new mode first, with the new PSL already in
 # place: an access-control violation or translation-not-valid there is an
 # ordinary fault on the CHMx, which puts SP, PC and PSL back. On the
-# interrupt stack the processor halts (8600 halt code A; PC past the CHMx,
-# as simh leaves it), and so it does if the vector has bits 1:0 set (code B,
+# interrupt stack the processor halts (8600 halt code A; PC past the
+# CHMx), and so it does if the vector has bits 1:0 set (code B,
 # everything put back). Frame: code (sign extended), PC, PSL; the new PSL
 # keeps the IPL and clears everything else.
 # argd1 opcode's mode, arg3 current mode, arg4 new mode, argd0 vector,
@@ -2117,7 +2838,11 @@ bpt_1:	and 0 0		argp1		# end in scb_common
 	and 20 20	argd0		# an exception
 	and F F		crn
 	minus crv 1	crw wreg	# PC back to the opcode
-	plus 0 0	goto scb_common
+	shr psl 10	arg1
+	bic 4000 arg1	arg1		# the saved PSL: TP clear (a fault)
+	shl arg1 10	arg1
+	and psl FFFF	arg2
+	bis arg1 arg2	arg1 goto scb_common2
 #
 # CMPC3 len,src1,src2
 cmpc3:
@@ -2137,7 +2862,6 @@ cmpc3_loop:
 	plus arg4 1	arg4 goto cmpc3_loop
 
 cmpc3_done:
-	minus argd0 argd1 savnz savc
 	plus arg1 0	arg3 goto cmpc_regsave
 
 cmpc_regsave:
@@ -2149,8 +2873,848 @@ cmpc_regsave:
 	plus arg3 0	crw wreg
 	and 3 3		crn
 	plus arg4 0	crw wreg
+# The condition codes of CMPB on the last two bytes compared (argd0 and
+# argd1, both zero if no byte was): C from the unsigned comparison, N and Z
+# from the signed one (the bytes with their sign bit flipped compare
+# unsigned as the bytes do signed).
+cmpc_cc:
+	minus argd0 argd1	savc
+	xor argd0 80	arg1
+	xor argd1 80	arg2
+	minus arg1 arg2	savnz eoi
+#
+# Decimal string instructions (SRM chapter 3: the results, the condition
+# codes and the registers). The decimal unit
+# (decunit.v, internal registers 60-6F) holds the strings and does the
+# arithmetic; the microcode moves them between memory and the unit. A
+# length above 31 is a reserved operand. A source may fault while it is
+# read (the instruction starts again); a destination is checked for writing
+# before its first byte is stored. The operands are kept in the unit's
+# U0-U3 (64-67) while the subroutines run; the general registers are
+# written at the end.
+#
+# dsrd (return address in arg4): the packed decimal string of arg1 digits
+# at arg2 into decimal unit register A (arg3 = 61) or B (arg3 = 62): the
+# high nibble of the first byte of a string of even
+# length is not a digit, the low nibble of the last byte is the sign (B and
+# D minus). argd0 <- 1 if minus and not zero. Uses argd1, argp0, argp1.
+dsrd:	shr arg1 1	argd1			# index of the sign byte
+	and 0 0		argp1			# byte index
+dsrd_l:	plus arg2 argp1	cpuaddr rmem byte
+	and rmemdat FF	argp0
+	plus argp1 0	nzcond goto dsrd_2	# not the first byte
+	and arg1 1	nzcond goto dsrd_1
+	and argp0 F	argp0			# even length: no high digit
+dsrd_1:	bis argp0 200	argp0			# the first byte: from zero
+dsrd_2:	minus argp1 argd1	nzcond goto dsrd_3
+	and argp0 F	argd0			# the sign nibble ...
+	bis argp0 100	argp0			# ... is not a digit
+dsrd_3:	plus arg3 0	crn
+	plus argp0 0	crw wipr
+	plus argp1 1	argp1
+	minus argd1 argp1	nncond goto dsrd_l
+	minus argd0 B	zcond goto dsrd_m
+	minus argd0 D	zcond goto dsrd_m
+	and 0 0		argd0 goto dsrd_r	# plus
+dsrd_m:	and 60 60	crn
+	plus civ 0	argp0			# A = 0 <0>, B = 0 <5>
+	minus arg3 61	zcond goto dsrd_a
+	shr argp0 5	argp0
+dsrd_a:	and argp0 1	argp0
+	xor argp0 1	argd0			# minus unless zero
+dsrd_r:	plus arg4 0	jmp
+#
+# dswr (return address in arg4): decimal unit register A as the packed
+# decimal string of arg1 digits at arg2:
+# digits above the length make V, as do argd1 = 1 and a carry the unit saw;
+# the sign is argd0, plus for a zero result without V; PSL N (minus, not
+# zero) Z V, C left as it is; V with PSL<DV> requests the decimal overflow
+# trap (type 6). Uses arg3, argp0, argp1.
+dswr:	plus arg2 0	cpuaddr rmem byte wint	# writable: the first byte ...
+	shr arg1 1	argp1
+	plus arg2 argp1	cpuaddr rmem byte wint	# ... and the last
+	and 60 60	crn
+	shl arg1 8	argp0
+	bis argp0 9	crw wipr		# SETLEN
+	plus civ 0	argp0			# status
+	shr argp0 3	arg3
+	and arg3 1	arg3
+	bis arg3 argd1	arg3			# V
+	and argp0 1	argp0			# Z
+	plus argp0 0	zcond goto dswr_1
+	plus arg3 0	nzcond goto dswr_1
+	and 0 0		argd0			# zero without V: plus
+dswr_1:	bic E psl	psl
+	shl arg3 1	argp1
+	bis argp1 psl	psl			# V
+	shl argp0 2	argp1
+	bis argp1 psl	psl			# Z
+	plus argp0 0	nzcond goto dswr_2
+	shl argd0 3	argp1
+	bis argp1 psl	psl			# N
+dswr_2:	bis argd0 C	argp1			# the sign nibble: C, or D
+	shl argp1 10	argp1
+	bis argp1 A	crw wipr		# SETNIB 0
+	shr arg1 1	argp1			# bytes - 1
+	minus F argp1	argp0
+	shl argp0 9	argp0
+	bis argp0 8	crw wipr		# ROL: the first byte to the top
+	plus arg2 0	argp0
+dswr_l:	and 61 61	crn
+	plus civ 0	crw			# the top byte
+	plus argp0 0	cpuaddr wmem byte
+	and 60 60	crn
+	and 208 208	crw wipr		# ROL 2
+	plus argp0 1	argp0
+	minus argp1 1	argp1 nncond goto dswr_l
+	plus arg3 0	zcond goto dswr_r
+	and psl 80	zcond goto dswr_r	# PSL<DV> clear
+	and 74 74	crn
+	and 6 6		crw wipr		# decimal overflow trap
+dswr_r:	plus arg4 0	jmp
+#
+# The end of most of them: R0 = R2 = 0, R1 = U1, R3 = U3 (dec_r4); R4 = 0,
+# R5 = U2 as well (dec_r6).
+dec_r6:	and 4 4		crn
+	and 0 0		crw wreg
+	and 66 66	crn
+	plus civ 0	argp0
+	and 5 5		crn
+	plus argp0 0	crw wreg
+dec_r4:	and 0 0		crn
+	and 0 0		crw wreg
+	and 2 2		crn
+	and 0 0		crw wreg
+	and 65 65	crn
+	plus civ 0	argp0
+	and 1 1		crn
+	plus argp0 0	crw wreg
+	and 67 67	crn
+	plus civ 0	argp0
+	and 3 3		crn
+	plus argp0 0	crw wreg
 	plus 0 0	eoi
-
+#
+# MOVP len.rw, srcaddr.ab, dstaddr.ab (arg1-arg3): the string read and
+# written again. N Z V, C unchanged. R0 = R2 = 0, R1 = srcaddr, R3 =
+# dstaddr.
+movp:	and arg1 FFFF	arg1
+	minus 1F arg1	ncond goto q_bad
+	and 65 65	crn
+	plus arg2 0	crw wipr		# U1 = srcaddr
+	and 67 67	crn
+	plus arg3 0	crw wipr		# U3 = dstaddr
+	and 60 60	crn
+	and 0 0		crw wipr		# CLR
+	and 61 61	arg3
+	and @movp_1 @movp_1	arg4
+	plus 0 0	goto dsrd
+movp_1:	and 67 67	crn
+	plus civ 0	arg2
+	and 0 0		argd1
+	and @dec_r4 @dec_r4	arg4
+	plus 0 0	goto dswr
+#
+# CMPP3 len.rw, src1addr.ab, src2addr.ab; CMPP4 src1len.rw, src1addr.ab,
+# src2len.rw, src2addr.ab: N Z from src1 : src2, V = C = 0. R0 = R2 = 0,
+# R1 = src1addr, R3 = src2addr.
+cmpp3:	plus arg3 0	arg4
+	plus arg1 0	arg3
+cmpp4:	and arg1 FFFF	arg1
+	and arg3 FFFF	arg3
+	minus 1F arg1	ncond goto q_bad
+	minus 1F arg3	ncond goto q_bad
+	and 65 65	crn
+	plus arg2 0	crw wipr		# U1 = src1addr
+	and 67 67	crn
+	plus arg4 0	crw wipr		# U3 = src2addr
+	and 66 66	crn
+	plus arg3 0	crw wipr		# U2 = src2len
+	and 60 60	crn
+	and 0 0		crw wipr		# CLR
+	and 62 62	arg3			# src1 into B
+	and @cmpp_1 @cmpp_1	arg4
+	plus 0 0	goto dsrd
+cmpp_1:	and 64 64	crn
+	plus argd0 0	crw wipr		# U0 = its sign
+	and 66 66	crn
+	plus civ 0	arg1
+	and 67 67	crn
+	plus civ 0	arg2
+	and 61 61	arg3			# src2 into A
+	and @cmpp_2 @cmpp_2	arg4
+	plus 0 0	goto dsrd
+cmpp_2:	and 64 64	crn
+	plus civ 0	argd1			# sign 1 (argd0: sign 2)
+	bic F psl	psl
+	minus argd1 argd0	zcond goto cmpp_3
+	plus argd1 0	zcond goto dec_r4	# + : -
+	bis 8 psl	psl goto dec_r4		# - : +
+cmpp_3:	and 60 60	crn
+	plus civ 0	argp0
+	and argp0 4	nzcond goto cmpp_eq	# A = B
+	and argp0 2	nzcond goto cmpp_lt	# A > B: |src2| > |src1|
+	plus argd1 0	zcond goto dec_r4	# greater if plus
+	bis 8 psl	psl goto dec_r4
+cmpp_lt: plus argd1 0	nzcond goto dec_r4	# less if plus
+	bis 8 psl	psl goto dec_r4
+cmpp_eq: bis 4 psl	psl goto dec_r4
+#
+# ADDP4 addlen.rw, addaddr.ab, sumlen.rw, sumaddr.ab; ADDP6 add1len.rw,
+# add1addr.ab, add2len.rw, add2addr.ab, sumlen.rw, sumaddr.ab; SUBP4,
+# SUBP6 the same with the first operand subtracted; MULP, DIVP (the first
+# operand the multiplier or the divisor) with six operands. N Z V, C = 0.
+# R0 = R2 = 0, R1, R3 the first two addresses; with six operands R4 = 0,
+# R5 the third. A zero divisor: a decimal divide by zero trap (type 4),
+# nothing else done. U0: <8> subtract, <9> six operands, <11> MULP, <12>
+# DIVP, <10> sign 1, <4:0> length 2, <20:16> length 3; U1, U3 the first two
+# addresses, U2 the third.
+addp4:	and 0 0		argp0 goto addp_a
+subp4:	and 100 100	argp0
+addp_a:	plus arg3 0	argd0			# the sum is the second string
+	plus arg4 0	argd1 goto addp_c
+addp6:	and 200 200	argp0 goto addp_c
+subp6:	and 300 300	argp0 goto addp_c
+mulp:	and A00 A00	argp0 goto addp_c
+divp:	and 1200 1200	argp0
+addp_c:	and arg1 FFFF	arg1
+	and arg3 FFFF	arg3
+	and argd0 FFFF	argd0
+	minus 1F arg1	ncond goto q_bad
+	minus 1F arg3	ncond goto q_bad
+	minus 1F argd0	ncond goto q_bad
+	and 65 65	crn
+	plus arg2 0	crw wipr		# U1
+	and 67 67	crn
+	plus arg4 0	crw wipr		# U3
+	and 66 66	crn
+	plus argd1 0	crw wipr		# U2
+	shl argd0 10	argp1
+	bis argp1 argp0	argp0
+	bis argp0 arg3	argp0
+	and 64 64	crn
+	plus argp0 0	crw wipr		# U0
+	and 60 60	crn
+	and 0 0		crw wipr		# CLR
+	and 62 62	arg3			# string 1 into B
+	and @addp_1 @addp_1	arg4
+	plus 0 0	goto dsrd
+addp_1:	and 64 64	crn
+	shl argd0 A	argd0
+	bis civ argd0	crw wipr		# U0 <10> = sign 1
+	and civ 1000	zcond goto addp_1b
+	and 60 60	crn
+	and civ 20	zcond goto addp_1a	# the divisor is not zero
+	and 74 74	crn
+	and 4 4		crw wipr		# decimal divide by zero trap
+	plus 0 0	eoi
+addp_1a: and 64 64	crn
+addp_1b: and civ 1F	arg1			# length 2
+	and 67 67	crn
+	plus civ 0	arg2
+	and 61 61	arg3			# string 2 into A
+	and @addp_2 @addp_2	arg4
+	plus 0 0	goto dsrd
+addp_2:	and 64 64	crn
+	plus civ 0	argp0			# U0 (argd0: sign 2)
+	shr argp0 A	argd1
+	and argd1 1	argd1			# sign 1
+	and 60 60	crn
+	and argp0 1800	nzcond goto mulp_2
+	and argp0 100	zcond goto addp_3
+	xor argd1 1	argd1			# subtract: string 1 negated
+addp_3:	minus argd1 argd0	zcond goto addp_ad	# the same signs: add
+	plus civ 0	arg1
+	and arg1 2	zcond goto addp_s1	# A > B: |2| > |1|
+	and 4 4		crw wipr		# A <- A - B, the sign of 2
+	plus 0 0	goto addp_w
+addp_s1: and 5 5	crw wipr		# A <- B - A, the sign of 1
+	plus argd1 0	argd0 goto addp_w
+addp_ad: and 3 3	crw wipr		# A <- A + B (a carry out: V)
+	plus 0 0	goto addp_w
+mulp_2:	xor argd1 argd0	argd0			# the sign of the result
+	and argp0 1000	nzcond goto divp_2
+	and C C		crw wipr		# MUL (does not fit: V)
+	plus 0 0	goto addp_w
+divp_2:	and 1 1		crw wipr		# SWAP: A the divisor, B the dividend
+	and D D		crw wipr		# DIV
+addp_w:	and 0 0		argd1
+	shr argp0 10	arg1			# length 3
+	and 66 66	crn
+	plus civ 0	arg2			# address 3
+	and @addp_e @addp_e	arg4
+	plus 0 0	goto dswr
+addp_e:	bic 1 psl	psl			# C = 0
+	and 64 64	crn
+	and civ 200	zcond goto dec_r4	# four operands
+	plus 0 0	goto dec_r6
+#
+# ASHP cnt.rb, srclen.rw, srcaddr.ab, round.rb, dstlen.rw, dstaddr.ab
+# (arg1-arg4, argd0, argd1): the source shifted cnt digits, to the left if
+# cnt > 0; to the right it is rounded, 1 added when the round digit<3:0>
+# and the highest digit shifted out add up to more than 9. N Z V, C = 0.
+# R0 = R2 = 0, R1 = srcaddr, R3 = dstaddr.
+ashp:	and arg2 FFFF	arg2
+	and argd0 FFFF	argd0
+	minus 1F arg2	ncond goto q_bad
+	minus 1F argd0	ncond goto q_bad
+	and 65 65	crn
+	plus arg3 0	crw wipr		# U1 = srcaddr
+	and 67 67	crn
+	plus argd1 0	crw wipr		# U3 = dstaddr
+	and 66 66	crn
+	plus argd0 0	crw wipr		# U2 = dstlen
+	and 64 64	crn
+	and arg4 F	argp0
+	shl argp0 8	argp0
+	and arg1 FF	argp1
+	bis argp0 argp1	crw wipr		# U0 = round<11:8>'cnt<7:0>
+	and 60 60	crn
+	and 0 0		crw wipr		# CLR
+	plus arg2 0	arg1
+	plus arg3 0	arg2
+	and 61 61	arg3
+	and @ashp_1 @ashp_1	arg4
+	plus 0 0	goto dsrd
+ashp_1:	and 64 64	crn
+	plus civ 0	argp0
+	and 60 60	crn
+	and argp0 80	nzcond goto ashp_r	# right
+	shl argp0 8	argp1
+	and argp1 FF00	argp1
+	bis argp1 6	crw wipr		# SHL cnt
+	plus 0 0	goto ashp_w
+ashp_r:	and argp0 FF	argp1
+	minus 100 argp1	argp1			# 256 - cnt
+	shl argp1 8	argp1
+	bis argp1 7	crw wipr		# SHR
+	and B B		crw wipr		# SETIDX 0
+	and 62 62	crn
+	plus civ 0	argp1			# the highest digit shifted out
+	shr argp0 8	arg1
+	and arg1 F	arg1			# the round digit
+	plus argp1 arg1	argp1
+	and 60 60	crn
+	minus 9 argp1	nncond goto ashp_r1
+	and 11 11	crw wipr		# INC
+ashp_r1: and A A	crw wipr		# SETNIB 0, 0
+ashp_w:	and 66 66	crn
+	plus civ 0	arg1			# dstlen
+	and 67 67	crn
+	plus civ 0	arg2
+	and 0 0		argd1
+	and @dec_c0 @dec_c0	arg4
+	plus 0 0	goto dswr
+# C = 0, then the end of most of them
+dec_c0:	bic 1 psl	psl
+	plus 0 0	goto dec_r4
+#
+# CVTLP src.rl, dstlen.rw, dstaddr.ab (arg1-arg3): N Z V, C = 0. R0 = R1 =
+# R2 = 0, R3 = dstaddr.
+cvtlp:	and arg2 FFFF	arg2
+	minus 1F arg2	ncond goto q_bad
+	and 0 0		argd0
+	plus arg1 0	nncond goto cvtlp_1
+	minus 0 arg1	arg1			# the magnitude
+	and 1 1		argd0			# minus
+cvtlp_1: and 60 60	crn
+	and 0 0		crw wipr		# CLR
+	and 63 63	crn
+	plus arg1 0	crw wipr		# X
+	and 60 60	crn
+	and E E		crw wipr		# CVTLP
+	plus arg2 0	arg1
+	plus arg3 0	arg2
+	and 0 0		argd1
+	and @cvtlp_2 @cvtlp_2	arg4
+	plus 0 0	goto dswr
+cvtlp_2: bic 1 psl	psl
+	and 0 0		crn
+	and 0 0		crw wreg
+	and 1 1		crn
+	and 0 0		crw wreg
+	and 2 2		crn
+	and 0 0		crw wreg
+	and 3 3		crn
+	plus arg2 0	crw wreg
+	plus 0 0	eoi
+#
+# CVTPL srclen.rw, srcaddr.ab, dst.wl (arg1, arg2, argp0): the string in
+# binary; V if it does not fit in a longword (an integer overflow trap with
+# PSL<IV>: instruction flag intov). N Z from the result, C = 0. R0 = R2 =
+# R3 = 0, R1 = srcaddr; the destination is written after them.
+cvtpl:	and arg1 FFFF	arg1
+	minus 1F arg1	ncond goto q_bad
+	and 64 64	crn
+	plus argp0 0	crw wipr		# U0 = the destination
+	and 65 65	crn
+	plus arg2 0	crw wipr		# U1 = srcaddr
+	and 60 60	crn
+	and 0 0		crw wipr		# CLR
+	and 61 61	arg3
+	and @cvtpl_1 @cvtpl_1	arg4
+	plus 0 0	goto dsrd
+cvtpl_1: and 60 60	crn
+	and F F		crw wipr		# CVTPL
+	plus civ 0	argd1
+	shr argd1 4	argd1
+	and argd1 1	argd1			# overflow so far
+	and 63 63	crn
+	plus civ 0	arg1			# the magnitude, modulo 2**32
+	plus argd0 0	zcond goto cvtpl_2
+	minus 0 arg1	arg1			# minus
+cvtpl_2: shr arg1 1F	arg3
+	xor arg3 argd0	arg3			# not of the sign: overflow
+	bis arg3 argd1	argd1
+	bic 2 psl	psl
+	shl argd1 1	argd1
+	bis argd1 psl	psl			# V
+	and 0 0		crn
+	and 0 0		crw wreg
+	and 2 2		crn
+	and 0 0		crw wreg
+	and 3 3		crn
+	and 0 0		crw wreg
+	and 65 65	crn
+	plus civ 0	argp1
+	and 1 1		crn
+	plus argp1 0	crw wreg		# R1 = srcaddr
+	and 64 64	crn
+	plus civ 0	argp0			# the destination back
+	plus arg1 0	argd0 savnz eoi		# the result, N Z
+#
+# CVTPS srclen.rw, srcaddr.ab, dstlen.rw, dstaddr.ab (arg1-arg4): to a
+# leading separate numeric string, the sign (+ or -) and dstlen digits. N Z
+# from the source, V if its digits do not fit (decimal overflow trap with
+# PSL<DV>), C = 0. R0 = R2 = 0, R1 = srcaddr, R3 = dstaddr.
+cvtps:	and arg1 FFFF	arg1
+	and arg3 FFFF	arg3
+	minus 1F arg1	ncond goto q_bad
+	minus 1F arg3	ncond goto q_bad
+	and 65 65	crn
+	plus arg2 0	crw wipr		# U1
+	and 67 67	crn
+	plus arg4 0	crw wipr		# U3
+	and 66 66	crn
+	plus arg3 0	crw wipr		# U2 = dstlen
+	and 60 60	crn
+	and 0 0		crw wipr
+	and 61 61	arg3
+	and @cvtps_1 @cvtps_1	arg4
+	plus 0 0	goto dsrd
+cvtps_1: and 66 66	crn
+	plus civ 0	arg1			# dstlen
+	and 67 67	crn
+	plus civ 0	arg2			# dstaddr
+	plus arg2 0	cpuaddr rmem byte wint	# writable: the sign ...
+	plus arg2 arg1	cpuaddr rmem byte wint	# ... and the last digit
+	and 2B 2B	crw			# +
+	plus argd0 0	zcond goto cvtps_2
+	and 2D 2D	crw			# -
+cvtps_2: plus arg2 0	cpuaddr wmem byte
+	and 1 1		argp1			# digit i at dstaddr + dstlen + 1 - i
+cvtps_l: minus arg1 argp1	ncond goto cvtps_cc
+	and 60 60	crn
+	shl argp1 8	argp0
+	bis argp0 B	crw wipr		# SETIDX i
+	and 62 62	crn
+	plus civ 0	argp0
+	bis argp0 30	crw			# the digit in ASCII
+	plus arg2 arg1	argp0
+	plus argp0 1	argp0
+	minus argp0 argp1	cpuaddr wmem byte
+	plus argp1 1	argp1 goto cvtps_l
+# N Z from the source (sign argd0), V if its highest digit is above arg1
+cvtps_cc: and 60 60	crn
+	plus civ 0	argp0			# status
+	bic F psl	psl
+	and argp0 1	zcond goto cvtps_nz
+	bis 4 psl	psl			# Z
+	plus 0 0	goto cvtps_v
+cvtps_nz: shl argd0 3	argp1
+	bis argp1 psl	psl			# N
+cvtps_v: shr argp0 8	argp1
+	and argp1 1F	argp1			# the highest digit
+	minus arg1 argp1	nncond goto dec_r4	# it fits
+	bis 2 psl	psl			# V
+	and psl 80	zcond goto dec_r4
+	and 74 74	crn
+	and 6 6		crw wipr		# decimal overflow trap
+	plus 0 0	goto dec_r4
+#
+# CVTSP srclen.rw, srcaddr.ab, dstlen.rw, dstaddr.ab (arg1-arg4): from a
+# leading separate numeric string; a sign other than +, - or blank, or a
+# character other than a digit is a reserved operand. N Z V, C = 0. R0 =
+# R2 = 0, R1 = srcaddr, R3 = dstaddr.
+cvtsp:	and arg1 FFFF	arg1
+	and arg3 FFFF	arg3
+	minus 1F arg1	ncond goto q_bad
+	minus 1F arg3	ncond goto q_bad
+	and 60 60	crn
+	and 0 0		crw wipr		# CLR
+	plus arg2 0	cpuaddr rmem byte
+	and rmemdat FF	argp0
+	and 0 0		argd0
+	minus argp0 2D	zcond goto cvtsp_m
+	minus argp0 2B	zcond goto cvtsp_1
+	minus argp0 20	zcond goto cvtsp_1
+	plus 0 0	goto q_bad
+cvtsp_m: and 1 1	argd0
+cvtsp_1: and 1 1	argp1			# character p is digit srclen + 1 - p
+cvtsp_l: minus arg1 argp1	ncond goto cvtsp_2
+	plus arg2 argp1	cpuaddr rmem byte
+	and rmemdat FF	argp0
+	minus argp0 30	ncond goto q_bad	# below 0
+	minus 39 argp0	ncond goto q_bad	# above 9
+	and argp0 F	argp0
+	shl argp0 10	argp0			# the digit <19:16>
+	plus arg1 1	argd1
+	minus argd1 argp1	argd1
+	shl argd1 8	argd1
+	bis argp0 argd1	argp0
+	bis argp0 A	crw wipr		# SETNIB
+	plus argp1 1	argp1 goto cvtsp_l
+cvtsp_2: and civ 1	zcond goto cvtsp_3
+	and 0 0		argd0			# -0 is +0
+cvtsp_3: and 65 65	crn
+	plus arg2 0	crw wipr		# U1
+	and 67 67	crn
+	plus arg4 0	crw wipr		# U3
+	plus arg3 0	arg1
+	plus arg4 0	arg2
+	and 0 0		argd1
+	and @dec_c0 @dec_c0	arg4
+	plus 0 0	goto dswr
+#
+# CVTPT srclen.rw, srcaddr.ab, tbladdr.ab, dstlen.rw, dstaddr.ab (arg1-
+# arg4, argd0): to a trailing numeric string of dstlen characters, the last
+# one the table entry of the source's last byte (its last digit and the
+# sign). N Z from the source, V if its digits do not fit, C = 0. R0 = R2 =
+# 0, R1 = srcaddr, R3 = dstaddr. U0 the table, U2 srclen<12:8>'dstlen.
+cvtpt:	and arg1 FFFF	arg1
+	and arg4 FFFF	arg4
+	minus 1F arg1	ncond goto q_bad
+	minus 1F arg4	ncond goto q_bad
+	and 65 65	crn
+	plus arg2 0	crw wipr		# U1
+	and 67 67	crn
+	plus argd0 0	crw wipr		# U3
+	and 64 64	crn
+	plus arg3 0	crw wipr		# U0 = the table
+	and 66 66	crn
+	shl arg1 8	argp0
+	bis argp0 arg4	crw wipr		# U2
+	and 60 60	crn
+	and 0 0		crw wipr		# CLR
+	and 61 61	arg3
+	and @cvtpt_1 @cvtpt_1	arg4
+	plus 0 0	goto dsrd
+cvtpt_1: and 66 66	crn
+	plus civ 0	argp0
+	and argp0 1F	arg1			# dstlen
+	and 67 67	crn
+	plus civ 0	arg2			# dstaddr
+	plus arg1 0	zcond goto cvtps_cc	# no characters
+	shr argp0 9	argp1
+	and argp1 F	argp1			# srclen / 2
+	and 65 65	crn
+	plus civ argp1	cpuaddr rmem byte	# the source's last byte
+	and rmemdat FF	argp1
+	and 64 64	crn
+	plus civ argp1	cpuaddr rmem byte	# its table entry
+	and rmemdat FF	argd1			# the last character
+	plus arg2 0	cpuaddr rmem byte wint	# writable: the first ...
+	plus arg2 arg1	argp0
+	minus argp0 1	argp0
+	plus argp0 0	cpuaddr rmem byte wint	# ... and the last character
+	plus argd1 0	crw
+	plus argp0 0	cpuaddr wmem byte
+	and 2 2		argp1			# digit i at dstaddr + dstlen - i
+cvtpt_l: minus arg1 argp1	ncond goto cvtps_cc
+	and 60 60	crn
+	shl argp1 8	argp0
+	bis argp0 B	crw wipr		# SETIDX i
+	and 62 62	crn
+	plus civ 0	argp0
+	bis argp0 30	crw
+	plus arg2 arg1	argp0
+	minus argp0 argp1	cpuaddr wmem byte
+	plus argp1 1	argp1 goto cvtpt_l
+#
+# CVTTP srclen.rw, srcaddr.ab, tbladdr.ab, dstlen.rw, dstaddr.ab: from a
+# trailing numeric string: the last character goes through the table, which
+# gives its digit <7:4> and sign <3:0> (a sign below A or a digit above 9 is
+# a reserved operand); the others must be digits. N Z V, C = 0. R0 = R2 =
+# 0, R1 = srcaddr, R3 = dstaddr.
+cvttp:	and arg1 FFFF	arg1
+	and arg4 FFFF	arg4
+	minus 1F arg1	ncond goto q_bad
+	minus 1F arg4	ncond goto q_bad
+	and 65 65	crn
+	plus arg2 0	crw wipr		# U1
+	and 67 67	crn
+	plus argd0 0	crw wipr		# U3
+	and 60 60	crn
+	and 0 0		crw wipr		# CLR
+	and 0 0		argd1			# the sign
+	and 1 1		argp1			# character i from the end is digit i
+cvttp_l: minus arg1 argp1	ncond goto cvttp_2
+	plus arg2 arg1	argp0
+	minus argp0 argp1	cpuaddr rmem byte
+	and rmemdat FF	argp0
+	minus argp1 1	nzcond goto cvttp_d	# not the last character
+	plus arg3 argp0	cpuaddr rmem byte	# the table
+	and rmemdat FF	argp0
+	and argp0 F	argd1			# the sign nibble
+	minus argd1 A	ncond goto q_bad
+	shr argp0 4	argp0
+	minus 9 argp0	ncond goto q_bad
+	minus argd1 B	zcond goto cvttp_m
+	minus argd1 D	zcond goto cvttp_m
+	and 0 0		argd1 goto cvttp_s
+cvttp_m: and 1 1	argd1 goto cvttp_s
+cvttp_d: minus argp0 30	ncond goto q_bad
+	minus 39 argp0	ncond goto q_bad
+	and argp0 F	argp0
+cvttp_s: shl argp0 10	argp0
+	shl argp1 8	argd0
+	bis argp0 argd0	argp0
+	and 60 60	crn
+	bis argp0 A	crw wipr		# SETNIB i
+	plus argp1 1	argp1 goto cvttp_l
+cvttp_2: and 60 60	crn
+	and civ 1	zcond goto cvttp_3
+	and 0 0		argd1			# -0 is +0
+cvttp_3: plus argd1 0	argd0
+	plus arg4 0	arg1
+	and 67 67	crn
+	plus civ 0	arg2
+	and 0 0		argd1
+	and @dec_c0 @dec_c0	arg4
+	plus 0 0	goto dswr
+#
+# EDITPC srclen.rw, srcaddr.ab, pattern.ab, dstaddr.ab (arg1-arg4): the
+# source edited into the destination by the pattern operators (SRM,
+# EDITPC). N: the source is minus (and not zero), Z: no
+# nonzero digit was seen, V: nonzero digits were dropped (EO$ADJUST_INPUT),
+# C: significance; V with PSL<DV> requests the decimal overflow trap. An
+# undefined operator, a zero repeat count or length, the source used up or
+# not used up at EO$END are reserved operands. At the end R0 = srclen,
+# R1 = srcaddr, R2 = R4 = 0, R3 = the address of the EO$END byte, R5 = the
+# address after the last character stored.
+# Registers: arg1 source digits left, argd1 leading zeros still to supply
+# (EO$ADJUST_INPUT), arg2 the source byte, arg3 the pattern, arg4 the
+# destination, argd0 sign<23:16>'fill<15:8>'N Z V C<3:0>; argp1 the repeat
+# count; argp0 the digit and temporaries. U0, U1 srclen, srcaddr; U2 the
+# return address of ed_dig.
+editpc:	and arg1 FFFF	arg1
+	minus 1F arg1	ncond goto q_bad
+	and 64 64	crn
+	plus arg1 0	crw wipr		# U0 = srclen
+	and 65 65	crn
+	plus arg2 0	crw wipr		# U1 = srcaddr
+	shr arg1 1	argp0
+	plus arg2 argp0	cpuaddr rmem byte	# the sign
+	and rmemdat F	argp0
+	minus argp0 B	zcond goto ed_m
+	minus argp0 D	zcond goto ed_m
+	and 20 20	argd0			# plus: sign blank, fill blank, Z
+	shl argd0 10	argd0
+	bis argd0 2004	argd0 goto ed_0
+ed_m:	and 2D 2D	argd0			# minus: sign -, fill blank, N Z
+	shl argd0 10	argd0
+	bis argd0 200C	argd0
+ed_0:	and 0 0		argd1
+ed_l:	plus arg3 0	cpuaddr rmem byte
+	and rmemdat FF	argp0			# the operator
+	and argp0 80	nzcond goto ed_rpt
+	plus argp0 0	zcond goto ed_end
+	minus argp0 1	zcond goto ed_endf
+	minus argp0 2	zcond goto ed_clrs
+	minus argp0 3	zcond goto ed_sets
+	minus argp0 4	zcond goto ed_stsg
+	minus argp0 40	zcond goto ed_ldf
+	minus argp0 41	zcond goto ed_lds
+	minus argp0 42	zcond goto ed_ldp
+	minus argp0 43	zcond goto ed_ldm
+	minus argp0 44	zcond goto ed_ins
+	minus argp0 45	zcond goto ed_blz
+	minus argp0 46	zcond goto ed_rps
+	minus argp0 47	zcond goto ed_adj
+	plus 0 0	goto q_bad
+ed_rpt:	and argp0 F	argp1			# the repeat count
+	plus argp1 0	zcond goto q_bad
+	and argp0 F0	argp0
+	minus argp0 80	zcond goto ed_fill
+	minus argp0 90	zcond goto ed_move
+	minus argp0 A0	zcond goto ed_flt
+	plus 0 0	goto q_bad
+ed_nx:	plus arg3 1	arg3 goto ed_l		# the next operator
+# EO$END_FLOAT: the sign, unless significance
+ed_endf: and argd0 1	nzcond goto ed_nx
+	shr argd0 10	crw
+	plus arg4 0	cpuaddr wmem byte
+	plus arg4 1	arg4
+	bis argd0 1	argd0 goto ed_nx
+ed_clrs: bic 1 argd0	argd0 goto ed_nx	# EO$CLEAR_SIGNIF
+ed_sets: bis argd0 1	argd0 goto ed_nx	# EO$SET_SIGNIF
+ed_stsg: shr argd0 10	crw			# EO$STORE_SIGN
+	plus arg4 0	cpuaddr wmem byte
+	plus arg4 1	arg4 goto ed_nx
+# EO$LOAD_FILL, EO$LOAD_SIGN, EO$LOAD_PLUS, EO$LOAD_MINUS char
+ed_ldf:	plus arg3 1	arg3
+	plus arg3 0	cpuaddr rmem byte
+	and rmemdat FF	argp0
+	shl argp0 8	argp0
+	bic FF00 argd0	argd0
+	bis argd0 argp0	argd0 goto ed_nx
+ed_lds:	plus arg3 1	arg3
+ed_lds1: plus arg3 0	cpuaddr rmem byte
+	and rmemdat FF	argp0
+	shl argp0 10	argp0
+	and argd0 FFFF	argd0
+	bis argd0 argp0	argd0 goto ed_nx
+ed_ldp:	plus arg3 1	arg3
+	and argd0 8	zcond goto ed_lds1	# plus: loaded
+	plus 0 0	goto ed_nx
+ed_ldm:	plus arg3 1	arg3
+	and argd0 8	nzcond goto ed_lds1	# minus: loaded
+	plus 0 0	goto ed_nx
+# EO$INSERT char: it with significance, else the fill
+ed_ins:	plus arg3 1	arg3
+	plus arg3 0	cpuaddr rmem byte
+	plus rmemdat 0	crw
+	and argd0 1	nzcond goto ed_ins1
+	shr argd0 8	crw
+ed_ins1: plus arg4 0	cpuaddr wmem byte
+	plus arg4 1	arg4 goto ed_nx
+# EO$BLANK_ZERO len: the last len characters become the fill if zero
+ed_blz:	plus arg3 1	arg3
+	plus arg3 0	cpuaddr rmem byte
+	and rmemdat FF	argp1
+	plus argp1 0	zcond goto q_bad
+	and argd0 4	zcond goto ed_nx
+	shr argd0 8	crw
+ed_blz1: minus arg4 argp1	cpuaddr wmem byte
+	minus argp1 1	argp1 nzcond goto ed_blz1
+	plus 0 0	goto ed_nx
+# EO$REPLACE_SIGN len: the character len back becomes the fill if zero
+ed_rps:	plus arg3 1	arg3
+	plus arg3 0	cpuaddr rmem byte
+	and rmemdat FF	argp1
+	plus argp1 0	zcond goto q_bad
+	and argd0 4	zcond goto ed_nx
+	shr argd0 8	crw
+	minus arg4 argp1	cpuaddr wmem byte
+	plus 0 0	goto ed_nx
+# EO$ADJUST_INPUT len (1-31): more digits left than len: the extra ones
+# are dropped (nonzero: V C, not Z); fewer: leading zeros are supplied
+ed_adj:	plus arg3 1	arg3
+	plus arg3 0	cpuaddr rmem byte
+	and rmemdat FF	argp1
+	plus argp1 0	zcond goto q_bad
+	minus 1F argp1	ncond goto q_bad
+	and 0 0		argd1
+	minus arg1 argp1	ncond goto ed_adj2
+	minus arg1 argp1	argp1		# digits to drop
+ed_adj1: plus argp1 0	zcond goto ed_nx
+	and 66 66	crn
+	and @ed_adj3 @ed_adj3	crw wipr
+	plus 0 0	goto ed_dig
+ed_adj3: plus argp0 0	zcond goto ed_adj4
+	bic 4 argd0	argd0
+	bis argd0 3	argd0			# V C, not Z
+ed_adj4: minus argp1 1	argp1 goto ed_adj1
+ed_adj2: minus argp1 arg1	argd1 goto ed_nx	# zeros first
+# EO$FILL n: n fill characters
+ed_fill: shr argd0 8	crw
+ed_fil1: plus arg4 0	cpuaddr wmem byte
+	plus arg4 1	arg4
+	minus argp1 1	argp1 nzcond goto ed_fil1
+	plus 0 0	goto ed_nx
+# EO$MOVE n: n digits; a nonzero one sets significance (and clears Z);
+# without significance the fill goes instead
+ed_move: and 66 66	crn
+	and @ed_mv1 @ed_mv1	crw wipr
+	plus 0 0	goto ed_dig
+ed_mv1:	plus argp0 0	zcond goto ed_mv2
+	bic 4 argd0	argd0
+	bis argd0 1	argd0
+ed_mv2:	and argd0 1	zcond goto ed_mv3
+	bis argp0 30	crw
+	plus 0 0	goto ed_mv4
+ed_mv3:	shr argd0 8	crw
+ed_mv4:	plus arg4 0	cpuaddr wmem byte
+	plus arg4 1	arg4
+	minus argp1 1	argp1 nzcond goto ed_move
+	plus 0 0	goto ed_nx
+# EO$FLOAT n: as EO$MOVE, but the first nonzero digit without significance
+# gets the sign stored before it (and Z cleared)
+ed_flt:	and 66 66	crn
+	and @ed_fl1 @ed_fl1	crw wipr
+	plus 0 0	goto ed_dig
+ed_fl1:	plus argp0 0	zcond goto ed_fl2
+	and argd0 1	nzcond goto ed_fl2
+	bic 4 argd0	argd0
+	bis argd0 1	argd0
+	shr argd0 10	crw			# the sign
+	plus arg4 0	cpuaddr wmem byte
+	plus arg4 1	arg4
+ed_fl2:	and argd0 1	zcond goto ed_fl3
+	bis argp0 30	crw
+	plus 0 0	goto ed_fl4
+ed_fl3:	shr argd0 8	crw
+ed_fl4:	plus arg4 0	cpuaddr wmem byte
+	plus arg4 1	arg4
+	minus argp1 1	argp1 nzcond goto ed_flt
+	plus 0 0	goto ed_nx
+# EO$END: the source must be used up
+ed_end:	plus arg1 0	nzcond goto q_bad
+	plus argd1 0	nzcond goto q_bad
+	and argd0 4	zcond goto ed_e1
+	bic 8 argd0	argd0			# zero: not minus
+ed_e1:	bic F psl	psl
+	and argd0 F	argp0
+	bis argp0 psl	psl			# N Z V C
+	and argd0 2	zcond goto ed_e2
+	and psl 80	zcond goto ed_e2
+	and 74 74	crn
+	and 6 6		crw wipr		# decimal overflow trap
+ed_e2:	and 64 64	crn
+	plus civ 0	argp0
+	and 0 0		crn
+	plus argp0 0	crw wreg		# R0 = srclen
+	and 65 65	crn
+	plus civ 0	argp0
+	and 1 1		crn
+	plus argp0 0	crw wreg		# R1 = srcaddr
+	and 2 2		crn
+	and 0 0		crw wreg
+	and 3 3		crn
+	plus arg3 0	crw wreg		# R3 = the EO$END byte
+	and 4 4		crn
+	and 0 0		crw wreg
+	and 5 5		crn
+	plus arg4 0	crw wreg		# R5 = the destination's end
+	plus 0 0	eoi
+#
+# ed_dig (return address in U2): the next source digit into argp0: a
+# supplied zero while argd1 is not zero, else the next nibble of the string
+# (the high one when an odd number of digits is left); none left: reserved
+# operand.
+ed_dig:	plus argd1 0	zcond goto ed_dig1
+	minus argd1 1	argd1
+	and 0 0		argp0 goto ed_digr
+ed_dig1: plus arg1 0	zcond goto q_bad
+	plus arg2 0	cpuaddr rmem byte
+	and rmemdat FF	argp0
+	minus arg1 1	arg1
+	and arg1 1	nzcond goto ed_dig2	# was even: the low nibble
+	shr argp0 4	argp0 goto ed_digr
+ed_dig2: and argp0 F	argp0
+	plus arg2 1	arg2
+ed_digr: and 66 66	crn
+	plus civ 0	jmp
 #
 !INSTRUCTIONS
 #
@@ -2162,6 +3726,10 @@ RET	rl#fp			lbl=ret				# 04
 RSB	rl#(sp)+,wl#pc	lbl=mov wback				# 05
 LDPCTX	rl#0		lbl=ldpctx				# 06
 SVPCTX	rl#0		lbl=svpctx				# 07
+CVTPS	0rw,1ab,2rw,3ab	lbl=cvtps				# 08
+CVTSP	0rw,1ab,2rw,3ab	lbl=cvtsp				# 09
+INDEX	0rl,1rl,2rl,3rl,4rl,wl	lbl=index setnz clv clc wback	# 0a
+CRC	0ab,1rl,2rw,3ab	lbl=crc fpdok				# 0b
 #
 PROBER	rb,rw,ab	lbl=prober				# 0c
 PROBEW	rb,rw,ab	lbl=probew				# 0d
@@ -2183,49 +3751,73 @@ BVC	ab#b^d(pc),rl#2,wl#pc	lbl=bclr			# 1c
 BVS	ab#b^d(pc),rl#2,wl#pc	lbl=bset 			# 1d
 BGEQU	ab#b^d(pc),rl#1,wl#pc	lbl=bclr			# 1e
 BLSSU	ab#b^d(pc),rl#1,wl#pc	lbl=bset			# 1f
+ADDP4	0rw,1ab,2rw,3ab	lbl=addp4				# 20
+ADDP6	0rw,1ab,2rw,3ab,4rw,5ab	lbl=addp6			# 21
+SUBP4	0rw,1ab,2rw,3ab	lbl=subp4				# 22
+SUBP6	0rw,1ab,2rw,3ab,4rw,5ab	lbl=subp6			# 23
+CVTPT	0rw,1ab,2ab,3rw,4ab	lbl=cvtpt			# 24
+MULP	0rw,1ab,2rw,3ab,4rw,5ab	lbl=mulp			# 25
+CVTTP	0rw,1ab,2ab,3rw,4ab	lbl=cvttp			# 26
+DIVP	0rw,1ab,2rw,3ab,4rw,5ab	lbl=divp			# 27
 #
 MOVC3	rw,ab,ab	lbl=movc3 fpdok				# 28
 CMPC3	rw,ab,ab	lbl=cmpc3 setnz setc clv		# 29
-#
+SCANC	0rw,1ab,2ab,3rb	lbl=scanc setnz clv clc		# 2a
+SPANC	0rw,1ab,2ab,3rb	lbl=spanc setnz clv clc		# 2b
+MOVTC	0rw,1ab,2rb,3ab,4rw,5ab	lbl=movtc			# 2e
+MOVTUC	0rw,1ab,2rb,3ab,4rw,5ab	lbl=movtuc fpdok		# 2f
 MOVC5	0rw,1ab,4rb,2rw,3ab	lbl=movc5 fpdok		# 2c
 CMPC5	0rw,1ab,4rb,2rw,3ab	lbl=cmpc5 setnz setc clv	# 2d
 #
 BSBW	0aw#w^d(pc),2rl#pc,wl#pc,wl#-(sp)	lbl=mov move2 wback wback2 
 BRW	aw#w^d(pc),wl#pc	lbl=mov wback 			# 31
 CVTWL	rw,wl		lbl=mov setnz clv clc clv wback		# 32
-CVTWB	rw,wb		lbl=cvtlb setnz clc wback		# 33
+CVTWB	rw,wb		lbl=cvtlb setnz clc wback intov		# 33
+MOVP	0rw,1ab,2ab	lbl=movp				# 34
+CMPP3	0rw,1ab,2ab	lbl=cmpp3				# 35
+CVTPL	0rw,1ab,wl	lbl=cvtpl setnz clc wback intov		# 36
+CMPP4	0rw,1ab,2rw,3ab	lbl=cmpp4				# 37
+EDITPC	0rw,1ab,2ab,3ab	lbl=editpc				# 38
+MATCHC	0rw,1ab,2rw,3ab	lbl=matchc fpdok			# 39
 #
 LOCC	2rb,0rw,1ab	lbl=locc clv clc setnz			# 3a
-#
+SKPC	2rb,0rw,1ab	lbl=skpc clv clc setnz			# 3b
 MOVZWL	rw,wl		lbl=zwl setnz clv wback			# 3c
-ACBW	rw,rw,mw,aw#w^d(pc),wl#pc lbl=acbw setnz setv wback	# 3d
+ACBW	rw,rw,mw,aw#w^d(pc),wl#pc lbl=acbw setnz setv wback intov	# 3d
 #
 MOVAW	aw,wl		lbl=mov setnz clv wback			# 3e
 PUSHAW	aw,wl#-(sp)	lbl=mov setnz clv wback			# 3f
 #
-ASHL	rb,rl,wl	lbl=ashl setnz clc wback		# 78
-ASHQ	rb,rq,wq	lbl=ashq setnz clc wback wback2		# 79
+ADAWI	rw,ww		lbl=adawi setnz setc setv use16 wback intov	# 58
+#
+INSQHI	ab,aq		lbl=insqhi				# 5c
+INSQTI	ab,aq		lbl=insqti				# 5d
+REMQHI	aq,wl		lbl=remqhi				# 5e
+REMQTI	aq,wl		lbl=remqti				# 5f
+#
+ASHL	rb,rl,wl	lbl=ashl setnz clc wback intov		# 78
+ASHQ	rb,rq,wq	lbl=ashq setnz clc wback wback2 intov		# 79
 EMUL	rl,rl,rl,wq	lbl=emul wback wback2			# 7a
-EDIV	rl,rq,wl,wl	lbl=ediv setnz clc wback wback2		# 7b
+EDIV	rl,rq,wl,wl	lbl=ediv setnz clc wback wback2 intov		# 7b
 CLRQ	wq		lbl=clrq setnz clv wback wback2		# 7c
 MOVQ	rq,wq		lbl=movq setnz clv wback wback2		# 7d
 MOVAQ	aq,wl		lbl=mov setnz clv wback			# 7e
 PUSHAQ	aq,wl#-(sp)	lbl=mov setnz clv wback			# 7f
-ADDB2	rb,mb		lbl=add setnz setc setv use8 wback 	# 80
-ADDB3	rb,rb,wb	lbl=add setnz setc setv use8 wback 	# 81
-SUBB2	1rb,0mb		lbl=sub setnz setc setv use8 wback	# 82
-SUBB3	1rb,0rb,2wb	lbl=sub setnz setc setv use8 wback	# 83
-MULB2	rb,mb		lbl=mul setnz setv clc use8 wback	# 84
-MULB3	rb,rb,wb	lbl=mul setnz setv clc use8 wback	# 85
-DIVB2	rb,mb		lbl=div setnz clc use8 wback		# 86
-DIVB3	rb,rb,wb	lbl=div setnz clc use8 wback		# 87
+ADDB2	rb,mb		lbl=add setnz setc setv use8 wback intov 	# 80
+ADDB3	rb,rb,wb	lbl=add setnz setc setv use8 wback intov 	# 81
+SUBB2	1rb,0mb		lbl=sub setnz setc setv use8 wback intov	# 82
+SUBB3	1rb,0rb,2wb	lbl=sub setnz setc setv use8 wback intov	# 83
+MULB2	rb,mb		lbl=mul setnz setv clc use8 wback intov	# 84
+MULB3	rb,rb,wb	lbl=mul setnz setv clc use8 wback intov	# 85
+DIVB2	rb,mb		lbl=div setnz clc use8 wback intov		# 86
+DIVB3	rb,rb,wb	lbl=div setnz clc use8 wback intov		# 87
 BISB2	rb,mb		lbl=bis setnz clv use8 wback		# 88
 BISB3	rb,rb,wb	lbl=bis setnz clv use8 wback		# 89
 BICB2	rb,mb		lbl=bic setnz clv use8 wback		# 8a
 BICB3	rb,rb,wb	lbl=bic setnz clv use8 wback		# 8b
 XORB2	rb,mb		lbl=xor setnz clv use8 wback		# 8c
 XORB3	rb,rb,wb	lbl=xor setnz clv use8 wback		# 8d
-MNEGB	rl#0,rb,wb	lbl=sub setnz setc setv use8 wback	# 8e
+MNEGB	rl#0,rb,wb	lbl=sub setnz setc setv use8 wback intov	# 8e
 CASEB	rb,rb,rb,rl#pc,wl#pc	lbl=caseb setnz clv setc wback	# 8f
 MOVB	rb,wb		lbl=mov setnz clv wback			# 90
 CMPB	rb,rb		lbl=sub setnz clv setc			# 91
@@ -2233,33 +3825,33 @@ MCOMB	rb,rl#1,wb	lbl=mcom setnz clv wback		# 92
 BITB	rb,rb		lbl=and setnz clv			# 93
 CLRB	wb		lbl=clr setnz clv wback			# 94
 TSTB	rb		lbl=tst setnz clv clc			# 95
-INCB	mb,rl#1		lbl=add setnz setc setv use8 wback	# 96
-DECB	mb,rl#1		lbl=sub setnz setv setc use8 wback	# 97
+INCB	mb,rl#1		lbl=add setnz setc setv use8 wback intov	# 96
+DECB	mb,rl#1		lbl=sub setnz setv setc use8 wback intov	# 97
 #
 CVTBL	rb,wl		lbl=mov setnz clv clc wback		# 99
 CVTBW	rb,ww		lbl=mov setnz clv clc wback		# 99
 MOVZBL	rb,wl		lbl=zbl setnz clv wback			# 9a
 MOVZBW	rb,ww		lbl=zbl setnz clv wback			# 9b
 ROTL	rb,rl,wl	lbl=rot setnz clv wback			# 9c
-ACBB	rb,rb,mb,aw#w^d(pc),wl#pc lbl=acbb setnz setv wback	# 9d
+ACBB	rb,rb,mb,aw#w^d(pc),wl#pc lbl=acbb setnz setv wback intov	# 9d
 #
 MOVAB	ab,wl		lbl=mov setnz clv wback			# 93
 PUSHAB	ab,wl#-(sp)	lbl=mov setnz clv wback			# 9f
-ADDW2	rw,mw		lbl=add setnz setc setv use16 wback	# a0
-ADDW3	rw,rw,ww	lbl=add setnz setc setv use16 wback	# a1
-SUBW2	1rw,0mw		lbl=sub setnz setc setv use16 wback	# a2
-SUBW3	1rw,0rw,2ww	lbl=sub setnz setc setv use16 wback	# a3
-MULW2	rw,mw		lbl=mul setnz setv clc use16 wback	# a4
-MULW3	rw,rw,ww	lbl=mul setnz setv clc use16 wback	# a5
-DIVW2	rw,mw		lbl=div setnz clc use16 wback		# a6
-DIVW3	rw,rw,ww	lbl=div setnz clc use16 wback		# a7
+ADDW2	rw,mw		lbl=add setnz setc setv use16 wback intov	# a0
+ADDW3	rw,rw,ww	lbl=add setnz setc setv use16 wback intov	# a1
+SUBW2	1rw,0mw		lbl=sub setnz setc setv use16 wback intov	# a2
+SUBW3	1rw,0rw,2ww	lbl=sub setnz setc setv use16 wback intov	# a3
+MULW2	rw,mw		lbl=mul setnz setv clc use16 wback intov	# a4
+MULW3	rw,rw,ww	lbl=mul setnz setv clc use16 wback intov	# a5
+DIVW2	rw,mw		lbl=div setnz clc use16 wback intov		# a6
+DIVW3	rw,rw,ww	lbl=div setnz clc use16 wback intov		# a7
 BISW2	rw,mw		lbl=bis setnz clv use16 wback		# a8
 BISW3	rw,rw,ww	lbl=bis setnz clv use16 wback		# a9
 BICW2	rw,mw		lbl=bic setnz clv use16 wback		# aa
 BICW3	rw,rw,ww	lbl=bic setnz clv use16 wback		# ab
 XORW2	rw,mw		lbl=xor setnz clv use16 wback		# ac
 XORW3	rw,rw,ww	lbl=xor setnz clv use16 wback		# ad
-MNEGW	rl#0,rw,ww	lbl=sub setnz setc setv use16 wback	# ae
+MNEGW	rl#0,rw,ww	lbl=sub setnz setc setv use16 wback intov	# ae
 CASEW	rw,rw,rw,rl#pc,wl#pc	lbl=casew setnz clv setc wback	# af
 MOVW	rw,ww		lbl=mov setnz clv wback			# b0
 CMPW	rw,rw		lbl=sub setnz clv setc			# b1
@@ -2267,8 +3859,8 @@ MCOMW	rw,rl#1,ww	lbl=mcom setnz clv use16 wback		# b2
 BITW	rw,rw		lbl=and setnz clv			# b3
 CLRW	ww		lbl=clr setnz clv wback use16		# b4
 TSTW	rw		lbl=tst setnz clv clc			# b5
-INCW	mw,rl#1		lbl=add setnz setc setv use16 wback	# b6
-DECW	mw,rl#1		lbl=sub setnz setv setc use16 wback	# b7
+INCW	mw,rl#1		lbl=add setnz setc setv use16 wback intov	# b6
+DECW	mw,rl#1		lbl=sub setnz setv setc use16 wback intov	# b7
 BISPSW	rw		lbl=bispsw				# b8
 BICPSW	rw		lbl=bicpsw				# b9
 POPR	rw,rl#sp	lbl=popr				# ba
@@ -2278,14 +3870,14 @@ CHME	rw		lbl=chme				# bd
 CHMS	rw		lbl=chms				# be
 CHMU	rw		lbl=chmu				# bf
 # 
-ADDL2	rl,ml		lbl=add setnz setc setv wback 		# c0
-ADDL3	rl,rl,wl	lbl=add setnz setc setv wback 		# c1
-SUBL2	1rl,0ml		lbl=sub setnz setc setv wback		# c2
-SUBL3	1rl,0rl,2wl	lbl=sub setnz setc setv wback		# c3
-MULL2	rl,ml		lbl=mul setnz setv clc wback		# c4
-MULL3	rl,rl,wl	lbl=mul setnz setv clc wback		# c5
-DIVL2	rl,ml		lbl=div setnz clc wback			# c6
-DIVL3	rl,rl,wl	lbl=div setnz clc wback			# c7
+ADDL2	rl,ml		lbl=add setnz setc setv wback intov 		# c0
+ADDL3	rl,rl,wl	lbl=add setnz setc setv wback intov 		# c1
+SUBL2	1rl,0ml		lbl=sub setnz setc setv wback intov		# c2
+SUBL3	1rl,0rl,2wl	lbl=sub setnz setc setv wback intov		# c3
+MULL2	rl,ml		lbl=mul setnz setv clc wback intov		# c4
+MULL3	rl,rl,wl	lbl=mul setnz setv clc wback intov		# c5
+DIVL2	rl,ml		lbl=div setnz clc wback intov			# c6
+DIVL3	rl,rl,wl	lbl=div setnz clc wback intov			# c7
 BISL2	rl,ml		lbl=bis setnz clv wback			# c8
 BISL3	rl,rl,wl	lbl=bis setnz clv wback			# c9
 BICL2	rl,ml		lbl=bic setnz clv wback			# ca
@@ -2293,7 +3885,7 @@ BICL3	rl,rl,wl	lbl=bic setnz clv wback			# cb
 #
 XORL2	rl,ml		lbl=xor setnz clv wback			# cc
 XORL3	rl,rl,wl	lbl=xor setnz clv wback			# cd
-MNEGL	rl#0,rl,wl	lbl=sub setnz setv setc wback		# ce
+MNEGL	rl#0,rl,wl	lbl=sub setnz setv setc wback intov		# ce
 CASEL	rl,rl,rl,rl#pc,wl#pc	lbl=casel setnz clv setc wback	# cf
 MOVL	rl,wl		lbl=mov setnz clv wback			# d0
 CMPL	rl,rl		lbl=sub setcmpnz clv setc		# d1
@@ -2301,10 +3893,10 @@ MCOML	rl,rl#1,wl	lbl=mcom setnz clv wback		# d2
 BITL	rl,rl		lbl=and setnz clv 			# d3
 CLRL	wl		lbl=clr setnz clv wback 		# d4
 TSTL	rl		lbl=tst setnz clv clc 			# d5
-INCL	ml,rl#1		lbl=add setnz setc setv wback		# d6
-DECL	ml,rl#1		lbl=sub setnz setv setc wback 		# d7
-ADWC	rl,ml		lbl=adwc setnz wback			# d8
-SBWC	rl,ml		lbl=sbwc setnz wback			# d9
+INCL	ml,rl#1		lbl=add setnz setc setv wback intov		# d6
+DECL	ml,rl#1		lbl=sub setnz setv setc wback intov 		# d7
+ADWC	rl,ml		lbl=adwc setnz wback intov			# d8
+SBWC	rl,ml		lbl=sbwc setnz wback intov			# d9
 MTPR	rl,rl		lbl=mtpr setnz				# da
 MFPR	rl,wl		lbl=mfpr wback setnz clv		# db
 MOVPSL	wl		lbl=movpsl wback			# dc
@@ -2329,15 +3921,17 @@ EXTV	rl,rb,wb,wl lbl=extv setnz clv wback			# ee
 EXTZV	rl,rb,wb,wl lbl=extzv setnz clv wback			# ef
 #
 INSV	3rl,0rl,1rb,2wb	lbl=insv				# f0
-ACBL	rl,rl,ml,aw#w^d(pc),wl#pc lbl=acb setnz setv wback	# f1
+ACBL	rl,rl,ml,aw#w^d(pc),wl#pc lbl=acb setnz setv wback intov	# f1
 #
-AOBLSS	rl,ml,ab#b^d(pc),wl#pc lbl=aoblss setnz wback		# f2
-AOBLEQ	rl,ml,ab#b^d(pc),wl#pc lbl=aobleq setnz wback		# f3
-SOBGEQ	ml,ab#b^d(pc),wl#pc lbl=sobgeq setnz setv wback		# f4
-SOBGTR	ml,ab#b^d(pc),wl#pc lbl=sobgtr setnz setv wback		# f5
+AOBLSS	rl,ml,ab#b^d(pc),wl#pc lbl=aoblss setnz setv wback intov		# f2
+AOBLEQ	rl,ml,ab#b^d(pc),wl#pc lbl=aobleq setnz setv wback intov		# f3
+SOBGEQ	ml,ab#b^d(pc),wl#pc lbl=sobgeq setnz setv wback intov		# f4
+SOBGTR	ml,ab#b^d(pc),wl#pc lbl=sobgtr setnz setv wback intov		# f5
 #
-CVTLW	rl,ww	lbl=cvtlw setnz clc wback			# f7
-CVTLB	rl,wb	lbl=cvtlb setnz clc wback			# f6
+CVTLW	rl,ww	lbl=cvtlw setnz clc wback intov			# f7
+CVTLB	rl,wb	lbl=cvtlb setnz clc wback intov			# f6
+ASHP	0rb,1rw,2ab,3rb,4rw,5ab	lbl=ashp			# f8
+CVTLP	0rl,1rw,2ab	lbl=cvtlp				# f9
 #
 CALLG	ab,ab,rl#sp	lbl=callg 				# fa
 CALLS	rl,ab,rl#sp	lbl=calls 				# fb

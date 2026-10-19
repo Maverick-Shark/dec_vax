@@ -8,11 +8,11 @@ how it was checked.
 
 The rule from [ROADMAP.md](../ROADMAP.md) applies: whatever software can
 observe behaves like a **VAX 8600**. DEC's documents define the behaviour,
-simh's `vax8600` model is the executable cross-check, and no logic is taken
-from other VAX implementations.
+a VAX 8600 reference simulator run on the PC is the executable cross-check,
+and no logic is taken from other VAX implementations.
 
-Status: complete. 31 directed tests give the same results as simh
-`vax8600` (or, where simh departs from the SRM, the SRM's); EVKAA,
+Status: complete. 41 directed tests give the same results as the reference
+simulator (or, where it departs from the SRM, the SRM's); EVKAA,
 `hello.bin` and `bench.bin` still pass; the Quartus build meets timing and
 the memory management tests pass on the board. DEC's EVKAE, under the 8600
 Diagnostic Supervisor, passes 10 of its 11 tests in simulation; the other
@@ -29,7 +29,6 @@ needs PDP-11 compatibility mode.
 | DEC STD 032, appendix B, VAX 8600 | The 8600's halt codes (table B-24: 4 interrupt stack not valid, 6 kernel mode HALT, 7 and 8 bad SCB vectors, A and B CHMx, 11 invoked by console) and IPR numbers (table B-25) |
 | *VAX 8600 Training Print Set*, EY-4818E-PP | The M-box address module: the 8600's translation buffer |
 | VAX 8600 I-box microcode listing (`venus-ibox.pdf`) | How the 8600 undoes the register changes of a faulting instruction (the RLOG and its unwind microtrap) |
-| simh `vax8600` (open-simh: `vax_mmu.c`, `vax_cpu.c`, `vax_cpu1.c`, `vax860_defs.h`, `vax860_abus.c`) | Cross-check of everything above; the 8600's reserved-operand tests on MTPR, its IPR set, the reserved addressing mode cases |
 
 ## Where it sits
 
@@ -186,9 +185,13 @@ registers, as the architecture defines:
   instruction sees FPD set, skips the operand decode and carries on from
   R0-R5. The same happens when an interrupt above the current IPL becomes
   pending during the move: it is taken in the middle of the instruction, as
-  on a real VAX, so a long move does not hold off the interval timer.
+  on a real VAX, so a long move does not hold off the interval timer. Like
+  a fault, such an interrupt clears PSL\<TP\> in the saved PSL (SRM 5.4.4,
+  rule 3), so that a traced MOVC is traced once, when it completes (EVKAB
+  test 134 checks this).
   The intermediate contents of R0-R5 are implementation specific, as the SRM
   allows.
+* MOVTUC, MATCHC and CRC do the same ([CIS.md](CIS.md)).
 * Every other instruction restarts from its beginning. That is correct for all
   of them: the ones that only read memory (CMPC3, LOCC, ...) can simply run
   again, and the ones that write (CALLS, PUSHR, MOVQ, ...) write the same
@@ -215,8 +218,7 @@ EVKAE, because the tests and any operating system need them:
 * **MTPR and MFPR** are privileged: outside kernel mode they take the
   privileged-instruction fault (the reserved instruction vector, SCB 10). A
   register number above 7F, or one the machine does not have, is a reserved
-  operand. The 8600's value checks, as simh's `vax860_defs.h` applies them:
-  P0BR must be an S0 address with bits 1:0 clear (P1BR the same, tested on
+  operand. The value checks: P0BR must be an S0 address with bits 1:0 clear (P1BR the same, tested on
   P1BR + 2^23), SBR, PCBB and SCBB must have bits 1:0 clear, a length above
   2^21 is reserved, ASTLVL must be 0-4. MFPR reads all the memory management
   registers, PCBB, SCBB, ASTLVL and MAPEN. MAPEN (38) can now be set (r-vax
@@ -252,8 +254,8 @@ EVKAE, because the tests and any operating system need them:
   kernel mode. **HALT** is privileged: in kernel mode the 8600 halts with
   code 6, elsewhere it is a reserved instruction.
 * **The reserved addressing mode fault** (SCB 1C), with the cases the SRM
-  leaves UNPREDICTABLE decided as simh's `vax_cpu.c` does for the 8600: a
-  literal for anything but a read operand; a register for an address
+  leaves UNPREDICTABLE decided this way: a literal for anything but a read
+  operand; a register for an address
   operand, PC as a register, SP for a quadword; PC with register deferred or
   autodecrement mode or as an index register; index mode with a literal,
   register or index base. (Immediate mode as an index base is legal on the
@@ -264,9 +266,8 @@ EVKAE, because the tests and any operating system need them:
 * **The console halt**: Ctrl+P on the keyboard or the MiSTer UART, or the OSD
   trigger, stop the CPU before the next instruction with the 8600's code 11
   ("invoked by console"); the console monitor's `G` continues.
-* **The internal processor registers** are the 8600's, as simh's
-  `vax860_abus.c` and `vax_cpu1.c` handle them (registers above 4F do not
-  exist). MTPR accepts the architectural ones (SISR among them, bits 15:1),
+* **The internal processor registers** are the 8600's that hold a value
+  (registers above 4F do not exist). MTPR accepts the architectural ones (SISR among them, bits 15:1),
   ICCS, NICR, TODR, RXCS, TXCS, TXDB, PME (bit 0), and of the 8600's own
   ACCS (no floating point accelerator: ignored, reads as 0), PAMACC
   (ignored), PAMLOC, CSWP (bits 3:0), MDCTL (bits 14:13, 11:8, 3:0), MERG and
@@ -275,6 +276,35 @@ EVKAE, because the tests and any operating system need them:
   SID. Anything else - the 780's and 750's registers among them - is a
   reserved operand. The console storage registers STXCS and STXDB are not
   there yet. MTPR to SIRR with level 0 requests nothing.
+* **Trace** (PSL\<T\> and \<TP\>): when an instruction is about to be
+  fetched, a set TP takes the trace fault (SCB 28) with TP clear in the
+  saved PSL and the PC of that instruction; otherwise TP is loaded from T as
+  the instruction starts. Traps and interrupts are looked at first and save
+  TP set, so the trace fault comes when their handler returns; faults (the
+  memory management ones, reserved operand and instruction, BPT, XFC, a
+  machine check) clear TP, so the instruction is traced once, when it
+  completes. REI keeps TP set if it was (REI itself is traced) or takes it
+  from the saved PSL; CHMx saves it; CALLx saves the PSW with T clear and
+  RET restores it.
+* **Arithmetic traps** (SCB 34, the type code pushed after PC and PSL),
+  taken after the instruction has stored its results and before interrupts:
+  integer overflow (type 1) when PSL\<IV\> is set and an instruction that can
+  overflow (instruction flag `intov`: ADD, SUB, INC, DEC, MNEG, MUL, DIV,
+  ADWC, SBWC, ADAWI, ACB, AOB, SOB, ASHL, ASHQ, EDIV, CVTLB, CVTLW, CVTWB,
+  CVTPL) ends with V set; integer divide by zero (2: DIVx gives the
+  dividend, EDIV the low dividend and remainder 0, both with V), decimal
+  divide by zero (4), decimal overflow (6) and subscript range (7, INDEX),
+  which the microcode requests through a new internal register (IPR_ARITH,
+  74). DIVx overflow (most negative / -1) gives the dividend.
+* **RET** restores PSW\<15:0\> from the frame (DV, FU, IV, T and the
+  condition codes; r-vax cleared it) and a frame with PSW\<15:8\> not zero is
+  a reserved operand; CALLG and CALLS take an entry mask with bits 13:12 set
+  as a reserved operand, before anything is pushed.
+* **The interval clock** interrupts when ICR overflows as it counts, as the
+  SRM has it: r-vax set INT as soon as ICR held FFFFFFFF, so loading NICR =
+  -1 with XFR interrupted before RUN, and the INT that the software then
+  cleared never came back (EVKAB's initialization measures the clock that
+  way).
 
 Found while getting the Diagnostic Supervisor and EVKAE to run (next
 sections), and fixed, each with a test in `tests/mmu`:
@@ -292,11 +322,29 @@ sections), and fixed, each with a test in `tests/mmu`:
   the instruction just finished: after an INCB or a DECW a timer interrupt
   read its own level wrongly and went through SCB E0.
 
+Found with EVKAB, or while adding the arithmetic traps, and fixed:
+
+* ASHL and ASHQ missed the overflow of the last shift step (ASHL 1 of
+  40000000); ASHL now uses the barrel shifter both ways, with the SRM's
+  results for counts of 32 and more.
+* ADWC and SBWC set V when the first of their two additions overflowed and
+  the second undid it (80000000 + FFFFFFFF + C); V is now that of the whole
+  sum.
+* AOBLEQ set V when the index went from -1 to 0, AOBLSS did not set V at
+  all, AOBLSS, AOBLEQ and SOBGTR compared with a subtraction that can
+  overflow (SOBGTR branched for 80000000).
+* LOCC took its length as a signed word.
+* The bit field instructions (BBx, INSV, EXTV, EXTZV, CMPV, CMPZV, FFS, FFC)
+  and ADAWI took a base address with bits 31:30 set for a register (their
+  register test looked at the address): a base in S1 space with a position
+  that wraps the field back into P0 space is legal. The microcode now has a
+  flag for it (savpsw\<5:4\>).
+
 ## How it was checked
 
-`tests/mmu/` holds 31 test programs in VAX assembler (assembled by
-`tools/vasm.py`). `tests/mmu/run.py` runs each one on simh `vax8600` and on a
-CPU-level test bench (`sim/cpu_tb/`: cpu, vcache, mmu and 8 MB of plain
+`tests/mmu/` holds 41 test programs in VAX assembler (assembled by
+`tools/vasm.py`). `tests/mmu/run.py` runs each one on the reference
+simulator and on a CPU-level test bench (`sim/cpu_tb/`: cpu, vcache, mmu and 8 MB of plain
 memory), and compares R0-R14, PSL, PC after the final HALT, and the memory
 the test names, which includes a log that the fault handlers write: for every
 fault, its parameter, VA, PC, PSL and the PSL the handler ran with.
@@ -327,21 +375,31 @@ fault, its parameter, VA, PC, PSL and the PSL the handler ran with.
 | t21_bpt | BPT and XFC faults, HALT outside kernel mode, an undefined opcode, HALT in kernel mode (code 6) |
 | t22_chmis | CHMx on the interrupt stack: halt code A |
 | t23_vec3 | An exception through an SCB vector with bits 1:0 = 3: halt code 7 |
-| t24_chmvec | CHMx through a vector with bits 1:0 not zero: halt code B (simh differs; checked against the SRM) |
+| t24_chmvec | CHMx through a vector with bits 1:0 not zero: halt code B (checked against the SRM, where the reference simulator differs) |
 | t25_case | CASEB, CASEW, CASEL: unsigned limit, condition codes at the operand size |
 | t26_bbx | BBS, BBC and the modify forms with positions outside the base byte, negative, in a register |
 | t27_ipr | The 8600's internal registers: what reads back, which numbers are reserved |
 | t28_acb | ACBB, ACBW, ACBL at the edges of their ranges; CVTLB, CVTWB, CVTBW, CVTLW |
 | t29_resad | Reserved addressing mode faults, and the legal cases next to them |
 | t30_intsize | Interval timer interrupts right after byte and word instructions |
+| t31_arith | Arithmetic traps: integer overflow with and without PSL\<IV\>, divide by zero, the results of the overflowing instructions; IV through the CALLx entry mask and RET; the reserved operands of CALLx and RET |
+| t32_trace | Trace: BISPSW/BICPSW, with an arithmetic trap, BPT, XFC, a reserved operand, a page fault, a software interrupt, CALLS/RET, REI, CHMK |
+| t33_strq | INDEX (subscript range trap), SKPC, LOCC, SCANC, SPANC, ADAWI, INSQHI, INSQTI, REMQHI, REMQTI ([CIS.md](CIS.md)) |
+| t34_strx | MOVTC, MOVTUC, MATCHC, CRC |
+| t35_dec | The decimal instructions on random operands (generated: `tests/mmu/gen/mk_t35.py`) |
+| t36_editpc | EDITPC, classic and random patterns (`tests/mmu/gen/mk_t36.py`) |
+| t37_negbase | Bit fields with a base address in S1 space and a position that wraps back into P0; FFS/FFC of size 0; the reserved operand and addressing mode cases of the bit fields; fields at the end of a page |
+| t38_tracemovc | Trace with interval timer interrupts in the middle of MOVC3 and MOVC5: each traced once, when it completes |
+| t39_strfpd | MOVTUC, MATCHC, CRC stopped by a page fault and by timer interrupts (with trace), resumed with PSL\<FPD\>; MOVTUC in place across an invalid page |
+| t40_cmpc | CMPC3 and CMPC5: empty strings, the fill on either side, bytes that compare differently signed and unsigned, a fault part way (generated: `tests/mmu/gen/mk_t40.py`) |
 
 ```
 make -C sim cputb                 # the CPU test bench
 python3 tests/mmu/run.py          # all tests; -v prints both machines' output
 ```
 
-`run.py` needs simh's `vax8600` binary, at `../open-simh/BIN/vax8600` or
-named by the `SIMH` environment variable.
+`run.py` needs the reference simulator's binary (its header says where it
+looks for it).
 
 On the full-system model, after the MMU: EVKAA V8.0 still passes, `hello.bin`
 runs, and the `bench.bin` loop takes exactly the same time as before
@@ -350,74 +408,71 @@ runs, and the `bench.bin` loop takes exactly the same time as before
 **On the core itself.** `software/mmutest.bin` (built by
 `tests/mmu/mkboard.py`) is the same programs as one self-checking program:
 each HALT becomes a branch to a routine that saves the registers and the PSL
-(`tests/mmu/board.inc`), simh is run up to that point to record the expected
-values with run.py's rules, and a runner (`tests/mmu/runner.s`) resets the
+(`tests/mmu/board.inc`), the reference simulator is run up to that point to
+record the expected values with run.py's rules, and a runner (`tests/mmu/runner.s`) resets the
 machine to its power-up state before each test, runs it and prints PASS or
 FAIL. t22, t23 and t24 end in halts of their own and are left out. On the
 full-system model - so through the cache and the SDRAM controller as well,
-which the CPU test bench leaves out - all 27 comparable tests pass and t16
-halts with code 4; the first 18 also pass on the board. README_MiSTer.md says
+which the CPU test bench leaves out - all 37 comparable tests pass and t16
+halts with code 4, as on the board. README_MiSTer.md says
 how to run it there.
 
 ## DEC's own test: EVKAE
 
 For the 8600, DEC's test of this part of the machine is **EVKAE, the VAX
 Privileged Architecture Exerciser**, which runs under the 8600 Diagnostic
-Supervisor (ZZ-EDSAA) from `VAX_MINIMUM_DIAGS.dsk`, the disk simh ships in
-`VAX/tests`. (EHKAA, the other self-test simh runs, is the MicroVAX/CVAX
-one.) simh's own test script leaves EVKAE out for every model.
+Supervisor (ZZ-EDSAA) from DEC's `VAX_MINIMUM_DIAGS.dsk`.
 
 The core has no disk controller yet, so the supervisor comes over as a
-memory image: `tests/evkae/mkdsimage.py` boots it on simh `vax8600`, loads
-EVKAE, and at the `DS>` prompt - where the supervisor runs with memory
-management off and polls the console - saves physical memory and appends
-the code (`tests/evkae/dsrestore.s`) that puts back the internal registers
-simh had and returns to the supervisor with REI. README_MiSTer.md says how
+memory image: `tests/evkae/mkdsimage.py` boots it in a VAX 8600 simulator on
+the PC, loads EVKAE, and at the `DS>` prompt - where the supervisor runs
+with memory management off and polls the console - saves physical memory
+and appends the code (`tests/evkae/dsrestore.s`) that puts back the
+internal registers the supervisor had set and returns to it with REI. README_MiSTer.md says how
 to make it and run it; `tests/evkae/run_sim.sh` runs it on the full-system
 simulation.
 
-EVKAE 6.5, test by test, on the core (full-system simulation) and on simh:
+EVKAE 6.5, test by test, on the core (full-system simulation):
 
-| Test | Name | Core | simh vax8600 |
-|---|---|---|---|
-| 1 | Interrupt Test | passes | passes |
-| 2 | Exception Test | passes | passes |
-| 3 | REI Instruction Test | fails: REI into compatibility mode | passes |
-| 4 | Change Mode Instructions Test | passes | passes |
-| 5 | Processor Register Instructions | passes | passes |
-| 6 | Interval Timer | passes | fails: "time of day clock not incrementing" |
-| 7 | MEMORY MANAGEMENT | passes | passes |
-| 8 | KERNEL STACK NOT VALID | passes | never finishes: the supervisor's timeout path ends in a reserved operand fault |
-| 9 | CHMx TO WRITE PROTECTED STACKS | passes | passes |
-| 10 | PROBE Instruction Test | passes | passes |
-| 11 | Process Context switching instructions | passes | passes |
+| Test | Name | Core |
+|---|---|---|
+| 1 | Interrupt Test | passes |
+| 2 | Exception Test | passes |
+| 3 | REI Instruction Test | fails: REI into compatibility mode |
+| 4 | Change Mode Instructions Test | passes |
+| 5 | Processor Register Instructions | passes |
+| 6 | Interval Timer | passes |
+| 7 | MEMORY MANAGEMENT | passes |
+| 8 | KERNEL STACK NOT VALID | passes |
+| 9 | CHMx TO WRITE PROTECTED STACKS | passes |
+| 10 | PROBE Instruction Test | passes |
+| 11 | Process Context switching instructions | passes |
 
 Test 3 returns with REI to a PSL with \<CM\> set and expects the PDP-11
 instruction there (a BPT) to come back as a compatibility mode exception
 (SCB 30, type 1). The 8600 has compatibility mode - "the 8600 includes all
 the instructions, architecturally defined processor registers, and
-compatibility mode" (SRM, chapter 8) - and so has simh's model; the core does
-not yet, and does what the SRM asks of a processor without it, a reserved
-operand fault on the REI.
+compatibility mode" (SRM, chapter 8); the core does not have it yet, and
+does what the SRM asks of a processor without it, a reserved operand fault
+on the REI.
 
-Test 8 exercises exactly the case where simh's kernel-stack-not-valid frame
-differs from the SRM (see the next section). The core, which follows the
-SRM, passes it.
+Test 8 exercises exactly the case where the frame of kernel stack not valid
+matters (see the next section). The core, which follows the SRM, passes it.
 
-The way there was a comparison of instruction traces: simh's instruction
-history (`set cpu hist=250000:file`) against the core's (`ITRACE`, with
+The way there was a comparison of instruction traces: the reference
+simulator's instruction history against the core's (`ITRACE`, with
 `ITRACE_REGS` for the registers), aligned instruction by instruction, with
 the supervisor's console polling loop left out and the interrupts that come
 at different times on the two machines skipped over. Every difference that
 was not just time of day turned out to be one of the fixes listed above.
 
-## Where the core and simh differ, on purpose
+## Where the core and the reference simulator differ, on purpose
 
-| Case | Core | simh |
+| Case | Core | Reference simulator |
 |---|---|---|
 | Kernel stack not valid | Pushes the PSL of the original exception, as SRM 5.6 says | Pushes the intermediate kernel-mode PSL |
 | VA of a fault on the second page of an operand that crosses a page boundary | The first longword address in that page (9400 for a longword at 93FE) | The operand address plus its length (9402) |
-| Interrupts during MOVC3/MOVC5 | Taken in the middle (PSL\<FPD\> in the frame) | Taken between instructions |
+| Interrupts during MOVC3, MOVC5, MOVTUC, CRC | Taken in the middle (PSL\<FPD\> in the frame) | Taken between instructions (in the middle for MATCHC, as on the core) |
 
 All three are within what the architecture allows; the tests check the
 page of the VA, and the core's own value for the KSNV frame.
@@ -425,13 +480,11 @@ page of the VA, and the core's own value for the KSNV frame.
 ## Not done yet
 
 * PDP-11 compatibility mode (EVKAE test 3).
-* The trace bits (PSL\<T\> and \<TP\>) and the arithmetic traps (integer
-  overflow with PSL\<IV\>, divide by zero, decimal overflow).
 * The console storage registers STXCS and STXDB.
-* PSL\<FPD\> for the other long instructions once they exist (MOVTC, MOVTUC,
-  MATCHC, CRC, the decimal instructions). CMPC3/CMPC5, LOCC and SKPC restart
-  from the beginning, which is correct, but they hold off interrupts until
-  they finish.
+* PSL\<FPD\> for MOVTC and EDITPC (see [CIS.md](CIS.md)). They,
+  CMPC3/CMPC5, LOCC, SKPC, SCANC, SPANC and the decimal instructions
+  restart from the beginning after a fault, which is correct, but hold off
+  interrupts until they finish.
 * The 8600's machine check for TB parity errors, and the performance
   monitor enable bit (P1LR\<31\>) in LDPCTX/SVPCTX.
 

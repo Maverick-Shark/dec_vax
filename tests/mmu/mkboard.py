@@ -5,10 +5,11 @@ full-system simulation) and prints PASS or FAIL for each test.
 
     python3 tests/mmu/mkboard.py [-o software/mmutest.bin] [-k]
 
-    -k   keep the work directory (assembler listings, simh scripts)
+    -k   keep the work directory (assembler listings, simulator scripts)
 
 For each test, the HALTs (in the test and in mmsetup.inc) become a branch to
-"finish" (board.inc), and the program is assembled and run on simh vax8600
+"finish" (board.inc), and the program is assembled and run on the reference
+simulator
 up to "finish". The registers, PSL and memory that run.py compares are
 stored in the program as its table of expected values, with run.py's rules
 (;@ ignore, rtl, mask, page). Then runner.s (the loop that resets the
@@ -20,8 +21,8 @@ last and is checked by eye: the console must show the halt code. Tests with
 ";@ board=skip" (other processor halts) are left out. A HALT that is itself
 under test is written as ".byte 0", so that it is not turned into the exit.
 
-Load the result at 1000 and start it there (the OSD defaults). Needs simh's
-vax8600 (SIMH environment variable or ../open-simh/BIN/vax8600).
+Load the result at 1000 and start it there (the OSD defaults). Needs the
+reference simulator (see run.py).
 """
 import glob
 import importlib.util
@@ -92,7 +93,7 @@ def expected_entries(d):
     return ents
 
 
-def run_simh(binf, finish, dumps, work):
+def run_ref(binf, finish, dumps, work):
     ini = os.path.join(work, 'board.ini')
     with open(ini, 'w') as f:
         f.write('set cpu 32m\n')
@@ -104,7 +105,7 @@ def run_simh(binf, finish, dumps, work):
         for a, n in dumps:
             f.write('ex %X/%X\n' % (a, 4 * n))
         f.write('exit\n')
-    out = subprocess.run([mmurun.SIMH, ini], capture_output=True, text=True,
+    out = subprocess.run([mmurun.REFSIM, ini], capture_output=True, text=True,
                          stdin=subprocess.DEVNULL, timeout=120).stdout
     res = {}
     for line in out.splitlines():
@@ -116,7 +117,7 @@ def run_simh(binf, finish, dumps, work):
         if m:
             res['M%08X' % int(m.group(1), 16)] = int(m.group(2), 16)
     if res.get('PC', 0) & 0x3FFFFFFF != finish:
-        raise SystemExit('simh did not reach finish (%08X):\n%s' % (finish, out))
+        raise SystemExit('the simulator did not reach finish (%08X):\n%s' % (finish, out))
     return res
 
 
@@ -151,12 +152,12 @@ def main():
             raise SystemExit('%s: does not start at %X' % (name, TBASE))
         img = bytearray(img)
         if not halts:
-            res = run_simh(binf, syms['finish'], d['dump'], work)
+            res = run_ref(binf, syms['finish'], d['dump'], work)
             table = [len(ents)]
             for what, key in ents:
                 val = d['rtl'].get(key, res.get(key))
                 if val is None:
-                    raise SystemExit('%s: simh gave no value for %s' % (name, key))
+                    raise SystemExit('%s: the simulator gave no value for %s' % (name, key))
                 mask = 0xFFFFFFFF
                 if key in d['page']:
                     mask = 0xFFFFFE00

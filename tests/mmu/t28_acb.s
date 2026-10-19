@@ -4,7 +4,7 @@
 ; CVTBW, CVTLW (V when the value does not fit). ACBB is used by the
 ; Diagnostic Supervisor. For each case the log gets the PSL, A1 if the branch
 ; was taken (else A0) and the index; for the conversions the PSL and R0.
-; Generated cases; the expected values come from simh.
+; Generated cases; the expected values come from the reference simulator.
 ;@ dump=8000:2 dump=18000:60
 	.include "mmsetup.inc"
 test:

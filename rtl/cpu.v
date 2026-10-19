@@ -57,6 +57,7 @@
 `define PREEXEC		20
 `define EXEC		21
 `define XFAULT		22	/* enter microcode for a fault, maybe restoring state */
+`define DUWAIT		23	/* a decimal unit command runs */
 
 /* WREG return states */
 `define	WREG_HALT	0
@@ -236,10 +237,10 @@ module cpu(
 			ipr_reg[ipr_regaddr[5:0]] <= ipr_regwdata;
 
 	/*
-	 * VAX 8600 registers above 3F that hold a value (as in simh
-	 * vax860_abus.c): CSWP (cache sweep) <3:0>, MDCTL (M-box data
-	 * control) <14:13,11:8,3:0>, EHSR (error handling status) <5>, VMS
-	 * entered. ACCS reads as zero: no floating point accelerator.
+	 * VAX 8600 registers above 3F that hold a value: CSWP (cache sweep)
+	 * <3:0>, MDCTL (M-box data control) <14:13,11:8,3:0>, EHSR (error
+	 * handling status) <5>, VMS entered. ACCS reads as zero: no floating
+	 * point accelerator.
 	 */
 	reg [3:0]	cswp;
 	reg [14:0]	mdctl;
@@ -257,6 +258,7 @@ module cpu(
 			endcase
 
 	reg [31:0]	ipr_val;
+	wire [31:0]	du_rd;
 	reg [9:0]	pamloc;
 	reg [4:0]	pamacc;
 	wire [31:0]	icr, ipr_val_tmp, todr;
@@ -289,8 +291,26 @@ module cpu(
 		`IPR_ACCS, `IPR_MERG: ipr_val = 32'b0;
 		`IPR_MMVA: ipr_val = MMU_VA_I;
 		`IPR_MMPAR: ipr_val = { MMU_TNV_I, 28'b0, MMU_PAR_I };
-		default: ipr_val = ipr_val_tmp;
+		`IPR_ARITH: ipr_val = { 28'b0, arith_code != 4'd0 ? arith_code : 4'd1 };
+		default: ipr_val = ipr_regaddr[6:4] == 3'b110 ? du_rd : ipr_val_tmp;
 		endcase
+
+	/*
+	 * The decimal unit (decimal string instructions), reached by the
+	 * microcode as internal registers 60-6F. A command keeps the CPU in
+	 * DUWAIT until it is done.
+	 */
+	wire		du_busy;
+	decunit decunit(
+		.clk(clk),
+		.rst(rst),
+		.wr(state == `WRITEIPR && ipr_addr[6:4] == 3'b110),
+		.wa(ipr_addr[3:0]),
+		.wd(ipr_wdata),
+		.ra(ipr_regaddr[3:0]),
+		.rd(du_rd),
+		.busy(du_busy)
+	);
 
 	/*
 	 * PAMM (8600)
@@ -330,6 +350,8 @@ module cpu(
 
 /* verilator lint_off UNDRIVEN */
 	reg		psl_is, psl_fpd;
+	reg		psl_tp;		/* PSL<TP>, trace pending */
+initial psl_tp = 1'b0;
 	reg [1:0]	cur_mod, prv_mod;
 	reg [4:0]	psl_ipl;
 	reg [7:0]	psw;
@@ -338,7 +360,8 @@ initial psl_fpd = 1'b0;
 initial psl_ipl = 5'h1f;
 	wire [31:0]	psl;
 	assign psl = 
-	    { 4'd0, psl_fpd, psl_is, cur_mod, prv_mod, 1'b0, psl_ipl, 8'b0, psw };
+	    { 1'b0, psl_tp, 2'd0, psl_fpd, psl_is, cur_mod, prv_mod, 1'b0, psl_ipl,
+	      8'b0, psw };
 
 /* verilator lint_on UNDRIVEN */
 
@@ -350,15 +373,41 @@ initial psl_ipl = 5'h1f;
 
 	reg		writeback, writeback2;
 	reg		fpd_active;	/* microcode can save its state if a fault hits */
-	reg [10:0]	fpd_vec;	/* ... with the routine at this address */
+	reg [11:0]	fpd_vec;	/* ... with the routine at this address */
+	reg		rafault;	/* ... a reserved addressing mode fault */
+initial rafault = 1'b0;
 	reg		rifault;	/* the reserved operand fault is a reserved
 					   instruction fault (privileged instruction) */
 initial rifault = 1'b0;
+	/*
+	 * Arithmetic traps (SCB 34), taken after the instruction has stored
+	 * its results: integer overflow when PSL<IV> is set and an instruction
+	 * that can overflow ends with V set (instruction flag "intov"), or a
+	 * trap the microcode requests through internal register IPR_ARITH
+	 * (divide by zero, subscript range). arith_code holds the latter; the
+	 * trap microcode reads the type code from IPR_ARITH (1, integer
+	 * overflow, when arith_code is 0) and clears it. A fault or a machine
+	 * check on the way (the instruction is then not complete) clears it.
+	 */
+	reg [3:0]	arith_code;
+initial arith_code = 4'd0;
 	always @(posedge clk)
 		if ((ipr_write || state == `WRITEIPR) && ipr_regaddr == `IPR_RIFLT)
 			rifault <= 1'b1;
 		else if (state == `XFAULT || state == `S_FETCH)
 			rifault <= 1'b0;
+	always @(posedge clk)
+		if ((ipr_write || state == `WRITEIPR) && ipr_regaddr == `IPR_RAFLT)
+			rafault <= 1'b1;
+		else if (state == `XFAULT || state == `S_FETCH)
+			rafault <= 1'b0;
+	always @(posedge clk)
+		if (rst || state == `XFAULT ||
+		    (state == `ENDINST && (resopflt || mcheck)))
+			arith_code <= 4'd0;
+		else if ((ipr_write || state == `WRITEIPR) &&
+		    ipr_regaddr == `IPR_ARITH)
+			arith_code <= ipr_regwdata[3:0];
 initial fpd_active = 1'b0;
 	reg		arg_read_step1, arg_read_step2;
 	reg [31:0]	OA, IA, OP, OPu, OAu;
@@ -416,7 +465,7 @@ initial fpd_active = 1'b0;
 
 	/*
 	 * Console halt request (Ctrl+P or the OSD): taken at the next
-	 * instruction boundary, halt code 1. Ignored while already halted.
+	 * instruction boundary, halt code 11. Ignored while already halted.
 	 */
 	reg halt_pend;
 	initial halt_pend = 1'b0;
@@ -476,7 +525,7 @@ initial fpd_active = 1'b0;
 	 */
 	reg [31:0]	gshadow[14:0];
 	reg		xrestore;
-	reg [10:0]	xentry;
+	reg [11:0]	xentry;
 	reg		xhalt;		/* XFAULT ends in a halt (IPR_HALT<8>) */
 	reg [7:0]	xhaltcode;
 	initial xhalt = 1'b0;
@@ -497,17 +546,23 @@ initial fpd_active = 1'b0;
 	    (greg_addr == `REG_PC ? curpc : general_reg[greg_addr]);
 
 	/* "microcode" */
-	wire [7:0]	i_argoff, a_argoff, a_arg, cur_mux;
+	wire [8:0]	i_argoff, a_argoff;	/* argument ROM address */
+	wire [7:0]	a_arg, cur_mux;
 	wire		i_enable, i_hasargs, i_emul, i_dohalt;
 	wire		a_enable, a_emul, a_last, i_move2, i_wback2;
 	wire		i_wback, i_use8, i_use16;
 	wire		i_setnz, i_clv, i_clc, i_setc, i_setcmpnz, i_setv;
+	wire		i_intov;	/* integer overflow traps if PSL<IV> */
+	/* PSL<V> as the instruction leaves it (see the flags in ENDINST) */
+	wire		v_final;
+	assign v_final = i_clv ? 1'b0 : i_setv ? Vtmp : psw[`PSL_V];
 	wire		arg_aR, arg_aW, arg_aA;
 	wire [2:0]	a_argcode;
 	wire [1:0]	a_argsz;
 	wire [2:0]	a_rargno;
 	wire		a_wargno;
-	reg [7:0]	acounter, curarg;
+	reg [8:0]	acounter;
+	reg [7:0]	curarg;
 
 	wire		s_eoi;
 	wire		s_nzcond, s_zcond, s_wback, s_savc, s_savnz, s_savv;
@@ -516,10 +571,10 @@ initial fpd_active = 1'b0;
 	wire [1:0]	s_size;
 	wire		s_wint, s_probe, s_xpush, i_fpdok;
 	wire [3:0]	s_dest;
-	wire [10:0]	i_stepoff;
+	wire [11:0]	i_stepoff;
 	wire [3:0]	s_op, s_left, s_right;
 	wire [15:0]	s_const, s_addr;
-	reg [10:0]	scounter, s_stepoff;
+	reg [11:0]	scounter, s_stepoff;
 	reg		s_enable;
 
 	assign i_enable = (state == `S_FETCH) && isvalid;
@@ -551,6 +606,7 @@ initial fpd_active = 1'b0;
 		.i_clc(i_clc),
 		.i_setc(i_setc),
 		.i_setv(i_setv),
+		.i_intov(i_intov),
 
 
 		.i_fpdok(i_fpdok),
@@ -633,9 +689,9 @@ initial fpd_active = 1'b0;
 	/*
 	 * Reserved addressing mode (SRM chapter 2, table of addressing modes;
 	 * the fault, through SCB 1C, in chapter 5), with the cases the SRM
-	 * leaves UNPREDICTABLE decided as simh's vax_cpu.c does
-	 * for the 8600: a literal for anything but a read operand; a register
-	 * for an address operand, PC as the register, or SP for a quadword;
+	 * leaves UNPREDICTABLE decided this way: a literal for anything but
+	 * a read operand; a register for an address operand, PC as the
+	 * register, or SP for a quadword;
 	 * PC in register deferred or autodecrement mode; index mode with PC
 	 * as the index register, or with a literal, register or index mode
 	 * base. Only real specifiers are checked, not the implied operands of
@@ -763,12 +819,20 @@ initial debug = 0;
 		resopflt ? 2 :
 		intrq ? 3 :
 		0;
+	/*
+	 * An arithmetic trap at the end of an instruction (microcode entry 9):
+	 * one requested through IPR_ARITH, or an integer overflow with
+	 * PSL<IV> set.
+	 */
+	wire		trapreq;
+	assign trapreq = !doing_intr && (arith_code != 4'd0 ||
+	    (i_intov && v_final && psw[`PSL_IV]));
 
 	always @* begin
 		case (state)
 		`S_DECODE: begin
 			/* with PSL<FPD> set: resume entry, or reserved instruction */
-			s_stepoff = psl_fpd ? (i_fpdok ? i_stepoff + 11'd1 : 11'd6) :
+			s_stepoff = psl_fpd ? (i_fpdok ? i_stepoff + 12'd1 : 12'd6) :
 			    i_stepoff;
 			s_enable = 1;
 		end
@@ -777,16 +841,24 @@ initial debug = 0;
 			s_enable = 1;
 		end
 		`ENDINST: begin
-			s_stepoff = { 7'b0, vecoff };
-			s_enable = anyfault | intrq;
+			/* the entry ENDINST may go to (see there) */
+			s_stepoff = (trapreq && !anyfault) ? 12'd9 :
+			    { 8'b0, vecoff };
+			s_enable = anyfault | intrq | trapreq;
+		end
+		`S_FETCH: begin
+			/* the trace fault (entry 10), if PSL<TP> is set */
+			s_stepoff = 12'd10;
+			s_enable = psl_tp;
 		end
 		`EXEC: begin
-			s_stepoff = (wr_cond_ok && s_goto) ?
-			    s_addr[10:0] : scounter;
+			/* goto, computed goto (destination jmp), or the next step */
+			s_stepoff = s_dest == 4'd14 ? alu_res[11:0] :
+			    (wr_cond_ok && s_goto) ? s_addr[11:0] : scounter;
 			s_enable = alu_ack;
 		end
 		default: begin
-			s_stepoff = 11'b0;
+			s_stepoff = 12'b0;
 			s_enable = 0;
 		end
 		endcase
@@ -940,13 +1012,13 @@ initial debug = 0;
 			end else begin
 				state <= `XFAULT;
 				if (cpu_xpush) begin
-					xentry <= 11'd5;
+					xentry <= 12'd5;
 					xrestore <= 0;
 				end else if (fpd_active) begin
 					xentry <= fpd_vec;
 					xrestore <= 0;
 				end else begin
-					xentry <= 11'd4;
+					xentry <= 12'd4;
 					xrestore <= 1;
 				end
 			end
@@ -1015,6 +1087,18 @@ initial debug = 0;
 				state <= `S_HALT;
 				delay_halt <= 0;
 				haltpos <= `HALT_STEP;
+			end else if (psl_tp) begin
+				/*
+				 * Trace fault (SRM 5.x, SCB 28) before the next
+				 * instruction is fetched: TP is cleared first, so
+				 * the saved PSL has it clear; the saved PC is that of
+				 * the instruction. Traps and interrupts have already
+				 * been looked at (ENDINST), so they come first.
+				 */
+				psl_tp <= 0;
+				doing_intr <= 1;
+				scounter <= 12'd10;
+				state <= `PREEXEC;
 			end else if (isvalid) begin
 if (debug) $fdisplay(32'h80000002, "FETCH: pc %x curbyte %x inslword %x pc+1 %x\r", curpc, cur_byte, inslword, pc_plus_1);
 				/* put insbyte in decode reg */
@@ -1023,6 +1107,8 @@ if (debug) $fdisplay(32'h80000002, "FETCH: pc %x curbyte %x inslword %x pc+1 %x\
 				oldpsl <= psl;
 				curpc <= pc_plus_1;
 				state <= `S_DECODE;
+				/* the instruction starts: TP <- T */
+				psl_tp <= psw[`PSL_T];
 			end else begin
 				oldpc <= curpc;	/* for a fault on the opcode fetch */
 				oldpsl <= psl;
@@ -1052,7 +1138,7 @@ if (debug) $fdisplay(32'h80000002, "S_DECODE: i_hasargs %d i_emul %d pc %x\r", i
 					 * opcode (SRM 5.4).
 					 */
 					state <= `XFAULT;
-					xentry <= 11'd7;
+					xentry <= 12'd7;
 					xrestore <= 1;
 				end
 			end else if (psl_fpd) begin
@@ -1064,10 +1150,12 @@ if (debug) $fdisplay(32'h80000002, "S_DECODE: i_hasargs %d i_emul %d pc %x\r", i
 				 */
 				state <= `PREEXEC;
 				if (i_fpdok)
-					scounter <= i_stepoff + 11'd1;
+					scounter <= i_stepoff + 12'd1;
 				else begin
-					scounter <= 11'd6;
+					/* reserved instruction fault: TP cleared */
+					scounter <= 12'd6;
 					doing_intr <= 1;
+					psl_tp <= 0;
 				end
 			end else if (i_hasargs == 0)
 				state <= `S_HALT;
@@ -1098,7 +1186,7 @@ if (debug) $fdisplay(32'h80000002, "ASETUPx: isvalid %x curpc %x inslword %x\r",
 					/* reserved addressing mode fault: PC
 					   and registers back to the start */
 					state <= `XFAULT;
-					xentry <= 11'd8;
+					xentry <= 12'd8;
 					xrestore <= 1;
 				end else if (cur_mux[7:6] == 0) // literal
 					state <= `ARG_READ;
@@ -1302,8 +1390,11 @@ if (debug) $fdisplay(32'h80000002, "PREEXEC: op %d sleft %d sright %d scounter %
 			4'b1100: alu_left <= rmem_dat;
 			4'b1101: alu_left <=
 			    { 11'b0, intlvl, tx_intreq, rx_intreq,
-			      intrq, |cur_mod, 8'b0, Ntmp, Ztmp, Vtmp, Ctmp };
-			/* <13>: interrupt pending, <12>: not in kernel mode */
+			      intrq, |cur_mod, 6'b0, argp_isreg[1], argp_isreg[0],
+			      Ntmp, Ztmp, Vtmp, Ctmp };
+			/* <13>: interrupt pending, <12>: not in kernel mode,
+			   <5:4>: argp1, argp0 are registers (an address can
+			   have bits 31:30 set too) */
 			4'b1110: alu_left <= alu_upper_res;
 			4'b1111: alu_left <= oldpc;
 			default: alu_left <= 0;
@@ -1312,9 +1403,9 @@ if (debug) $fdisplay(32'h80000002, "PREEXEC: op %d sleft %d sright %d scounter %
 			casez (s_right)
 			4'b00??: alu_right <= arg[s_right[1:0]];
 			4'b010?: alu_right <= argd[s_right[0]];
-//			4'b011?: alu_lright<= argp_isreg[s_right[0]] ?
-//	    { 2'b11, 25'b0, argp_size[s_right[0]], argp_regnum[s_right[0]] } :
-//				argp[s_right[0]];
+			4'b011?: alu_right <= argp_isreg[s_right[0]] ?
+			    { 2'b11, 26'b0, argp_regnum[s_right[0]] } :
+				argp[s_right[0]];
 			4'b1000: alu_right <= psl;
 			4'b1001: alu_right <= { 16'b0, s_const };
 //			4'b1010: alu_right <= { 27'b0, intlvl };
@@ -1333,9 +1424,9 @@ if (debug & alu_ack) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d ste
 
 			case (s_dest)
 			0: ;
-			1: { psl_fpd, psl_is, cur_mod, prv_mod, psl_ipl, 
+			1: { psl_tp, psl_fpd, psl_is, cur_mod, prv_mod, psl_ipl,
 			     tx_intack, rx_intack, psw } <=
-			    { alu_res[27], alu_res[26], alu_res[25:24], 
+			    { alu_res[30], alu_res[27], alu_res[26], alu_res[25:24],
 			      alu_res[23:22], alu_res[20:16],
 			      alu_res[15:14], alu_res[7:0] };
 			2: argd[0] <= alu_res;
@@ -1366,7 +1457,7 @@ if (debug & alu_ack) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d ste
 				cpu_size <= s_size;
 			end
 			13: begin
-				fpd_vec <= alu_res[10:0];
+				fpd_vec <= alu_res[11:0];
 				fpd_active <= 1;
 			end
 			12: begin
@@ -1439,7 +1530,10 @@ if (debug & alu_ack) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d ste
 			end
 
 			if (wr_cond_ok && s_goto)
-				scounter <= s_addr[10:0];
+				scounter <= s_addr[11:0];
+			/* computed goto: a microcode subroutine returns */
+			if (s_dest == 4'd14)
+				scounter <= alu_res[11:0];
 			if (wr_cond_ok && s_resopflt)
 				resopflt <= 1;
 
@@ -1474,7 +1568,9 @@ if (debug) $fdisplay(32'h80000002, "ENDINST: pc %x argd[1] %x argpsz[1] %d arg2p
 
 			fpd_active <= 0;
 			if (resopflt|mcheck) begin
-				scounter <= { 7'b0, vecoff };
+				/* a fault or an abort: TP cleared in the saved PSL */
+				psl_tp <= 0;
+				scounter <= { 8'b0, vecoff };
 //$fdisplay(32'h80000002, "ENDINST: sc %d anyfault %d s_enable %d s_stepoff %d\r", mcheck ? 1 : resopflt ? 2 : 0, anyfault, s_enable, s_stepoff);
 				state <= `PREEXEC;
 				resopflt <= 0;
@@ -1483,7 +1579,8 @@ if (debug) $fdisplay(32'h80000002, "ENDINST: pc %x argd[1] %x argpsz[1] %d arg2p
 				doing_intr <= 1;
 				if (resopflt && !mcheck && !doing_intr) begin
 					/* a fault: PC and registers as at the start */
-					xentry <= rifault ? 11'd7 : 11'd2;
+					xentry <= rafault ? 12'd8 :
+					    rifault ? 12'd7 : 12'd2;
 					xrestore <= 1;
 					state <= `XFAULT;
 				end
@@ -1541,11 +1638,21 @@ if (debug) $fdisplay(32'h80000002, "WB1: argd1 %x size %d addr %x\r", argd[1], a
 					wmemstate <= `WMEM_xENDINST;
 				end
 				writeback2 <= 0;
+			end else if (trapreq) begin
+				/*
+				 * Arithmetic trap (SCB 34): the results are stored,
+				 * the saved PC is that of the next instruction. Taken
+				 * before interrupts and before the trace fault of the
+				 * next instruction.
+				 */
+				doing_intr <= 1;
+				scounter <= 12'd9;
+				state <= `PREEXEC;
 			end else if (intrq) begin
 // $fdisplay(32'h80000002, "INTR: pc %x psl %x intlvl %x", oldpc, psl, intlvl);
 //$display("INTR: pc %x psl %x intlvl %x\r", oldpc, psl, intlvl);
 				doing_intr <= 1;
-				scounter <= { 7'b0, vecoff };
+				scounter <= { 8'b0, vecoff };
 				state <= `PREEXEC;
 			end
 			if (doing_intr == 0) begin
@@ -1653,6 +1760,8 @@ if (debug) $fdisplay(32'h80000002, "MCODE: ctr %d mc_rv %x\r", mcodectr, mc_rv);
 
 		`WRITEIPR: begin
 			state <= `PREEXEC;
+			if (ipr_addr == `IPR_DU)
+				state <= `DUWAIT;
 			if (ipr_addr == `IPR_HALT) begin
 				/* microcode asks for a halt (IPR_HALT in ipr.vh) */
 				doing_intr <= 0;
@@ -1669,6 +1778,9 @@ if (debug) $fdisplay(32'h80000002, "MCODE: ctr %d mc_rv %x\r", mcodectr, mc_rv);
 			end
 // $fdisplay(32'h80000002, "WIPR: wdata %x ipr 0x%x pc %x", ipr_wdata, ipr_addr, oldpc);
 		end
+
+		/* a decimal unit command: wait until it is done */
+		`DUWAIT: if (!du_busy) state <= `PREEXEC;
 
 		`S_WRITEMEM: begin
 			cpu_write <= 1;
@@ -1753,6 +1865,8 @@ if (debug) $fdisplay(32'h80000002, "S_READMEM2: addr %x dat %x pc %x size %d", c
 				{ psl_fpd, psl_is, cur_mod, prv_mod, psl_ipl, psw } <=
 				    { oldpsl[27:22], oldpsl[20:16], oldpsl[7:0] };
 			end
+			/* a fault: TP is cleared in the saved PSL */
+			psl_tp <= 0;
 			if (xhalt) begin
 				/* a microcode halt with the instruction put back */
 				xhalt <= 0;

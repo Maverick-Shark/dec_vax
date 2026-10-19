@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""run.py - run VAX test programs on simh's vax8600 and on the RTL, compare.
+"""run.py - run VAX test programs on a VAX 8600 reference simulator and on
+the RTL, compare.
 
 Usage (from the project root):
 
@@ -13,16 +14,18 @@ Each test is a VAX MACRO-subset source for tools/vasm.py. Lines starting with
     ;@ clocks=2000000        clock budget for the RTL
     ;@ ignore=R12,R13        registers/PSL not to compare
     ;@ rtl=18008:03C00000     the RTL value is checked against this instead of
-                             simh's (a documented difference)
+                             the reference simulator's (a documented
+                             difference)
     ;@ mask=1800C:FFFFFFF0     longwords compared under a mask (e.g. condition
                              codes that the SRM leaves UNPREDICTABLE)
     ;@ page=18004             longwords compared only for the page (VA<31:9>):
                              the fault VA is "some address in the faulting
-                             page" (SRM 4.9), simh and the RTL may differ
+                             page" (SRM 4.9), the two may differ
     ;@ halt=6                 the RTL must stop with this halt code (hex)
-    ;@ nosimh                 simh behaves differently on purpose: only the
+    ;@ noref                  the reference simulator behaves differently
+                             on purpose: only the
                              RTL runs, checked against expect= and rtl=
-    ;@ expect=R6:0,R5:5       register values the RTL must end with (nosimh)
+    ;@ expect=R6:0,R5:5       register values the RTL must end with (noref)
     ;@ board=halt|skip        for mkboard.py: the test ends in a processor
                              halt (runs last on the board) / is left out
 
@@ -30,7 +33,8 @@ The program runs from PSL 041F0000 (kernel mode, interrupt stack, IPL 1F) and
 must end in HALT. Both machines are compared on R0..R14, PSL, the PC after the
 HALT and the dumped memory.
 
-Needs: simh vax8600 (SIMH env var or ../open-simh/BIN/vax8600) and the RTL
+Needs: the reference simulator (REFSIM environment variable; by default the
+open-simh vax8600 binary in ../open-simh/BIN) and the RTL
 bench (make -C sim cputb).
 """
 import glob
@@ -43,12 +47,13 @@ import tempfile
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 VASM = os.path.join(ROOT, 'tools', 'vasm.py')
 RTL = os.environ.get('RTLBIN', os.path.join(ROOT, 'sim', 'obj_cpu', 'Vtb_cpu'))
-SIMH = os.environ.get('SIMH', os.path.join(ROOT, '..', 'open-simh', 'BIN', 'vax8600'))
+REFSIM = os.environ.get('REFSIM', os.environ.get('SIMH',
+                        os.path.join(ROOT, '..', 'open-simh', 'BIN', 'vax8600')))
 
 
 def directives(src):
     d = {'dump': [], 'ignore': set(), 'page': set(), 'rtl': {}, 'mask': {},
-         'clocks': '4000000', 'start': None, 'halt': None, 'nosimh': False,
+         'clocks': '4000000', 'start': None, 'halt': None, 'noref': False,
          'expect': {}}
     for line in open(src):
         if not line.startswith(';@'):
@@ -72,8 +77,8 @@ def directives(src):
                 d['page'].update('M%08X' % int(x, 16) for x in v.split(','))
             elif k == 'halt':
                 d['halt'] = int(v, 16)
-            elif k == 'nosimh':
-                d['nosimh'] = True
+            elif k == 'noref':
+                d['noref'] = True
             elif k == 'expect':
                 for x in v.split(','):
                     r, _, val = x.partition(':')
@@ -92,7 +97,7 @@ def assemble(src, binf):
     return int(m.group(1), 16)
 
 
-def run_simh(binf, load, start, dumps, tmp):
+def run_ref(binf, load, start, dumps, tmp):
     ini = os.path.join(tmp, 'run.ini')
     with open(ini, 'w') as f:
         f.write('set cpu 32m\n')
@@ -102,7 +107,7 @@ def run_simh(binf, load, start, dumps, tmp):
         for a, n in dumps:
             f.write('ex %X/%X\n' % (a, 4 * n))
         f.write('exit\n')
-    out = subprocess.run([SIMH, ini], capture_output=True, text=True,
+    out = subprocess.run([REFSIM, ini], capture_output=True, text=True,
                          stdin=subprocess.DEVNULL, timeout=60).stdout
     res = {'stop': ''}
     for line in out.splitlines():
@@ -160,14 +165,14 @@ def main():
                 fails += 1
                 continue
             start = int(d['start'], 16) if d['start'] else load
-            if d['nosimh']:
-                s, sout = dict(d['expect'], stop='(not run: nosimh)'), ''
+            if d['noref']:
+                s, sout = dict(d['expect'], stop='(not run: noref)'), ''
             else:
-                s, sout = run_simh(binf, load, start, d['dump'], tmp)
+                s, sout = run_ref(binf, load, start, d['dump'], tmp)
             r, rout = run_rtl(binf, load, start, d['dump'], d['clocks'])
         keys = ['R%d' % i for i in range(15)] + ['PSL', 'PC']
         keys += ['M%08X' % (a + 4 * k) for a, n in d['dump'] for k in range(n)]
-        if d['nosimh']:
+        if d['noref']:
             keys = [k for k in keys if k in d['expect'] or k in d['rtl']]
         diffs = []
         if d['halt'] is not None and r.get('halt') != d['halt']:
@@ -184,14 +189,14 @@ def main():
             if k in d['mask'] and sv is not None and rv is not None:
                 sv, rv = sv & d['mask'][k], rv & d['mask'][k]
             if sv != rv:
-                diffs.append('  %-10s simh %s  rtl %s' % (
+                diffs.append('  %-10s ref %s  rtl %s' % (
                     k, '%08X' % sv if sv is not None else '--------',
                     '%08X' % rv if rv is not None else '--------'))
         ok = not diffs and 'TIMEOUT' not in r['stop']
         print('%-24s %s  (%s clocks)' % (name, 'PASS' if ok else 'FAIL', r.get('clocks', '?')))
         if not ok:
             fails += 1
-            print('  simh: %s' % s['stop'])
+            print('  ref:  %s' % s['stop'])
             print('  rtl:  %s' % r['stop'])
             print('\n'.join(diffs))
         if verbose:

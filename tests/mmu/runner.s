@@ -1,16 +1,17 @@
 ; runner.s - runs the tests/mmu programs on the core itself and prints
 ; PASS or FAIL for each one on the console. Built into software/mmutest.bin
 ; by tests/mmu/mkboard.py, which also generates suite.inc (the test table
-; and the test images, each with its table of expected values from simh).
+; and the test images, each with its table of expected values).
 ;
 ; Memory:
 ;   00001000            each test is copied here and runs as in run.py
-;   00000000-00047FFF   cleared before each test (simh starts from zeros)
+;   00000000-00047FFF   cleared before each test (as the expected values)
 ;   002FC000            the runner's SCB
 ;   002FE800, 002FF000  the runner's kernel and interrupt stacks (tops)
 ;   00300000            the runner (boot.s copies it here)
 ;
-; Before each test the runner puts the machine back in the state simh starts
+; Before each test the runner puts the machine back in the state the expected
+; values start
 ; in: mapping off, timer stopped, ASTLVL 4, no software interrupt pending,
 ; R0-R13 zero, PSL 041F0000 (kernel mode, interrupt stack, IPL 1F). The test
 ; ends in "finish" (board.inc), which comes back to RUN+8 with mapping off.
@@ -325,7 +326,7 @@ nfail:	.long	0
 hexdig:	.ascii	"0123456789ABCDEF"
 s_banner:
 	.ascii	"\r\nTest suite: the tests/mmu programs (memory management and"
-	.ascii	" privileged\r\narchitecture), checked against simh vax8600"
+	.ascii	" privileged\r\narchitecture), checked against their expected results"
 	.asciz	"\r\n\r\n"
 s_pass:	.asciz	"PASS\r\n"
 s_fail:	.asciz	"FAIL\r\n"

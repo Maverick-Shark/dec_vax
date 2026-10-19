@@ -11,10 +11,10 @@ without a disk controller.
          mode); the output is then software/<name>_ds.bin
     -k   keep the work directory
 
-simh vax8600 boots the supervisor (ZZ-EDSAA) from the diagnostic disk,
-attaches the CPU as simh's own test script does, and loads the diagnostic
-(LOAD, not RUN). At the DS> prompt the supervisor runs with memory management off, so
-its whole state is: physical memory up to the end of what it uses, the
+A VAX 8600 simulator on the PC (REFSIM) boots the supervisor (ZZ-EDSAA)
+from the diagnostic disk, attaches the CPU and loads the diagnostic (LOAD,
+not RUN). At the DS> prompt the supervisor runs with memory management off,
+so its whole state is: physical memory up to the end of what it uses, the
 general registers, PC, PSL, and the internal registers. This script dumps
 them, replaces the first bytes at 200 with a jump to dsrestore.s, which is
 put after the memory, and writes the result.
@@ -25,8 +25,9 @@ EVKAA settings), Load Program -> evkae_ds.bin. The banner tells what to type.
 The file is DEC software (the supervisor and EVKAE) in another form: like
 the diagnostic disk itself it is not part of the repository.
 
-Needs simh's vax8600 (SIMH or ../open-simh/BIN/vax8600), its vmb.exe (next to
-the binary's source, VAX/vmb.exe, or VMB environment variable) and the disk
+Needs the simulator (environment variable REFSIM; by default the open-simh
+vax8600 binary in ../open-simh/BIN), DEC's vmb.exe (VMB; by default next to
+the simulator's sources, VAX/vmb.exe) and the disk
 (software/VAX_MINIMUM_DIAGS.dsk by default).
 """
 import os
@@ -40,13 +41,14 @@ import tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, '..', '..'))
 VASM = os.path.join(ROOT, 'tools', 'vasm.py')
-SIMH = os.environ.get('SIMH', os.path.join(ROOT, '..', 'open-simh', 'BIN', 'vax8600'))
+REFSIM = os.environ.get('REFSIM', os.environ.get('SIMH',
+                        os.path.join(ROOT, '..', 'open-simh', 'BIN', 'vax8600')))
 VMB = os.environ.get('VMB', os.path.join(ROOT, '..', 'open-simh', 'VAX', 'vmb.exe'))
 STUB = 0x200            # where the console starts the image
 SCAN = 0x100000         # memory looked at for the end of the supervisor's data
 PATTERN = 0xAAAAAAAA    # what the supervisor leaves in the memory it does not use
 
-SIMH_SCRIPT = r'''
+SIM_SCRIPT = r'''
 set on
 on error ignore
 set console notelnet
@@ -69,16 +71,16 @@ exit
 '''
 
 
-def run_simh(disk, prog, work):
+def run_ref(disk, prog, work):
     shutil.copy(VMB, os.path.join(work, 'vmb.exe'))
     ini = os.path.join(work, 'ds.ini')
     with open(ini, 'w') as f:
-        f.write(SIMH_SCRIPT % {'disk': os.path.abspath(disk), 'top': SCAN - 4,
+        f.write(SIM_SCRIPT % {'disk': os.path.abspath(disk), 'top': SCAN - 4,
                                'prog': prog})
-    out = subprocess.run([SIMH, ini], capture_output=True, text=True, cwd=work,
+    out = subprocess.run([REFSIM, ini], capture_output=True, text=True, cwd=work,
                          stdin=subprocess.DEVNULL, timeout=1200).stdout
     if '*** AT PROMPT ***' not in out:
-        raise SystemExit('simh did not reach the DS> prompt:\n' + out[-3000:])
+        raise SystemExit('the simulator did not reach the DS> prompt:\n' + out[-3000:])
     out = out[out.index('*** AT PROMPT ***'):]
     regs, mem = {}, {}
     for line in out.splitlines():
@@ -89,11 +91,11 @@ def run_simh(disk, prog, work):
         m = re.match(r'^([A-Z][A-Z0-9]*):\s+([0-9A-F]+)\b', line.strip())
         if m and m.group(1) not in regs:
             regs[m.group(1)] = int(m.group(2), 16)
-    # every longword must have come out in hex (simh's -p switch, for one,
+    # every longword must have come out in hex (the -p switch, for one,
     # prints memory as PDP-11 instructions, which would be lost here)
     missing = [a for a in range(0, SCAN, 4) if a not in mem]
     if missing:
-        raise SystemExit('simh printed %d longwords in another format, first at %X'
+        raise SystemExit('the simulator printed %d longwords in another format, first at %X'
                          % (len(missing), missing[0]))
     return regs, mem
 
@@ -117,7 +119,7 @@ def main():
     outf = args[args.index('-o') + 1] if '-o' in args else \
         os.path.join(ROOT, 'software', prog.lower() + '_ds.bin')
     work = tempfile.mkdtemp(prefix='dsimage_')
-    regs, mem = run_simh(disk, prog, work)
+    regs, mem = run_ref(disk, prog, work)
     if regs.get('MAPEN', 1) != 0:
         raise SystemExit('memory management is on at the prompt: not supported')
 
@@ -149,7 +151,7 @@ def main():
         'S_SCBB': regs['SCBB'], 'S_PCBB': regs['PCBB'],
         'S_ASTLVL': regs['ASTLVL'], 'S_SISR': regs['SISR'],
         'S_NICR': regs['NICR'],
-        # run and interrupt enable as simh had them; load ICR from NICR,
+        # run and interrupt enable as they were; load ICR from NICR,
         # clear any pending request and error
         'S_ICCS': (regs['ICCS'] & 0x41) | 0x80000090,
         'S_RXCS': regs['RXCS'] & 0x40,
@@ -158,15 +160,15 @@ def main():
     if regs['PSL'] & 0x04000000:
         raise SystemExit('the supervisor is on the interrupt stack: not supported')
     with open(os.path.join(work, 'dsstate.inc'), 'w') as f:
-        f.write('; generated by mkdsimage.py: simh vax8600 at the DS> prompt\n')
+        f.write('; generated by mkdsimage.py: the supervisor at its DS> prompt\n')
         for k, v in s.items():
             f.write('%s\t= ^x%X\n' % (k, v))
     with open(os.path.join(work, 'orig200.inc'), 'w') as f:
         for k in range(0, len(orig), 16):
             f.write('\t.byte\t%s\n' % ', '.join('^x%02X' % b for b in orig[k:k + 16]))
     with open(os.path.join(work, 'dsmsg.inc'), 'w') as f:
-        f.write('\t.ascii\t"\\r\\n\\r\\nVAX 8600 Diagnostic Supervisor, from simh vax8600 at"\n')
-        f.write('\t.ascii\t" its prompt, with\\r\\n%s loaded. Type START, START/TEST:n or"\n' % prog)
+        f.write('\t.ascii\t"\\r\\n\\r\\nVAX 8600 Diagnostic Supervisor at its prompt, with"\n')
+        f.write('\t.ascii\t"\\r\\n%s loaded. Type START, START/TEST:n or"\n' % prog)
         f.write('\t.ascii\t" START/TEST:first:last.\\r\\n\\r\\n"\n')
         f.write('\t.asciz\t"DS> "\n')
     shutil.copy(os.path.join(HERE, 'dsrestore.s'), work)

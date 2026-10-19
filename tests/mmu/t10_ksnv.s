@@ -2,9 +2,9 @@
 ; frame push fails, kernel stack not valid (SCB 08) on the interrupt stack.
 ; SRM 5.6 note 5: the PSL and PC pushed are the ones the original exception
 ; would have pushed: the user PSL 03C00000, and the new PSL takes PRV_MOD
-; from it (04DF0000). simh pushes the kernel PSL it had already loaded
-; (00C00000) and so ends with PRV_MOD = kernel (041F0000); the RTL values
-; are checked against the SRM instead.
+; from it (04DF0000). The reference simulator pushes the kernel PSL it had
+; already loaded (00C00000) and so ends with PRV_MOD = kernel (041F0000);
+; the RTL values are checked against the SRM instead.
 ;@ dump=18000:4 dump=DFF0:4 ignore=PSL
 ;@ rtl=18008:03C00000,1800C:04DF0000,DFFC:03C00000
 	.include "mmsetup.inc"

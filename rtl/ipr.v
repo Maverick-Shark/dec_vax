@@ -27,6 +27,10 @@
 `default_nettype none
 /*
  * IPR storage/handling module.
+ *
+ * Not used by the MiSTer build: the CPU keeps its internal processor
+ * registers in cpu.v (and the MMU's in mmu.v). This module is r-vax's early
+ * IPR store, kept with the rest of the original sources.
  */
 
 `include "ipr.vh"
@@ -48,7 +52,7 @@ module ipr(
 
 	reg [31:0]	iprmem [63:0];
 
-initial iprmem[62] = 32'h0A000006;
+	initial iprmem[62] = 32'h0A000006;
 
 	assign DAT_O = CYC_I ? out_data : 32'b0;
 	assign ACK_O = CYC_I ? out_ack : 0;
@@ -63,8 +67,6 @@ initial iprmem[62] = 32'h0A000006;
 			out_ack <= 1;
 		end else
 			out_ack <= 0;
-//		if (<enableB>)
-//			<output_dataB> <= iprmem[ADR_I[5:0]];
 	end
 
 endmodule

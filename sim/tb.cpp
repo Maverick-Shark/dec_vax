@@ -115,7 +115,7 @@ static void tick() {
 		       R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__cur_inst,
 		       R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__psl);
 	// ITRACE=file: PC, PSL and opcode of every instruction, from cycle
-	// ITRACE_FROM on (for comparing with simh's instruction history)
+	// ITRACE_FROM on (for comparing with a reference simulator's trace)
 	static uint64_t itr_from = 0;
 	static int itr_init = 0;
 	if (!itr_init) {

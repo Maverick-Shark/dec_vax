@@ -48,8 +48,9 @@
 `define	CLC		28
 `define	SETC		35
 `define	SETV		36
+`define	INTOV		29	/* integer overflow (V set) traps if PSL<IV> */
 `define	FPDOK		14	/* may resume with PSL<FPD> set (no operand decode) */
-/* 47-57 is step offset */
+/* 47-58 is step offset */
 
 `define	DOHALT		63
 
@@ -60,7 +61,7 @@ module ucode(
 	input			i_enable,
 	input [7:0]		i_opcode,
 
-	output [7:0]		i_argoff,
+	output [8:0]		i_argoff,
 	output			i_hasargs,
 	output			i_emul,
 
@@ -76,17 +77,18 @@ module ucode(
 	output			i_clc,
 	output			i_setc,
 	output			i_setv,
+	output			i_intov,
 
 	output			i_move2,
 	output			i_wback2,
 
 	output			i_fpdok,
 
-	output [10:0]		i_stepoff,
+	output [11:0]		i_stepoff,
 
 	/* Microcode step ROM */
 	input			s_enable,
-	input [10:0]		s_stepoff,
+	input [11:0]		s_stepoff,
 
 	output [3:0]		s_left,
 	output [3:0]		s_right,
@@ -122,7 +124,7 @@ module ucode(
 
 	/* Argument ROM */
 	input			a_enable,
-	input [7:0]		a_argoff,
+	input [8:0]		a_argoff,
 
 	output [2:0]		a_argcode,
 	output [1:0]		a_argsz,
@@ -137,9 +139,9 @@ module ucode(
 parameter	I_ROM_WIDTH = 64;
 parameter	I_ROM_ADDRS = 256;
 parameter	A_ROM_WIDTH = 64;
-parameter	A_ROM_ADDRS = 256;
+parameter	A_ROM_ADDRS = 512;
 parameter	S_ROM_WIDTH = 72;
-parameter	S_ROM_ADDRS = 2048;
+parameter	S_ROM_ADDRS = 4096;
 
 	(* ramstyle = "M10K" *)
 	reg [I_ROM_WIDTH-1:0] ucinsn_rom [I_ROM_ADDRS-1:0];
@@ -210,7 +212,7 @@ parameter	S_ROM_ADDRS = 2048;
 	assign s_addr = ucstep_data[55:40];
 	assign s_const = ucstep_data[71:56];
 
-	assign i_argoff = ucinsn_data[7:0];
+	assign i_argoff = { ucinsn_data[15], ucinsn_data[7:0] };
 	assign i_hasargs = ucinsn_data[`IHASARGS];
 	assign i_emul = ucinsn_data[`IEMUL];
 	assign i_dohalt = ucinsn_data[`DOHALT];
@@ -224,12 +226,13 @@ parameter	S_ROM_ADDRS = 2048;
 	assign i_clc = ucinsn_data[`CLC];
 	assign i_setc = ucinsn_data[`SETC];
 	assign i_setv = ucinsn_data[`SETV];
+	assign i_intov = ucinsn_data[`INTOV];
 
 	assign i_move2 = ucinsn_data[`MOVE2];
 	assign i_wback2 = ucinsn_data[`WBACK2];
 
 	assign i_fpdok = ucinsn_data[`FPDOK];
-	assign i_stepoff = ucinsn_data[57:47];
+	assign i_stepoff = ucinsn_data[58:47];
 
 	assign a_argcode = ucargs_data[2:0];
 	assign a_argsz = ucargs_data[4:3];

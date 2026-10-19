@@ -4,7 +4,7 @@
 Usage:  python3 tools/vasm.py prog.s -o prog.bin [-l prog.lst]
 
 The output is a flat binary image that starts at the lowest address the source
-places anything at (`.org`), ready for the OSD loader or simh's `load`.
+places anything at (`.org`), ready for the OSD loader or a simulator's `load`.
 
 Syntax, a subset of VAX MACRO:
 

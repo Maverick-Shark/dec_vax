@@ -1,7 +1,8 @@
 ; t15_movcint - interval-timer interrupts while a long MOVC3 runs: the
 ; RTL takes them in the middle of the move (PSL<FPD> set in the frame,
 ; the instruction resumes after the REI); the move must still be exact.
-; simh does not interrupt inside MOVC3, so the interrupt count (R9) and
+; The reference simulator does not interrupt inside MOVC3, so the interrupt
+; count (R9) and
 ; the count of interrupts that saw PSL<FPD> (LOG longword 0) are not
 ; compared.
 ;@ dump=1A000:4 dump=1C000:4 dump=1FFF0:4 ignore=R9,R10,PSL

@@ -29,6 +29,8 @@
 `define	PSL_V	1
 `define	PSL_Z	2
 `define	PSL_N	3
+`define	PSL_T	4	/* trace enable */
+`define	PSL_IV	5	/* integer overflow trap enable */
 
 /* general regs */
 `define	REG_PC		4'hf

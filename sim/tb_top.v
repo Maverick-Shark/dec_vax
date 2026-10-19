@@ -72,9 +72,16 @@ module tb_top #(
 		.led_user(led), .led_disk(led_disk)
 	);
 
+	// DQM_ON_A models the modules (128 MB among them) whose chips take their
+	// byte masks from A11/A12 instead of the DQML/DQMH pins
+`ifdef DQM_ON_A
+	wire m_dqml = sd_a[11], m_dqmh = sd_a[12];
+`else
+	wire m_dqml = sd_dqml, m_dqmh = sd_dqmh;
+`endif
 	sdram_model #(.CL_SKEW(CL_SKEW)) sdram (
 		.clk(clk), .a(sd_a), .ba(sd_ba), .ncs(sd_ncs), .nras(sd_nras),
-		.ncas(sd_ncas), .nwe(sd_nwe), .dqml(sd_dqml), .dqmh(sd_dqmh),
+		.ncas(sd_ncas), .nwe(sd_nwe), .dqml(m_dqml), .dqmh(m_dqmh),
 		.dq_in(sd_dq_o), .dq_oe(sd_dq_oe), .dq_out(m_dq), .dq_drive(m_drive)
 	);
 

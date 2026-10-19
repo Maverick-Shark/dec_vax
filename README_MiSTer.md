@@ -5,22 +5,27 @@ MiSTer FPGA platform (Terasic DE10-Nano).
 
 **Status: the core runs real VAX software.** It boots into the r-vax hardware
 console monitor, runs programs loaded from the OSD, and **passes EVKAA V8.0,
-DEC's own Hardcore Instruction Test**, in simulation of the full MiSTer core
-(and the first version of this port ran it on a DE10-Nano).
+DEC's own Hardcore Instruction Test**, on a DE10-Nano and in simulation of
+the full MiSTer core.
 It has **memory management** as the VAX 8600 does it - translation buffer,
 page tables, protection, restartable faults, PROBE, LDPCTX/SVPCTX - checked
-against simh's `vax8600` in simulation and on the board
-([docs/MMU.md](docs/MMU.md)), and the 8600's **privileged architecture**:
-CHMK/CHME/CHMS/CHMU, BPT, XFC, the reserved instruction and reserved
-addressing mode faults, HALT as a privileged instruction, the 8600's halt
-codes and internal registers, and a console halt (Ctrl+P or the OSD). DEC's
-**VAX 8600 Diagnostic Supervisor runs EVKAE**, the privileged architecture
-exerciser: 10 of its 11 tests pass in simulation; the other one needs PDP-11
-compatibility mode, which the 8600 has and the core does not yet (see
-*Running the Diagnostic Supervisor and EVKAE*).
-OpenVMS cannot run yet: there is no floating point, no packed decimal and no
-disk controller. See *What is missing*, and [ROADMAP.md](ROADMAP.md) for the
-plan.
+in simulation and on the board ([docs/MMU.md](docs/MMU.md)), and the 8600's
+**privileged architecture**:
+CHMK/CHME/CHMS/CHMU, BPT, XFC, trace, the arithmetic traps, the reserved
+instruction and reserved addressing mode faults, HALT as a privileged
+instruction, the 8600's halt codes and internal registers, and a console
+halt (Ctrl+P or the OSD). Every one-byte opcode is there but the floating
+point ones, including the **packed decimal and long character string
+instructions**, which the 8600 has in hardware; a small decimal unit does
+their arithmetic ([docs/CIS.md](docs/CIS.md)). DEC's **VAX 8600 Diagnostic
+Supervisor** runs on the core with two of its exercisers. In the full-system
+simulation **EVKAB**, the basic instruction exerciser, passes all of its 161
+tests, and **EVKAE**, the privileged architecture exerciser, 10 of its 11;
+the other one needs PDP-11 compatibility mode, which the 8600 has and the
+core does not yet (see *Running the Diagnostic Supervisor and EVKAE* and
+*Running EVKAB*).
+OpenVMS cannot run yet: there is no floating point and no disk controller.
+See *What is missing*, and [ROADMAP.md](ROADMAP.md) for the plan.
 
 ```
 == r-vax / MiSTer   cache 16 KB   clock 50 MHz
@@ -36,8 +41,9 @@ plan.
 | Block | File | Notes |
 |---|---|---|
 | VAX CPU | `rtl/cpu.v` + `rtl/*.v` (r-vax) | Microcoded base instruction set |
-| Microcode ROMs | `rtl/uc-*.hex`, `rtl/ucode.v` | 176 Kbit, forced into M10K block RAM |
+| Microcode ROMs | `rtl/uc-*.hex`, `rtl/ucode.v` | 336 Kbit, forced into M10K block RAM |
 | Memory management | `rtl/mmu.v` | 8600 translation buffer, page table walk, protection ([docs/MMU.md](docs/MMU.md)) |
+| Decimal unit | `rtl/decunit.v` | Packed decimal arithmetic for the decimal string instructions ([docs/CIS.md](docs/CIS.md)) |
 | Cache | `rtl/mister/vax_cache.v` | 16 KB, M10K block RAM |
 | Memory | `rtl/mister/vax_sdram.v` | 32 MB on the MiSTer SDRAM module |
 | Bus and I/O stubs | `rtl/mister/vax_core.v` | SBI, DW780 (TR3), RH780 (TR8) registers |
@@ -132,9 +138,10 @@ cpu ── vcache ── mmu ──┬── vax_cache ── vax_sdram ── 3
 
 Both now live in Cyclone V M10K block RAM, as you asked.
 
-**Microcode.** The three ROMs in `ucode.v` are 256x64, 256x64 and 2048x72 bits,
-about 176 Kbit in total (the step store was 1024 words in r-vax; memory
-management needed more). `tools/patch_rvax.py` marks them `ramstyle = "M10K"`,
+**Microcode.** The three ROMs in `ucode.v` are 256x64, 512x64 and 4096x72
+bits, about 336 Kbit in total (the step store was 1024 words and the argument
+store 256 in r-vax; memory management, and then the decimal and string
+instructions, needed more). `tools/patch_rvax.py` marks them `ramstyle = "M10K"`,
 because left to itself Quartus may decide to build a ROM that size out of
 logic, which costs thousands of ALMs and ruins the timing. The CPU register
 file and the IPR file are deliberately kept *out* of block RAM (`ramstyle =
@@ -208,6 +215,19 @@ words, issued every other clock in the same open row (the last one with
 auto-precharge), so eight words stream back without a gap. A write is one
 WRITE of two words with byte masks and auto-precharge. ACTIVE to READ/WRITE is
 2 clocks (40 ns), refresh is every 333 clocks.
+
+**Byte masks on A11/A12.** On some modules - the 128 MB ones among them - the
+chips' `DQML`/`DQMH` inputs are not wired to the FPGA's `SDRAM_DQML`/`DQMH`
+pins but to the address lines A11 and A12, which the chips ignore in READ and
+WRITE commands; MiSTer's own memory test drives them that way. So the
+controller puts each write's byte masks on both: on `DQML`/`DQMH`, and on A11
+(low byte) and A12 (high byte) in the WRITE cycle and in the cycle of its
+second word; in every other cycle that moves data A12:A11 are 00, since a read
+is never masked. Until this was done, a byte or word write on such a module
+wrote the whole 16 bits: the memory test, which writes longwords, passed, but
+every program the OSD loaded (byte by byte) came out corrupted. `make -C sim
+dqma` builds the full-system model with the masks taken from A11/A12; `mmutest.bin`
+and EVKAA pass on it, and fail with the old controller at the first load.
 
 **Read data capture.** `SDRAM_CLK` is `clk_sys` inverted (a DDR output
 register), so the chip's clock edges are our *falling* edges. With CAS latency
@@ -568,19 +588,28 @@ answers - `1ER` tells you where and `1CR` what the instruction was.
 
 ## Running the DEC diagnostics
 
-`EVKAA` is the VAX Hardcore Instruction Test, the same program the simh test
-suite uses to certify its VAX emulation. It ships with simh:
+`EVKAA` is DEC's VAX Hardcore Instruction Test (`evkaa.exe`, 60 928 bytes).
+`VAX_MINIMUM_DIAGS.dsk` is a disk image with the Diagnostic Supervisor and
+EVKAB (basic instructions), EVKAC (floating point), EVKAD (compatibility
+mode) and EVKAE (privileged architecture, memory management among it). The
+core has no disk controller yet, so the supervisor is brought over as a
+memory image instead - see *Running the Diagnostic Supervisor and EVKAE*
+below. These are DEC programs; they are not part of this repository and
+not mine to relicense.
 
-* <https://github.com/simh/simh/raw/master/VAX/tests/evkaa.exe> (60 928 bytes)
-* or the same file in <https://github.com/open-simh/simh>, at `VAX/tests/evkaa.exe`
+`tools/vaxdisk.py` lists or extracts the files of such an image - a Files-11
+ODS-2 disk like `VAX_MINIMUM_DIAGS.dsk`, or an RT-11 floppy such as the
+console and diagnostic floppies (also as written by VMS EXCHANGE):
 
-The same directory holds `VAX_MINIMUM_DIAGS.dsk`, the disk image the Diagnostic
-Supervisor boots to run EVKAB (basic instructions), EVKAC (floating point),
-EVKAD (compatibility mode) and EVKAE (privileged architecture, memory
-management among it). The core has no disk controller yet, so the supervisor
-is brought over as a memory image instead - see *Running the Diagnostic
-Supervisor and EVKAE* below. These are DEC programs, distributed for use
-with simulators; they are not mine to relicense.
+```
+python3 tools/vaxdisk.py list software/VAX_MINIMUM_DIAGS.dsk
+python3 tools/vaxdisk.py extract software/VAX_MINIMUM_DIAGS.dsk   # -> software/VAX_MINIMUM_DIAGS/
+```
+
+Each file goes under its directory with the date the volume records, and a
+`CONTENTS.txt` lists them with their sizes and record formats; text files
+with variable length records come out as plain lines. `.gitignore` keeps the
+images and what is extracted from them out of the repository.
 
 To run EVKAA on the core:
 
@@ -595,8 +624,8 @@ To run EVKAA on the core:
 EVKAA V8.0 pass # 1(X) done!
 ```
 
-`done!` is the pass indication - it is exactly the string simh's own test script
-looks for. EVKAA then keeps running further passes quietly. Anything else, or a
+`done!` is the pass indication. EVKAA then keeps running further passes
+quietly. Anything else, or a
 return to the `>` prompt with a halt code, is a failure worth sending me
 together with `1ER` and `1CR`.
 
@@ -631,27 +660,27 @@ run the memory test from the OSD, or deposit `FE00P` = `0`, and reload.
 
 EVKAE, the VAX Privileged Architecture Exerciser, runs under the VAX 8600
 Diagnostic Supervisor (ZZ-EDSAA), which a real 8600 boots from a disk. The
-core has no disk yet, so `tests/evkae/mkdsimage.py` lets simh `vax8600` do
-the booting: it boots the supervisor from `VAX_MINIMUM_DIAGS.dsk`, attaches
-the CPU as simh's own test script does, loads EVKAE and stops at the `DS>`
-prompt. Then it saves that machine as a memory image - physical memory up to
-the end of what the supervisor uses (C3200h), followed by a little code that
-puts back the internal registers simh had (SCBB, PCBB, the five stack
-pointers, the interval timer, the console) and returns to the supervisor with
-`REI`. At its prompt the supervisor runs with memory management off and polls
-the console, so nothing else of simh's machine is needed.
+core has no disk yet, so `tests/evkae/mkdsimage.py` does the booting in a
+VAX 8600 simulator on the PC: it boots the supervisor from
+`VAX_MINIMUM_DIAGS.dsk`, attaches the CPU, loads EVKAE and stops at the
+`DS>` prompt. Then it saves that machine as a memory image - physical memory
+up to the end of what the supervisor uses (C3200h), followed by a little
+code that puts back the internal registers the supervisor had set (SCBB,
+PCBB, the five stack pointers, the interval timer, the console) and returns
+to it with `REI`. At its prompt the supervisor runs with memory management
+off and polls the console, so nothing else of that machine is needed.
 
 ```
-python3 tests/evkae/mkdsimage.py      # -> software/evkae_ds.bin (800 416 bytes)
+python3 tests/evkae/mkdsimage.py      # -> software/evkae_ds.bin (800 400 bytes)
 ```
 
-It needs simh's `vax8600` and its `vmb.exe` (open-simh; `SIMH=` and `VMB=`
-point at them if they are not in `../open-simh`) and
-`software/VAX_MINIMUM_DIAGS.dsk`. With `-p EVKAB` (or `EVKAC`, `EVKAD`) it
-loads another diagnostic of that disk instead, into `software/evkab_ds.bin`;
-those need instructions the core does not have yet. The image is DEC
-software in another form, so `.gitignore` keeps it out of the repository,
-like the disk.
+It needs the simulator and DEC's `vmb.exe` (the header of the script says
+where it looks for them) and `software/VAX_MINIMUM_DIAGS.dsk`. With `-p EVKAB` (or `EVKAC`, `EVKAD`) it
+loads another exerciser of that disk instead, into `software/evkab_ds.bin`
+(and so on): EVKAB runs (*Running EVKAB* below); EVKAC needs floating point
+and EVKAD compatibility mode, which the core does not have yet. The image is
+DEC software in another form, so `.gitignore` keeps it out of the
+repository, like the disk.
 
 On the core:
 
@@ -683,58 +712,128 @@ DS>
 ```
 
 (captured from the full-system simulation). A test takes one to six seconds.
-The supervisor's clock starts from the time simh had when the image was made
+The supervisor's clock starts from the time it had when the image was made
 and then follows the core's time-of-day register, which test 6 sets back to
 1-JAN-1987. A failure prints a report with the test, subtest and the values
 involved; an unexpected exception prints `??`, the SCB vector, PC and PSL and
 returns to `DS>`.
 
-What the tests give in the full-system simulation, with simh `vax8600` for
-comparison:
+What the tests give in the full-system simulation:
 
-| Test | | Core | simh `vax8600` |
-|---|---|---|---|
-| 1 | Interrupt Test | pass | pass |
-| 2 | Exception Test | pass | pass |
-| 3 | REI Instruction Test | **fails**: an `REI` into PDP-11 compatibility mode (PSL\<CM\> set), which the 8600 has and the core has not yet, takes a reserved operand fault at `87D0` | pass |
-| 4 | Change Mode Instructions Test | pass | pass |
-| 5 | Processor Register Instructions | pass | pass |
-| 6 | Interval Timer | pass | fails: "time of day clock not incrementing" |
-| 7 | Memory Management | pass | pass |
-| 8 | Kernel Stack Not Valid | pass | hangs |
-| 9 | CHMx to Write Protected Stacks | pass | pass |
-| 10 | PROBE Instruction Test | pass | pass |
-| 11 | Process Context Switching Instructions | pass | pass |
+| Test | | Core |
+|---|---|---|
+| 1 | Interrupt Test | pass |
+| 2 | Exception Test | pass |
+| 3 | REI Instruction Test | **fails**: an `REI` into PDP-11 compatibility mode (PSL\<CM\> set), which the 8600 has and the core has not yet, takes a reserved operand fault at `87D0` |
+| 4 | Change Mode Instructions Test | pass |
+| 5 | Processor Register Instructions | pass |
+| 6 | Interval Timer | pass |
+| 7 | Memory Management | pass |
+| 8 | Kernel Stack Not Valid | pass |
+| 9 | CHMx to Write Protected Stacks | pass |
+| 10 | PROBE Instruction Test | pass |
+| 11 | Process Context Switching Instructions | pass |
 
 `START` stops at test 3, so for now run `START/TEST:1:2`, then
 `START/TEST:4`. To run the same in the simulation:
 `make -C sim fast`, then `tests/evkae/run_sim.sh 1:2 4:11`.
 
+## Running EVKAB
+
+EVKAB, the VAX Basic Instructions Exerciser (ZZ-EVKAB, revision 5.2), is
+the supervisor's test of the instructions themselves: 161 tests, one per
+instruction, for the integer, logical, branch, bit field, queue, character
+string and packed decimal instructions. Each one is tried with every
+addressing mode for its operands, with operands that end on the last byte
+of a page, and - for the long ones - with the interval timer interrupting
+them and with trace (PSL\<T\>) on. Its image is made like EVKAE's:
+
+```
+python3 tests/evkae/mkdsimage.py -p EVKAB     # -> software/evkab_ds.bin (800 400 bytes)
+```
+
+and loaded with the same OSD settings (*Load Address* `0x00000000`, *Start
+Address* `0x00000200`, *Autostart* Yes). At `DS>`, `SET FLAGS TRACE` first
+makes it name each test as it starts; then `START` runs all of them:
+
+```
+DS> SET FLAGS TRACE
+DS> START
+
+.. Program:  ZZ-EVKAB, VAX Basic Instructions Exerciser , revision 5.2, 161 test
+s,
+   at 17:07:55.99.
+Testing: _KA0
+
+Test 1: BRB Instruction Test
+Test 2: BRW Instruction Test
+   ...
+Test 161: EDITPC Packed Decimal String Instruction Test
+
+.. End of run, 0 errors detected, pass count is 1,
+   time is 12-JUL-1987 09:41:45.74
+DS>
+```
+
+`START/TEST:134:144` runs the character string tests only, and so on. Each
+`START` first spends about a second setting the supervisor's page tables
+up; the whole run takes about two minutes on the core. In the full-system
+simulation all 161 tests pass:
+
+| Tests | Instructions |
+|---|---|
+| 1-4 | BRB, BRW, BBC, BBS |
+| 5-27 | MOVB, MOVW, MOVL, MOVQ, CLRx, MNEGx, MCOMx, MOVZxx, CVT between the integer types |
+| 28-33 | CMPx, TSTx |
+| 34-54 | ADDx, ADAWI, INCx, ADWC, SUBx, DECx, SBWC |
+| 55-70 | MULx, EMUL, DIVx, EDIV, ASHL, ASHQ |
+| 71-92 | BITx, BISx, BICx, XORx, ROTL |
+| 93-99 | FFC, FFS, INSV, EXTV, EXTZV, CMPV, CMPZV |
+| 100-127 | the conditional branches, BLBx, BBxx, BBxxI, ACBx, AOBxxx, SOBxxx, INDEX |
+| 128-133 | INSQUE, INSQHI, INSQTI, REMQUE, REMQHI, REMQTI |
+| 134-144 | MOVC3, MOVC5, MOVTC, MOVTUC, CMPC3, CMPC5, SPANC, SCANC, SKPC, LOCC, MATCHC |
+| 145-161 | MOVP, CMPP3, CMPP4, ADDP4, ADDP6, SUBP4, SUBP6, MULP, DIVP, CVTLP, CVTPL, CVTPT, CVTTP, CVTPS, CVTSP, ASHP, EDITPC |
+
+What it found on the way, all fixed and now covered by `tests/mmu` as well:
+the interval clock did not interrupt exactly when ICR overflows, which
+EVKAB's start-up checks; the supervisor's timer handler uses DIVP, so
+nothing ran before the decimal instructions were there; BBC on a base
+address with bits 31:30 set was taken for a register; FFC and FFS of a
+field of size 0, and the operand checks of the bit field instructions (a
+size above 32 is a reserved operand, and so is a position above 31 in a
+register; a field that would run from R14 into PC is a reserved addressing
+mode); a traced MOVC3 that the timer interrupted part way was traced before
+it had finished (t38); and, in r-vax's own microcode, CMPC5 compared the
+fill character with the wrong string, and CMPC3 and CMPC5 took N from an
+unsigned comparison (t40).
+
 ## Testing the memory management and the privileged architecture on the core
 
 `software/mmutest.bin` runs the programs of `tests/mmu` on the core itself
-and checks each one against the results simh `vax8600` gave for the same
-program, which are stored inside the file. Besides memory management they
+and checks each one against the results a VAX 8600 reference simulator gave
+for the same program, which are stored inside the file. Besides memory management they
 cover CHMx, BPT, XFC, CASE, the bit branches, ACB, the 8600's internal
-registers, the reserved addressing mode fault and interrupts after byte and
-word instructions. (Three programs that end in a processor halt other than
+registers, the reserved addressing mode fault, interrupts after byte and
+word instructions, the arithmetic traps, trace, and the string, queue and
+packed decimal instructions (the decimal ones and EDITPC on a few hundred
+random operands). (Three programs that end in a processor halt other than
 t16's, `t22`-`t24`, are only run in simulation.)
 
 1. OSD: *Load Address* = `0x00001000`, *Start Address* = *Load address*,
    *Autostart* = Yes (the settings for `hello.bin`).
-2. *Load Program* -> `mmutest.bin`. About three seconds later the screen
+2. *Load Program* -> `mmutest.bin`. About five seconds later the screen
    shows:
 
 ```
 Test suite: the tests/mmu programs (memory management and privileged
-architecture), checked against simh vax8600
+architecture), checked against their expected results
 
 t00_harness....... PASS
 t01_xlate......... PASS
    ...
-t30_intsize....... PASS
+t40_cmpc.......... PASS
 
-Passed: 27   Failed: 00
+Passed: 37   Failed: 00
 All tests passed.
 
 Last, t16_isnv: the CPU must halt here with code 00000004.
@@ -748,28 +847,34 @@ halt code for that is 4. A failing test prints `FAIL` and up to six lines
 such as `R05   is 00001234, expected 00001200`, or `[00018004] is ...` for a
 longword of memory; those lines are what to send me.
 
-Before each test the program puts the machine back in the state simh starts
-from - memory 0-47FFF cleared, mapping off, timer stopped, R0-R13 zero, PSL
+Before each test the program puts the machine back in the state the
+expected results start from - memory 0-47FFF cleared, mapping off, timer stopped, R0-R13 zero, PSL
 `041F0000` - copies the test to 1000 and runs it; the test ends by saving
 its registers and PSL and returning. The runner itself sits at 300000, out of
 the tests' way. After changing a test, `python3 tests/mmu/mkboard.py` rebuilds
-the file (it needs simh's `vax8600` to produce the expected values).
+the file (it runs the reference simulator to produce the expected values).
 
 ## What is missing
 
 The plan for all of this, in order, is in [ROADMAP.md](ROADMAP.md).
 
-- **Floating point** (F, D, G, H), packed decimal, and several string and
-  queue instructions (INDEX, SKPC, SCANC, SPANC, MATCHC, MOVTC, MOVTUC,
-  CRC, EDITPC, ADAWI, the interlocked queue instructions, the octaword
-  ones). An unimplemented opcode takes the reserved instruction fault.
-- **PDP-11 compatibility mode**, which the 8600 has (EVKAE test 3 uses it).
-- **The rest of the privileged architecture**: trace (PSL\<T\>, \<TP\>),
-  arithmetic traps (integer overflow with PSL\<IV\>, divide by zero), the
-  8600's console storage registers (STXCS, STXDB). Memory management,
-  LDPCTX/SVPCTX, PROBE, REI's checks, ASTs, CHMx, BPT, XFC, the reserved
-  instruction and addressing mode faults and the halt codes are in
-  ([docs/MMU.md](docs/MMU.md)).
+- **Floating point** (F, D, G, H: the 46 one-byte opcodes and the two-byte
+  ones), and the other two-byte (FD) opcodes, the four octaword
+  instructions among them. An unimplemented opcode takes the reserved
+  instruction fault. EVKAC, the supervisor's floating point exerciser,
+  waits for this.
+- **PDP-11 compatibility mode**, which the 8600 has (EVKAE test 3 and EVKAD
+  use it).
+- **The rest of the privileged architecture**: the 8600's console storage
+  registers (STXCS, STXDB) and the contents of its machine check frame.
+  Everything else is in, described in [docs/MMU.md](docs/MMU.md) and
+  [docs/CIS.md](docs/CIS.md).
+- **PSL\<FPD\> for MOVTC, EDITPC and the decimal instructions.** MOVC3,
+  MOVC5, MOVTUC, MATCHC and CRC keep their progress in R0-R5 and take
+  interrupts in the middle; the others start again after a fault, which
+  the architecture allows, and hold off interrupts until they finish: some
+  tens of microseconds for EDITPC and the decimal ones, but tens of
+  milliseconds for a MOVTC of 65535 bytes.
 - **Mass storage.** An MSCP/UDA50 or Massbus disk behind the MiSTer SD
   interface (`sd_lba`/`sd_rd`) is the next large step.
 - **Terminal.** No scrolling regions (`ESC [ t;b r`), no insert/delete line, no
@@ -790,10 +895,14 @@ make -C sim unit                 # terminal and keyboard only
 make -C sim nocache              # same, with the cache forced to always miss
 make -C sim cputb                # CPU, aligner, MMU and plain memory, for tests/mmu
 make -C sim fast                 # full system, optimised harder, for long runs
-python3 tests/mmu/run.py         # the tests/mmu programs, compared with simh vax8600
+make -C sim dutb && sim/obj_du/Vdecunit 20000   # the decimal unit against a C model
+make -C sim dqma                 # full system, SDRAM byte masks on A11/A12 (128 MB modules)
+make -C sim lint                 # the whole design through Icarus Verilog as well
+python3 tests/mmu/run.py         # the tests/mmu programs, compared with the reference simulator
 NOTEST=1 UNTIL="00000004" BUDGET=600000000 TTOLOG=mmu.txt \
     sim/obj/Vtb_top software/mmutest.bin 0 ""         # the same tests on the full system
 tests/evkae/run_sim.sh 1:2 4:11  # EVKAE under the Diagnostic Supervisor (sim/obj_fast)
+IMAGE=software/evkab_ds.bin TRACE=1 tests/evkae/run_sim.sh 134:144   # EVKAB's string tests
 
 sim/obj/Vtb_top software/hello.bin 0 "1000P~"        # load, autostart, then type
 NOAUTO=1 SESSION="2000P~|2000PDEADBEEF~|2000P~" sim/obj/Vtb_top software/hello.bin 0 ""
@@ -817,11 +926,11 @@ reset and `!Wn` waits n clocks. `PRELOAD=file@hexaddr` puts a file into memory
 after the memory test, as if an earlier program had left it there.
 `TTOLOG=file` writes everything the CPU sent to the console line into a file.
 
-For finding where the core and simh part ways:
+For finding where the core and a reference simulator part ways:
 
 | Variable | Prints |
 |---|---|
-| `ITRACE=file` | PC, PSL and opcode of every instruction (from clock `ITRACE_FROM` on), the format to compare with simh's instruction history (`set cpu hist=n:file`) |
+| `ITRACE=file` | PC, PSL and opcode of every instruction (from clock `ITRACE_FROM` on), one line each, to compare with another machine's instruction trace |
 | `ITRACE_REGS=1` | R0-R14 on each `ITRACE` line as well |
 | `EXCTRACE=1` | Every entry into the fault microcode and every halt |
 | `INTTRACE=1` | Every interrupt or exception the CPU starts, and the SCB vector it ends up with |
@@ -863,8 +972,8 @@ them.
 - The DEC manuals the design follows (listed in [docs/MMU.md](docs/MMU.md))
   are DEC's documents, not covered by this license; `.gitignore` keeps the
   PDFs in `docs/` out of the repository.
-- `software/evkaa.exe` and `software/VAX_MINIMUM_DIAGS.dsk`, if you copy them
-  here, are DEC diagnostics obtained from the simh distribution, and the
-  `software/*_ds.bin` images that `tests/evkae/mkdsimage.py` makes from the
-  disk contain them; they are not covered by this repository's license, and
-  `.gitignore` keeps them out of it.
+- `software/evkaa.exe` and the disk images in `software/` (`*.dsk`), if you
+  copy them here, are DEC diagnostics, and the `software/*_ds.bin` images
+  that `tests/evkae/mkdsimage.py` makes from a disk contain them, as do the
+  folders `tools/vaxdisk.py` extracts the disks into; they are not covered
+  by this repository's license, and `.gitignore` keeps them out of it.

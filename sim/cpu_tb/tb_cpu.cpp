@@ -7,7 +7,7 @@
 // halt state at startpc with PSL = 041F0000 (kernel, interrupt stack,
 // IPL 1F: what a VAX has after power-up), and runs until it halts or the
 // clock budget runs out. Output, one item per line, so that tests/mmu/run.py
-// can compare it with simh:
+// can compare it with the reference simulator's:
 //
 //   HALT code pc       halt code from the CPU and the PC after the halt
 //   R0 .. R14          general registers
@@ -50,6 +50,7 @@ int main(int argc, char **argv) {
 	bool trace = getenv("TRACE") != 0;
 	bool bustrace = getenv("BUSTRACE") != 0;
 	bool utrace = getenv("UTRACE") != 0;
+	bool strace = getenv("STRACE") != 0;	// every state change
 
 	tb->clk = 0; tb->rst = 1;
 	for (int i = 0; i < 10; i++) tick();
@@ -87,6 +88,9 @@ int main(int argc, char **argv) {
 			printf("T %08X %02X %llu\n", CPU(oldpc), CPU(cur_inst), (unsigned long long)cycles);
 		if (utrace && st == 20 && st_d != 20)    // PREEXEC: microcode step
 			printf("U %llu step %d psl %08X\n", (unsigned long long)cycles, CPU(scounter), CPU(psl));
+		if (strace && st != st_d)
+			printf("S %llu state %d step %d pc %08X psl %08X\n", (unsigned long long)cycles,
+			    st, CPU(scounter), CPU(curpc), CPU(psl));
 		if (bustrace) {
 			static int mst_d = -1, vst_d = -1, mc_d = 0;
 			int mst = R->tb_cpu__DOT__mmu__DOT__state;
