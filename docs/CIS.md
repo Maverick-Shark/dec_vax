@@ -18,8 +18,8 @@ simulator makes, and the tests compare the two on random operands.
 | Other integer | INDEX, ADAWI, INSQHI, INSQTI, REMQHI, REMQTI |
 
 The four octaword instructions of the group (CLRO, MOVO, MOVAO, PUSHAO) use
-two-byte opcodes (prefix FD), which the decoder does not have yet; they come
-with G and H floating point.
+two-byte opcodes (prefix FD); they came with G and H floating point and are
+described in [FPU.md](FPU.md).
 
 ## The decimal unit
 

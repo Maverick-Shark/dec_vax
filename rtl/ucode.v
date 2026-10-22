@@ -57,9 +57,9 @@
 module ucode(
 	input			clk,
 
-	/* instruction ROM */
+	/* instruction ROM: the opcode, <8> set for a two-byte (FD xx) one */
 	input			i_enable,
-	input [7:0]		i_opcode,
+	input [8:0]		i_opcode,
 
 	output [8:0]		i_argoff,
 	output			i_hasargs,
@@ -133,11 +133,14 @@ module ucode(
 
 	output			a_emul,
 	output			a_last,
+	output			a_octa,		/* 16 bytes (octaword, H_floating) */
+	output			a_fpu,		/* a floating operand: read into an FPU slot */
+	output [2:0]		a_fmt,		/* its format: 0 F, 1 D, 2 G, 3 H */
 	output [7:0]		a_arg
 );
 
 parameter	I_ROM_WIDTH = 64;
-parameter	I_ROM_ADDRS = 256;
+parameter	I_ROM_ADDRS = 512;
 parameter	A_ROM_WIDTH = 64;
 parameter	A_ROM_ADDRS = 512;
 parameter	S_ROM_WIDTH = 72;
@@ -238,8 +241,11 @@ parameter	S_ROM_ADDRS = 4096;
 	assign a_argsz = ucargs_data[4:3];
 	assign a_emul = ucargs_data[5];
 	assign a_last = ucargs_data[6];
+	assign a_octa = ucargs_data[7];
 	assign a_arg = ucargs_data[15:8];
 	assign a_rargno = ucargs_data[18:16];
 	assign a_wargno = ucargs_data[19];
+	assign a_fpu = ucargs_data[20];
+	assign a_fmt = ucargs_data[23:21];
 
 endmodule

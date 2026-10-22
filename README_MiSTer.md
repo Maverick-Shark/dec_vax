@@ -14,17 +14,21 @@ in simulation and on the board ([docs/MMU.md](docs/MMU.md)), and the 8600's
 CHMK/CHME/CHMS/CHMU, BPT, XFC, trace, the arithmetic traps, the reserved
 instruction and reserved addressing mode faults, HALT as a privileged
 instruction, the 8600's halt codes and internal registers, and a console
-halt (Ctrl+P or the OSD). Every one-byte opcode is there but the floating
-point ones, including the **packed decimal and long character string
-instructions**, which the 8600 has in hardware; a small decimal unit does
-their arithmetic ([docs/CIS.md](docs/CIS.md)). DEC's **VAX 8600 Diagnostic
-Supervisor** runs on the core with two of its exercisers. In the full-system
-simulation **EVKAB**, the basic instruction exerciser, passes all of its 161
-tests, and **EVKAE**, the privileged architecture exerciser, 10 of its 11;
-the other one needs PDP-11 compatibility mode, which the 8600 has and the
-core does not yet (see *Running the Diagnostic Supervisor and EVKAE* and
-*Running EVKAB*).
-OpenVMS cannot run yet: there is no floating point and no disk controller.
+halt (Ctrl+P or the OSD). **Every VAX instruction** is there: the integer
+ones, the **packed decimal and long character string instructions**, which
+the 8600 has in hardware (a small decimal unit does their arithmetic,
+[docs/CIS.md](docs/CIS.md)), and the **floating point instructions in all
+four formats, F, D, G and H**, with the octaword instructions and the
+two-byte opcodes (a floating point unit, exactly rounded,
+[docs/FPU.md](docs/FPU.md)); only PDP-11 compatibility mode is missing.
+DEC's **VAX 8600 Diagnostic Supervisor** runs on the core with three of its
+exercisers. In the full-system simulation **EVKAB**, the basic instruction
+exerciser, passes all of its 161 tests, **EVKAC**, the floating point
+exerciser, all of its 98, and **EVKAE**, the privileged architecture
+exerciser, 10 of its 11; the other one needs PDP-11 compatibility mode,
+which the 8600 has and the core does not yet (see *Running the Diagnostic
+Supervisor and EVKAE*, *Running EVKAB* and *Running EVKAC*).
+OpenVMS cannot run yet: there is no disk controller.
 See *What is missing*, and [ROADMAP.md](ROADMAP.md) for the plan.
 
 ```
@@ -41,9 +45,10 @@ See *What is missing*, and [ROADMAP.md](ROADMAP.md) for the plan.
 | Block | File | Notes |
 |---|---|---|
 | VAX CPU | `rtl/cpu.v` + `rtl/*.v` (r-vax) | Microcoded base instruction set |
-| Microcode ROMs | `rtl/uc-*.hex`, `rtl/ucode.v` | 336 Kbit, forced into M10K block RAM |
+| Microcode ROMs | `rtl/uc-*.hex`, `rtl/ucode.v` | 352 Kbit, forced into M10K block RAM |
 | Memory management | `rtl/mmu.v` | 8600 translation buffer, page table walk, protection ([docs/MMU.md](docs/MMU.md)) |
 | Decimal unit | `rtl/decunit.v` | Packed decimal arithmetic for the decimal string instructions ([docs/CIS.md](docs/CIS.md)) |
+| Floating point unit | `rtl/fpunit.v` | F, D, G and H floating point, exactly rounded ([docs/FPU.md](docs/FPU.md)) |
 | Cache | `rtl/mister/vax_cache.v` | 16 KB, M10K block RAM |
 | Memory | `rtl/mister/vax_sdram.v` | 32 MB on the MiSTer SDRAM module |
 | Bus and I/O stubs | `rtl/mister/vax_core.v` | SBI, DW780 (TR3), RH780 (TR8) registers |
@@ -138,14 +143,16 @@ cpu ── vcache ── mmu ──┬── vax_cache ── vax_sdram ── 3
 
 Both now live in Cyclone V M10K block RAM, as you asked.
 
-**Microcode.** The three ROMs in `ucode.v` are 256x64, 512x64 and 4096x72
-bits, about 336 Kbit in total (the step store was 1024 words and the argument
-store 256 in r-vax; memory management, and then the decimal and string
-instructions, needed more). `tools/patch_rvax.py` marks them `ramstyle = "M10K"`,
-because left to itself Quartus may decide to build a ROM that size out of
-logic, which costs thousands of ALMs and ruins the timing. The CPU register
-file and the IPR file are deliberately kept *out* of block RAM (`ramstyle =
-"logic"`): they have several read ports and belong in LUT RAM.
+**Microcode.** The three ROMs in `ucode.v` are 512x64, 512x64 and 4096x72
+bits, 352 Kbit in total (in r-vax the instruction table had 256 rows, the
+argument store 256 and the step store 1024 words; memory management, the
+decimal and string instructions, and then the two-byte opcodes and the
+floating point instructions needed more). `tools/patch_rvax.py` marks them
+`ramstyle = "M10K"`, because left to itself Quartus may decide to build a
+ROM that size out of logic, which costs thousands of ALMs and ruins the
+timing. The CPU register file and the IPR file are deliberately kept *out*
+of block RAM (`ramstyle = "logic"`): they have several read ports and belong
+in LUT RAM.
 
 **Cache.** `vax_cache.v` is new. It sits between the aligner and the SDRAM:
 
@@ -179,8 +186,8 @@ speed, not a memory problem. For scale, a real VAX-11/780 is 1 VUP, roughly
 0.5 MIPS, so the core already runs at about 2.4 times the machine it imitates.
 
 The cache size is the `CACHEIDX` macro in `files.qip` (10 = 1024 lines = 16 KB).
-The device has 553 M10K blocks and the whole core uses fewer than 50, so there
-is room to go much larger if it ever pays off.
+The device has 553 M10K blocks and the whole core uses about 70, so there is
+room to go much larger if it ever pays off.
 
 ## Memory: the SDRAM module
 
@@ -298,8 +305,20 @@ an off-by-one: it counted 51 clocks per microsecond, so the interval clock and
 the time-of-year clock ran 2 % slow. `tools/patch_rvax.py` corrects it to 50
 (and the 10 ms TODR divider to exactly 10 000 microseconds).
 
-The logic has room to spare: the compile of this version reports +2.4 ns of
-setup slack on `clk_sys` at 50 MHz (slow 85 C model).
+The logic still has room to spare with the floating point unit. The
+compile of milestone 7 (Quartus 17.1, 5CSEBA6U23I7) reports +1.911 ns of
+setup slack on `clk_sys` at 50 MHz in the slow 1100 mV 100 C model and
++5.897 ns in the fast one - about 55 MHz would still close - and the
+summaries show positive slack for every clock (TNS 0). An earlier
+milestone's compile had +2.4 ns.
+
+TimeQuest still shows its folder in red: that is only the *Unconstrained
+Paths* report (4 input and 50 output ports). They are the framework's own
+pins - buttons, LEDs, VGA, audio, SD card - which `sys/sys_top.sdc` cuts
+with `set_false_path` and gives no I/O delays, so TimeQuest lists them as
+unconstrained in every MiSTer core. The core's own pins, the SDRAM, are
+constrained (the `SDRAM_CLK` row of the summaries: +4.124 ns setup in the
+slow model).
 
 ## Building
 
@@ -312,12 +331,19 @@ setup slack on `clk_sys` at 50 MHz (slow 85 C model).
 Do not edit anything under `sys/` - it is the unmodified MiSTer framework.
 
 Resource estimate from an independent synthesis (Yosys `synth_intel_alm`,
-Cyclone V, with the register files in logic as their `ramstyle` asks): about
-11 100 LUTs, 8 100 registers, 47 M10K and 4 DSP blocks, of which the memory
-management accounts for about 2 750 LUTs, 1 550 registers and 8 M10K (the
-same run before it gave 8 300 LUTs, 6 500 registers, 39 M10K). That is
-roughly 15-25 % of the logic and 9 % of the block RAM on the DE10-Nano; the
-Quartus fitter report is the number that counts.
+Cyclone V, with the register files in logic as their `ramstyle` asks), with
+the floating point unit: about 25 900 LUTs, 11 800 registers, 70 M10K and 20
+multipliers (some 15 of the 112 DSP blocks). Of these the floating point
+unit is about 9 700 LUTs, 3 100 registers and 16 multipliers, the decimal
+unit about 5 000 LUTs and 750 registers, and the memory management about
+2 750 LUTs, 1 550 registers and 8 M10K (before the memory management the
+same synthesis gave 8 300 LUTs, 6 500 registers and 39 M10K, and with it
+11 100 LUTs, 8 100 registers and 47 M10K). The Quartus compiles have
+followed it: 33 % of the ALMs with the MiSTer framework after the memory
+management, 41 % before the floating point unit, and with it (milestone 7)
+**22 374 of 41 910 ALMs (53 %)**, 24 128 registers, 917 309 block memory
+bits (16 %) and 48 of the 112 DSP blocks (43 %; the framework's video
+scaler and audio filters use DSP blocks too).
 
 ### What `dec_vax.sdc` constrains
 
@@ -362,7 +388,7 @@ microseconds *before* that reset, and the reset wiped the start of the banner:
 
 | Option | Meaning |
 |---|---|
-| Load Program | Loads a `.BIN`/`.EXE` image into RAM at *Load Address*. The CPU is held in reset while loading |
+| Load Program | Loads a `.BIN`/`.EXE` image into RAM at *Load Address*. The CPU is held in reset while loading, and that reset initializes it (see below), whatever was running |
 | Load Address | `0x00001000` (default), `0x00000000`, `0x00000200`, `0x00010000` |
 | Start Address | *Load address*, or `0x00000200` - DEC stand-alone diagnostics load at 0 and start at 200h |
 | Autostart | After a load, types `FR<start address><CR>G` into the monitor |
@@ -393,6 +419,23 @@ With *Autostart* = Yes the core types `FR<start>`, Enter and `G` for you right
 after the load. With *Autostart* = No, do it by hand at the `>` prompt: `FR`,
 then the start address and Enter, then `G`. The options are saved, so after
 running EVKAA set them back before loading a `.bin`.
+
+A program can be loaded at any moment, also while another one is running or
+waiting at its prompt. The reset that holds the CPU during the load is a
+*processor initialization* as the SRM defines it (chapter *System
+Bootstrapping and Console*): PSL `041F0000` (kernel mode, interrupt stack,
+IPL 1F), ASTLVL 4, SISR, MAPEN and PME 0, ICCS<IE> and <RUN> clear (the
+interval clock stops), RXCS 0 and TXCS<IE> clear, and nothing left of the
+instruction or the memory reference that was in progress. The OSD *Reset* does
+the same. (In the first M7 build a load made while a program was running
+could leave that program's last memory reference standing across the reset.
+It completed once the console started the new program: a write could land in
+the program just loaded, and its acknowledge was taken for the first
+instruction fetch. The new program then stopped almost at once - EVKAB in
+`Test 1` with `00000004`, EVKAC right after `Testing: _KA0`, mmutest in
+`t01_xlate` with `00000006` - while the same program loaded after a power-up
+ran correctly. The PSL, the interval clock, the console interrupt enables and
+the IPRs above were also left as the previous program had them.)
 
 `bench.bin` prints its first line at once and the results about 3 seconds
 later, then halts (`00000006` is the `HALT` at its end, executed in kernel
@@ -677,8 +720,8 @@ python3 tests/evkae/mkdsimage.py      # -> software/evkae_ds.bin (800 400 bytes)
 It needs the simulator and DEC's `vmb.exe` (the header of the script says
 where it looks for them) and `software/VAX_MINIMUM_DIAGS.dsk`. With `-p EVKAB` (or `EVKAC`, `EVKAD`) it
 loads another exerciser of that disk instead, into `software/evkab_ds.bin`
-(and so on): EVKAB runs (*Running EVKAB* below); EVKAC needs floating point
-and EVKAD compatibility mode, which the core does not have yet. The image is
+(and so on): EVKAB and EVKAC run (*Running EVKAB*, *Running EVKAC* below);
+EVKAD needs compatibility mode, which the core does not have yet. The image is
 DEC software in another form, so `.gitignore` keeps it out of the
 repository, like the disk.
 
@@ -807,6 +850,61 @@ it had finished (t38); and, in r-vax's own microcode, CMPC5 compared the
 fill character with the wrong string, and CMPC3 and CMPC5 took N from an
 unsigned comparison (t40).
 
+## Running EVKAC
+
+EVKAC, the VAX Floating Point Instructions Exerciser (ZZ-EVKAC, revision
+7.2), tests every floating point instruction of the four formats, one test
+per instruction: 98 tests, from MOVF (1) to ACBH (98). Like EVKAB it tries
+each with every addressing mode for its operands and, unless the QUICK
+flag is set, again with the operands placed across page boundaries so that
+they page fault, and with the interval timer interrupting. Its image:
+
+```
+python3 tests/evkae/mkdsimage.py -p EVKAC     # -> software/evkac_ds.bin (800 400 bytes)
+```
+
+Same OSD settings as for the other images (*Load Address* `0x00000000`,
+*Start Address* `0x00000200`, *Autostart* Yes). At `DS>`:
+
+```
+DS> SET FLAGS TRACE,QUICK
+DS> START
+
+.. Program:  VAX Floating Point Instructions Exerciser, ZZ-EVKAC , revision 7.2,
+ 98 tests,
+   at 13:15:53.06.
+Testing: _KA0
+
+Test 1: MOVF Single Precision Floating Point Instruction Test
+Test 2: MNEGF Single Precision Floating Point Instruction Test
+   ...
+Test 98: ACBH Extended Range Quad Precision Floating Point Instruction Test
+.. End of run, 0 errors detected, pass count is 1,
+   time is 12-JUL-1987 09:41:41.94
+DS>
+```
+
+(captured from the full-system simulation). With QUICK the whole run is
+some 20 million instructions, about 20 seconds on the core; without it each
+case runs again for every way its operands can page fault, some 130 million
+instructions, a little over two minutes. `START/TEST:71:98` runs the
+H_floating tests only, and so on;
+`HELP EVKAC SECTION` in the supervisor lists the sections (F_FLOATING,
+D_FLOATING, G_FLOATING, H_FLOATING, POLYX, EMODX...).
+
+| Tests | Instructions |
+|---|---|
+| 1-22 | F_floating: MOVF, MNEGF, TSTF, CVTBF, CVTWF, CVTLF, CVTFB, CVTFW, CVTFL, CVTRFL, CMPF, ADDF2/3, SUBF2/3, MULF2/3, DIVF2/3, EMODF, POLYF, ACBF |
+| 23-46 | D_floating: MNEGD, MOVD, TSTD, CVTBD, CVTWD, CVTLD, CVTDB, CVTDW, CVTDL, CVTFD, CVTDF, CVTRDL, CMPD, ADDD2/3, SUBD2/3, MULD2/3, DIVD2/3, EMODD, POLYD, ACBD |
+| 47-70 | G_floating: the same, with CVTFG and CVTGF |
+| 71-98 | H_floating: the same, with CVTFH, CVTDH, CVTGH, CVTHF, CVTHD, CVTHG |
+
+In the full-system simulation all 98 pass, with QUICK and in the slow mode
+with the page faults. To run it there:
+`IMAGE=software/evkac_ds.bin TRACE=1 QUICK=1 BUDGET=2000000000 tests/evkae/run_sim.sh 1:98`
+(about an hour of simulation); without `QUICK=1`, and with
+`BUDGET=8000000000`, the slow mode (some hours).
+
 ## Testing the memory management and the privileged architecture on the core
 
 `software/mmutest.bin` runs the programs of `tests/mmu` on the core itself
@@ -814,14 +912,16 @@ and checks each one against the results a VAX 8600 reference simulator gave
 for the same program, which are stored inside the file. Besides memory management they
 cover CHMx, BPT, XFC, CASE, the bit branches, ACB, the 8600's internal
 registers, the reserved addressing mode fault, interrupts after byte and
-word instructions, the arithmetic traps, trace, and the string, queue and
+word instructions, the arithmetic traps, trace, the string, queue and
 packed decimal instructions (the decimal ones and EDITPC on a few hundred
-random operands). (Three programs that end in a processor halt other than
+random operands), the octaword instructions and the floating point ones
+(some 1 600 random cases of the four formats, and their faults). (Three
+programs that end in a processor halt other than
 t16's, `t22`-`t24`, are only run in simulation.)
 
 1. OSD: *Load Address* = `0x00001000`, *Start Address* = *Load address*,
    *Autostart* = Yes (the settings for `hello.bin`).
-2. *Load Program* -> `mmutest.bin`. About five seconds later the screen
+2. *Load Program* -> `mmutest.bin`. About six seconds later the screen
    shows:
 
 ```
@@ -831,9 +931,9 @@ architecture), checked against their expected results
 t00_harness....... PASS
 t01_xlate......... PASS
    ...
-t40_cmpc.......... PASS
+t46_fpexc......... PASS
 
-Passed: 37   Failed: 00
+Passed: 43   Failed: 00
 All tests passed.
 
 Last, t16_isnv: the CPU must halt here with code 00000004.
@@ -854,15 +954,112 @@ its registers and PSL and returning. The runner itself sits at 300000, out of
 the tests' way. After changing a test, `python3 tests/mmu/mkboard.py` rebuilds
 the file (it runs the reference simulator to produce the expected values).
 
+## Testing the floating point instructions with your own random cases
+
+`software/fptest.bin` tests the 98 floating point instructions on the core:
+200 random cases each (seed 1), 19 600 in all, each checked against the
+result, condition codes and exception that `sim/fpu_tb/vaxfp.py` - the exact
+model of the SRM's arithmetic that the floating point unit was written
+against - predicts. It needs no reference simulator to build, so any number
+of new sets can be made, on any computer with Python 3, from the project
+root:
+
+```
+python3 tests/fp/mkfptest.py                     # software/fptest.bin: seed 1, 200 cases each
+python3 tests/fp/mkfptest.py --seed 7 --cases 1000 -o software/fp7.bin
+python3 tests/fp/mkfptest.py --only MULH3,DIVH3 --cases 5000 -o software/fph.bin
+```
+
+A file takes about 50 bytes a case: 1 MB for the default, 4.7 MB with
+1000 cases each.
+
+1. OSD: *Load Address* = `0x00001000`, *Start Address* = *Load address*,
+   *Autostart* = Yes (as for `mmutest.bin`).
+2. *Load Program* -> `fptest.bin`. Once it is loaded the cases take under a
+   second (some 29 000 a second), and the screen shows:
+
+```
+VAX floating point test - seed 1, 98 instructions, 200 cases each
+(tests/fp/mkfptest.py, expected values from sim/fpu_tb/vaxfp.py)
+
+MOVF   ok  MNEGF  ok  TSTF   ok  CMPF   ok  ADDF2  ok  ADDF3  ok  SUBF2  ok
+SUBF3  ok  MULF2  ok  MULF3  ok  DIVF2  ok  DIVF3  ok  CVTBF  ok  CVTWF  ok
+   ...
+CVTRHL ok  CVTHF  ok  CVTHD  ok  CVTHG  ok  EMODH  ok  POLYH  ok  ACBH   ok
+
+Cases: 19600   Failed: 0
+All tests passed.
+End of the floating point test.
+00000006
+>
+```
+
+(captured from the full-system simulation; 00000006 is the halt code of the
+HALT that ends the program.)
+
+For each case the program sets PSL\<FU\>, PSL\<IV\> and the condition codes
+at random, puts random bytes in the destination, runs the instruction once
+with its sources in memory, and checks three things: the exception (none, a
+reserved operand fault, or the arithmetic exception's type: integer overflow
+trap, floating overflow, divide by zero or underflow fault), the condition
+codes (except after a fault, where the SRM leaves them UNPREDICTABLE) and the
+destination (which a fault must leave as it was; POLY's is R0-R5, ACB's the
+index and whether it branched, EMOD's the integer and the fraction). The
+operands go for the hard parts: values near 1 and across the whole exponent
+range (overflow, underflow), sparse and all-ones fractions (rounding ties
+and carries), zeros, "dirty" zeros (sign 0, exponent 0, fraction not 0),
+reserved operands, the largest and smallest numbers, pairs that cancel when
+subtracted, halves for CVTR, ties for the narrowing conversions, integers at
+the edges of their ranges, EMOD products with large integer parts, POLY
+tables of every degree and some invalid ones.
+
+A failing instruction shows `ERR` in the table. Below it come the failed
+cases by instruction and the first four failures in detail, for example
+(made by altering one expected value):
+
+```
+ADDF3   case 1   PSW 68
+  sources  36111EB6 3D70F501
+  found    exception none   cc 8  destination 3D70F501
+  expected exception none   cc 8  destination 3D70F500
+```
+
+The values are longwords in memory order; PSW is the low byte of the PSL
+before the instruction (FU, IV and N Z V C). Those lines and the seed are what
+to send me. On the PC, `--show` prints the same case with its values
+decoded (give it the same `--seed`, `--cases` and `--only` the file was built
+with), and `tools/vaxfloat.py -d` decodes one value:
+
+```
+$ python3 tests/fp/mkfptest.py --seed 1 --show ADDF3:1
+ADDF3 case 1 (seed 1), record at 00009910
+  PSL before: FU 1, IV 1, condition codes 8 (N Z V C = 1 0 0 0)
+  add1     36111EB6                            4.82309022E-21
+  add2     3D70F501                            -4.09577878E+31
+  sum      8A7E1255                            1.68454135E-28   (before)
+  expected: no exception
+            condition codes 8 (N Z V C = 1 0 0 0)
+  sum      3D70F501                            -4.09577878E+31
+$ python3 tools/vaxfloat.py -d F 3D70F501
+-4.09577878E+31
+```
+
+How it works: `tests/fp/mkfptest.py` makes the cases and works out what each
+should give with `vaxfp.py` (the instruction rules - which operands are
+checked for reserved operands, which condition codes each instruction sets
+or keeps, what POLY leaves in R0-R5 - are written in it from the SRM), then
+assembles `tests/fp/fpharness.s` (the driver, the exception handlers and the
+console output) with a few lines per instruction and puts the cases after
+the program. On the full-system simulation seeds 1 to 9, seed 100 with
+1000 cases each, and seed 200 with 5000 cases each of the POLYs, the EMODs,
+DIVH3, CVTHF, CVTRHL and ACBH all pass (some 330 000 cases); the reference
+simulator gives the expected values for seeds 1 to 31 and that seed 200 set
+(some 670 000 cases).
+
 ## What is missing
 
 The plan for all of this, in order, is in [ROADMAP.md](ROADMAP.md).
 
-- **Floating point** (F, D, G, H: the 46 one-byte opcodes and the two-byte
-  ones), and the other two-byte (FD) opcodes, the four octaword
-  instructions among them. An unimplemented opcode takes the reserved
-  instruction fault. EVKAC, the supervisor's floating point exerciser,
-  waits for this.
 - **PDP-11 compatibility mode**, which the 8600 has (EVKAE test 3 and EVKAD
   use it).
 - **The rest of the privileged architecture**: the 8600's console storage
@@ -896,13 +1093,19 @@ make -C sim nocache              # same, with the cache forced to always miss
 make -C sim cputb                # CPU, aligner, MMU and plain memory, for tests/mmu
 make -C sim fast                 # full system, optimised harder, for long runs
 make -C sim dutb && sim/obj_du/Vdecunit 20000   # the decimal unit against a C model
+make -C sim fputb && python3 sim/fpu_tb/vaxfp.py v.txt 20000 && sim/obj_fpu/Vfpunit v.txt
+                                 # the floating point unit against an exact model
 make -C sim dqma                 # full system, SDRAM byte masks on A11/A12 (128 MB modules)
 make -C sim lint                 # the whole design through Icarus Verilog as well
 python3 tests/mmu/run.py         # the tests/mmu programs, compared with the reference simulator
 NOTEST=1 UNTIL="00000004" BUDGET=600000000 TTOLOG=mmu.txt \
     sim/obj/Vtb_top software/mmutest.bin 0 ""         # the same tests on the full system
+NOTEST=1 UNTIL="End of the floating point test" BUDGET=400000000 TTOLOG=fp.txt \
+    sim/obj_fast/Vtb_top software/fptest.bin 0 ""    # the floating point test (some minutes)
 tests/evkae/run_sim.sh 1:2 4:11  # EVKAE under the Diagnostic Supervisor (sim/obj_fast)
 IMAGE=software/evkab_ds.bin TRACE=1 tests/evkae/run_sim.sh 134:144   # EVKAB's string tests
+IMAGE=software/evkac_ds.bin TRACE=1 QUICK=1 BUDGET=2000000000 \
+    tests/evkae/run_sim.sh 1:98  # EVKAC, floating point (QUICK: about an hour)
 
 sim/obj/Vtb_top software/hello.bin 0 "1000P~"        # load, autostart, then type
 NOAUTO=1 SESSION="2000P~|2000PDEADBEEF~|2000P~" sim/obj/Vtb_top software/hello.bin 0 ""
@@ -922,9 +1125,21 @@ to skip it) before the power-on test may start. `MEMFILL=0x...` or
 `MEMFILL=rand` fills the SDRAM model before power-up, like a real module's
 leftover contents. In key strings `~` is Enter, `^C` is Ctrl+C and `{` is the
 cursor-up key; in `SESSION`, `@text` waits for text to appear, `!R` is an OSD
-reset and `!Wn` waits n clocks. `PRELOAD=file@hexaddr` puts a file into memory
-after the memory test, as if an earlier program had left it there.
-`TTOLOG=file` writes everything the CPU sent to the console line into a file.
+reset, `!Wn` waits n clocks, `!Lfile` loads another program over whatever is
+running, as *Load Program* does (`!L+wfile` / `!L+rfile` first wait until the
+CPU has a write / read cycle in flight, so that the load lands on one), and
+`!Bn` / `!Sn` set *Load Address* and *Start Address* (n is the OSD option's
+index: `!B0` is 1000, `!B1` 0; `!S1` is 200) for the loads after them.
+`PRELOAD=file@hexaddr` puts a file into memory after the memory test, as if an
+earlier program had left it there. `TTOLOG=file` writes everything the CPU
+sent to the console line into a file. A load over a running program, which
+must start the new one cleanly (`Memory management works.`):
+
+```
+NOTEST=1 UNTIL="VAX floating point test" TTOLOG=ld.txt \
+SESSION="!W3000000|!L+wsoftware/mmudiag.bin|@End of the diagnostic" \
+sim/obj_fast/Vtb_top software/fptest.bin 0 ""
+```
 
 For finding where the core and a reference simulator part ways:
 
@@ -952,6 +1167,12 @@ them.
 
 - Microcode ROMs: in `rtl/`, `rm -f uc-*.hex && awk -f mkucode.awk` (the
   source is `rtl/ucode.def`).
+- Generated tests: `python3 tests/mmu/gen/mk_t35.py > tests/mmu/t35_dec.s`
+  and the like (each script's header says which); `python3
+  tests/mmu/gen/mk_fp.py` writes the floating point ones, t42-t45 (it runs
+  the reference simulator to size their logs).
+- `software/fptest.bin`: `python3 tests/fp/mkfptest.py` (see *Testing the
+  floating point instructions with your own random cases*).
 - Font ROM: `python3 tools/mkfont.py spleen-8x16.bdf rtl/mister/vt_font.v`.
 - Self-test text: `python3 tools/mkmsg.py rtl/mister/vax_msg.v`.
 - r-vax source fixes: `python3 tools/patch_rvax.py` (idempotent) - four

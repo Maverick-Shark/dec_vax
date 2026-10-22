@@ -22,7 +22,13 @@
 //   UNTIL/UNTIL2/BUDGET/HALT/BANNER/FAULT/SESSION  see below
 //   SESSION     tokens separated by '|': text is typed, "@text" waits for
 //               text to appear on the console (BUDGET clocks at most),
-//               "!R" is an OSD reset, "!Wn" runs n clocks
+//               "!R" is an OSD reset, "!Wn" runs n clocks, "!Lfile" loads
+//               another program (OSD Load Program, whatever is running;
+//               "!L+wfile" / "!L+rfile" first wait until the CPU has a
+//               write / read cycle in flight, so the load lands on one),
+//               "!Bn" sets the OSD Load Address (0 = 1000, 1 = 0, 2 = 200,
+//               3 = 10000), "!S0" / "!S1" the Start Address (load address
+//               or 200) for the loads after it
 //   PRELOAD=f@a put file f into memory at hex address a after the memory
 //               test, as if a previous program had left it there
 
@@ -510,6 +516,42 @@ int main(int argc, char **argv) {
 			}
 			if (tok[0] == '!' && tok[1] == 'W') {   // !Wn: just run n clocks
 				run(strtoull(tok + 2, 0, 0));
+				continue;
+			}
+			if (tok[0] == '!' && tok[1] == 'B') {   // !Bn: OSD Load Address n
+				tb->load_base = atoi(tok + 2);
+				continue;
+			}
+			if (tok[0] == '!' && tok[1] == 'S') {   // !S0, !S1: Start Address 200
+				tb->start_200 = atoi(tok + 2);
+				continue;
+			}
+			if (tok[0] == '!' && tok[1] == 'L') {   // !Lfile: OSD Load Program,
+				// with whatever is running; !L+wfile waits for a CPU write
+				// cycle to be in flight first, !L+rfile for a read cycle
+				if (tok[2] == '+' && (tok[3] == 'w' || tok[3] == 'r')) {
+					int want_w = tok[3] == 'w';
+					for (int i = 0; i < 50000000; i++) {
+						if (R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__cpu_stb &&
+						    R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__cpu_write == want_w)
+							break;
+						tick();
+					}
+					tok += 2;
+				}
+				FILE *lf = fopen(tok + 2, "rb");
+				if (!lf) { perror(tok + 2); continue; }
+				std::vector<unsigned char> ld;
+				int lc;
+				while ((lc = fgetc(lf)) != EOF) ld.push_back(lc);
+				fclose(lf);
+				printf("\n[%llu] --- loading %s (CPU state %d, stb %d, write %d,"
+				       " xpush %d)\n", (unsigned long long)cycles, tok + 2,
+				       R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__state,
+				       R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__cpu_stb,
+				       R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__cpu_write,
+				       R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__cpu_xpush);
+				download(ld);
 				continue;
 			}
 			printf("\n[%llu] --- typing: %s\n", (unsigned long long)cycles, tok);

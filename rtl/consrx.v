@@ -45,6 +45,7 @@
 
 module consrx(
 	input		clk,
+	input		rst,		/* processor initialization: RXCS = 0 */
 
 	input		wrie,
 	input		wrrxcs,
@@ -79,7 +80,9 @@ module consrx(
 	initial clkcnt = 32768-`CLKPERBIT;
 
 	always @(posedge clk) begin
-		if (rdy & ie & last_ie_rdy == 0) begin
+		if (rst)
+			intreq <= 0;
+		else if (rdy & ie & last_ie_rdy == 0) begin
 			intreq <= 1;
 		end else if (intack) begin
 			intreq <= 0;
@@ -91,7 +94,9 @@ module consrx(
 		clear <= rdrxdb & done;
 
 	always @(posedge clk)
-		if (wrrxcs)
+		if (rst)
+			inten <= 0;
+		else if (wrrxcs)
 			inten <= wrie;
 
 	always @(posedge clk)
@@ -106,8 +111,8 @@ module consrx(
 		else
 			clkcnt <= clkcnt + 1;
 
-		if (clear)
-			done <= 0;
+		if (clear || rst)
+			done <= 0;	/* processor initialization: RXCS = 0 */
 
 		if (busy == 0) begin
 			if (tti_rx == 0) begin

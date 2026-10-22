@@ -180,8 +180,21 @@ end
 	initial state = `CONSOLE;
 	always @(posedge clk) begin
 		if (rst) begin
+			/*
+			 * The console initializes itself with the processor: no
+			 * reference left in flight (rst can come in the middle of
+			 * one, with a program loaded while the console waits for
+			 * a character).
+			 */
 			state <= `CONSOLE;
 			cont <= 0;
+			step <= 0;
+			STB_O <= 0;
+			WE_O <= 0;
+			con_reg <= 0;
+			con_pmem <= 0;
+			con_vmem <= 0;
+			con_ipr <= 0;
 		end else
 		/* verilator lint_off CASEINCOMPLETE */
 		case (state)

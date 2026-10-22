@@ -109,12 +109,60 @@
 3E	MOVAW
 3F	PUSHAW
 #
+40	ADDF2
+41	ADDF3
+42	SUBF2
+43	SUBF3
+44	MULF2
+45	MULF3
+46	DIVF2
+47	DIVF3
+48	CVTFB
+49	CVTFW
+4A	CVTFL
+4B	CVTRFL
+4C	CVTBF
+4D	CVTWF
+4E	CVTLF
+4F	ACBF
+50	MOVF
+51	CMPF
+52	MNEGF
+53	TSTF
+54	EMODF
+55	POLYF
+56	CVTFD
+#
 58	ADAWI
 #
 5C	INSQHI
 5D	INSQTI
 5E	REMQHI
 5F	REMQTI
+#
+60	ADDD2
+61	ADDD3
+62	SUBD2
+63	SUBD3
+64	MULD2
+65	MULD3
+66	DIVD2
+67	DIVD3
+68	CVTDB
+69	CVTDW
+6A	CVTDL
+6B	CVTRDL
+6C	CVTBD
+6D	CVTWD
+6E	CVTLD
+6F	ACBD
+70	MOVD
+71	CMPD
+72	MNEGD
+73	TSTD
+74	EMODD
+75	POLYD
+76	CVTDF
 #
 78	ASHL
 79	ASHQ
@@ -257,6 +305,65 @@ FB	CALLS
 FC	XFC
 #
 FF	RESIN
+#
+# Two-byte opcodes: FD, then the byte given here (SRM appendix A writes them
+# as words, 7CFD for FD 7C)
+FD32	CVTDH
+FD33	CVTGF
+FD40	ADDG2
+FD41	ADDG3
+FD42	SUBG2
+FD43	SUBG3
+FD44	MULG2
+FD45	MULG3
+FD46	DIVG2
+FD47	DIVG3
+FD48	CVTGB
+FD49	CVTGW
+FD4A	CVTGL
+FD4B	CVTRGL
+FD4C	CVTBG
+FD4D	CVTWG
+FD4E	CVTLG
+FD4F	ACBG
+FD50	MOVG
+FD51	CMPG
+FD52	MNEGG
+FD53	TSTG
+FD54	EMODG
+FD55	POLYG
+FD56	CVTGH
+FD60	ADDH2
+FD61	ADDH3
+FD62	SUBH2
+FD63	SUBH3
+FD64	MULH2
+FD65	MULH3
+FD66	DIVH2
+FD67	DIVH3
+FD68	CVTHB
+FD69	CVTHW
+FD6A	CVTHL
+FD6B	CVTRHL
+FD6C	CVTBH
+FD6D	CVTWH
+FD6E	CVTLH
+FD6F	ACBH
+FD70	MOVH
+FD71	CMPH
+FD72	MNEGH
+FD73	TSTH
+FD74	EMODH
+FD75	POLYH
+FD76	CVTHG
+FD7C	CLRO
+FD7D	MOVO
+FD7E	MOVAO
+FD7F	PUSHAO
+FD98	CVTFH
+FD99	CVTFG
+FDF6	CVTHF
+FDF7	CVTHD
 #
 !MICROCODE
 #
@@ -3716,6 +3823,427 @@ ed_dig2: and argp0 F	argp0
 ed_digr: and 66 66	crn
 	plus civ 0	jmp
 #
+# CLRO dst.wo; MOVO src.ro, dst.wo (SRM chapter 3, CLR and MOV): the
+# octaword in arg1-arg4, the low longword first, stored in dst. N <- bit 127,
+# Z <- the octaword is 0 (CLRO: N = 0, Z = 1), V <- 0, C unchanged.
+clro:	and 0 0		arg1
+	and 0 0		arg2
+	and 0 0		arg3
+	and 0 0		arg4
+movo:	bis arg1 arg2	argd0
+	bis argd0 arg3	argd0
+	bis argd0 arg4	argd0
+	shr argd0 1	argd1
+	and argd0 1	argd0
+	bis argd0 argd1	argd0			# not 0 unless the octaword is
+	shr arg4 1F	argd1
+	shl argd1 1F	argd1			# bit 127
+	bis argd0 argd1	savnz
+#
+# wr_o: the octaword arg1-arg4 into the destination operand in argp0, and
+# the end of the instruction. A register destination is Rn..Rn+3 (n < 12,
+# the operand decoder has checked); in memory, its first and last bytes are
+# checked for writing before anything is stored, so a fault leaves it as it
+# was. Uses argd0.
+wr_o:	and savpsw 10	zcond goto wr_om	# argp0 not a register
+	and argp0 F	argd0
+	plus argd0 0	crn
+	plus arg1 0	crw wreg
+	plus argd0 1	crn
+	plus arg2 0	crw wreg
+	plus argd0 2	crn
+	plus arg3 0	crw wreg
+	plus argd0 3	crn
+	plus arg4 0	crw wreg
+	plus 0 0	eoi
+wr_om:	plus argp0 0	cpuaddr rmem byte wint	# writable: the first byte ...
+	plus argp0 F	cpuaddr rmem byte wint	# ... and the last
+	plus arg1 0	crw
+	plus argp0 0	cpuaddr wmem
+	plus arg2 0	crw
+	plus argp0 4	cpuaddr wmem
+	plus arg3 0	crw
+	plus argp0 8	cpuaddr wmem
+	plus arg4 0	crw
+	plus argp0 C	cpuaddr wmem
+	plus 0 0	eoi
+#
+# Floating point instructions (SRM chapter 3, "Floating-Point
+# Instructions"). The operand decoder has loaded the floating operands into
+# the slots of the floating point unit (fpunit.v, internal registers 50-5F):
+# the first floating operand read into S0, the next S1, S2 (the integer
+# operands into arg1-arg4 as usual). The microcode gives the unit commands
+# and stores the result. A command constant is <3:0> the operation (1 LD,
+# 2 MOV, 3 CMP, 4 ADD, 5 MUL, 6 DIV, 7 CVTIF, 8 CVTFI, 9 RND, A EMOD, B POLY,
+# C STO, D TST), <5:4> source a, <7:6> source b (0-2 slots, 3 the result
+# R), <9:8> the format (0 F, 1 D, 2 G, 3 H), <11:10> a slot, <12> negate,
+# <14:13> integer size (0 byte, 1 word, 2 long), <15> round.
+#
+# A reserved operand is a reserved operand fault (SCB 18); floating overflow,
+# divide by zero and underflow (PSL<FU> set) are arithmetic faults, SCB 34
+# with type 8, 9, A and the PC of the instruction (fp_exc): nothing is
+# stored and the registers are put back.
+#
+# ADD, SUB, MUL, DIV, two and three operands: S0 the first operand, S1 the
+# second; R = S1 + S0, S1 - S0, S1 * S0, S1 / S0. N Z from the result, V =
+# C = 0 (instruction flags).
+addf:	and 0014 0014	argd1 goto fp_l
+addd:	and 0114 0114	argd1 goto fp_q
+addg:	and 0214 0214	argd1 goto fp_q
+addh:	and 0314 0314	argd1 goto fp_o
+subf:	and 1014 1014	argd1 goto fp_l
+subd:	and 1114 1114	argd1 goto fp_q
+subg:	and 1214 1214	argd1 goto fp_q
+subh:	and 1314 1314	argd1 goto fp_o
+mulf:	and 0015 0015	argd1 goto fp_l
+muld:	and 0115 0115	argd1 goto fp_q
+mulg:	and 0215 0215	argd1 goto fp_q
+mulh:	and 0315 0315	argd1 goto fp_o
+divf:	and 0016 0016	argd1 goto fp_l
+divd:	and 0116 0116	argd1 goto fp_q
+divg:	and 0216 0216	argd1 goto fp_q
+divh:	and 0316 0316	argd1 goto fp_o
+# MOV, MNEG: R = S0 (negated); C unchanged by MOV, cleared by MNEG.
+movf:	and 0002 0002	argd1 goto fp_l
+movd:	and 0102 0102	argd1 goto fp_q
+movg:	and 0202 0202	argd1 goto fp_q
+movh:	and 0302 0302	argd1 goto fp_o
+mnegf:	and 1002 1002	argd1 goto fp_l
+mnegd:	and 1102 1102	argd1 goto fp_q
+mnegg:	and 1202 1202	argd1 goto fp_q
+mnegh:	and 1302 1302	argd1 goto fp_o
+# CVT between floating formats: R = S0 rounded to the destination's format
+cvt_xf:	and 0009 0009	argd1 goto fp_l		# CVTDF CVTGF CVTHF
+cvt_xd:	and 0109 0109	argd1 goto fp_q		# CVTFD CVTHD
+cvt_xg:	and 0209 0209	argd1 goto fp_q		# CVTFG CVTHG
+cvt_xh:	and 0309 0309	argd1 goto fp_o		# CVTFH CVTDH CVTGH
+# CVTBx, CVTWx, CVTLx: the integer (arg1, sign-extended) to IR, R = IR
+# rounded (only CVTLF can round)
+cvt_if:	and 0007 0007	argd1 goto fp_irl
+cvt_id:	and 0107 0107	argd1 goto fp_irq
+cvt_ig:	and 0207 0207	argd1 goto fp_irq
+cvt_ih:	and 0307 0307	argd1 goto fp_iro
+fp_irl:	and 55 55	crn
+	plus arg1 0	crw wipr goto fp_l
+fp_irq:	and 55 55	crn
+	plus arg1 0	crw wipr goto fp_q
+fp_iro:	and 55 55	crn
+	plus arg1 0	crw wipr goto fp_o
+#
+# fp_l: give the command in argd1; an F result in argd0, for the hardware
+# to store (instruction flag wback). N Z from the result.
+fp_l:	and 50 50	crn
+	plus argd1 0	crw wipr
+	and civ F	nzcond goto fp_exc
+	and 51 51	crn
+	plus civ 0	argd0
+	and 56 56	crn
+	plus civ 0	savnz eoi
+# fp_q: a D or G result in argd0 and argd1 (wback stores both); a memory
+# destination is checked for writing at both ends first, so that a fault
+# leaves it as it was
+fp_q:	and 50 50	crn
+	plus argd1 0	crw wipr
+	and civ F	nzcond goto fp_exc
+	and savpsw 10	nzcond goto fp_q1	# a register destination
+	plus argp0 0	cpuaddr rmem byte wint
+	plus argp0 7	cpuaddr rmem byte wint
+fp_q1:	and 51 51	crn
+	plus civ 0	argd0
+	and 52 52	crn
+	plus civ 0	argd1
+	and 56 56	crn
+	plus civ 0	savnz eoi
+# fp_o: an H result, stored by fp_wr
+fp_o:	and 50 50	crn
+	plus argd1 0	crw wipr
+	and civ F	nzcond goto fp_exc
+	and 56 56	crn
+	plus civ 0	savnz
+	and 300 300	arg3
+	and 58 58	crn
+	and @fp_end @fp_end	crw wipr	# X0: where fp_wr returns
+	plus 0 0	goto fp_wr
+fp_end:	plus 0 0	eoi
+#
+# fp_exc: the status (internal register 50) has an exception
+fp_exc:	and civ 1	nzcond goto fp_rsv	# reserved operand
+	and civ 8	nzcond goto fp_dvz
+	and civ 2	zcond goto fp_unf
+	and 8 8		argd0 goto fp_flt	# floating overflow fault
+fp_unf:	and A A		argd0 goto fp_flt	# floating underflow fault
+fp_dvz:	and 9 9		argd0			# floating divide by zero fault
+fp_flt:	and 76 76	crn
+	plus argd0 0	crw wipr		# the type code (IPR_AFLT)
+fp_rsv:	plus 0 0	resopflt eoi
+#
+# fp_wr: store the result (arg3: the format, D or G two longwords, H four)
+# in the destination in argp0, registers Rn, Rn+1, ... or memory (both ends
+# checked for writing first); then go on at the address in X0 (58). Uses
+# argd0, argd1.
+fp_wr:	and savpsw 10	zcond goto fp_wrm
+	and argp0 F	argd0			# the register number
+	and 51 51	crn
+	plus civ 0	argd1
+	plus argd0 0	crn
+	plus argd1 0	crw wreg
+	and 52 52	crn
+	plus civ 0	argd1
+	plus argd0 1	crn
+	plus argd1 0	crw wreg
+	minus arg3 300	nzcond goto fp_wrr	# D, G: two
+	and 53 53	crn
+	plus civ 0	argd1
+	plus argd0 2	crn
+	plus argd1 0	crw wreg
+	and 54 54	crn
+	plus civ 0	argd1
+	plus argd0 3	crn
+	plus argd1 0	crw wreg
+fp_wrr:	and 58 58	crn
+	plus civ 0	jmp
+fp_wrm:	plus argp0 0	cpuaddr rmem byte wint
+	minus arg3 300	zcond goto fp_wrm4
+	plus argp0 7	cpuaddr rmem byte wint
+	plus 0 0	goto fp_wrm2
+fp_wrm4: plus argp0 F	cpuaddr rmem byte wint
+fp_wrm2: and 51 51	crn
+	plus civ 0	crw
+	plus argp0 0	cpuaddr wmem
+	and 52 52	crn
+	plus civ 0	crw
+	plus argp0 4	cpuaddr wmem
+	minus arg3 300	nzcond goto fp_wrr
+	and 53 53	crn
+	plus civ 0	crw
+	plus argp0 8	cpuaddr wmem
+	and 54 54	crn
+	plus civ 0	crw
+	plus argp0 C	cpuaddr wmem goto fp_wrr
+#
+# TST: N Z from S0; CMP src1, src2: N = S0 < S1, Z = S0 = S1. V = C = 0.
+tstf:	and 000D 000D	argd1 goto fp_t
+tstd:	and 010D 010D	argd1 goto fp_t
+tstg:	and 020D 020D	argd1 goto fp_t
+tsth:	and 030D 030D	argd1 goto fp_t
+cmpf:	and 0043 0043	argd1 goto fp_t
+cmpd:	and 0143 0143	argd1 goto fp_t
+cmpg:	and 0243 0243	argd1 goto fp_t
+cmph:	and 0343 0343	argd1 goto fp_t
+fp_t:	and 50 50	crn
+	plus argd1 0	crw wipr
+	and civ 1	nzcond goto fp_rsv
+	and 56 56	crn
+	plus civ 0	savnz eoi
+#
+# CVTxB, CVTxW, CVTxL, CVTRxL: IR = S0 chopped (rounded) to an integer of
+# the destination's size. N Z from the value stored; V = integer overflow
+# (the destination gets the low-order bits; PSL<IV> traps by the flag
+# intov); C = 0.
+cvtfb:	and 0008 0008	argd1 goto fp_cvi
+cvtdb:	and 0108 0108	argd1 goto fp_cvi
+cvtgb:	and 0208 0208	argd1 goto fp_cvi
+cvthb:	and 0308 0308	argd1 goto fp_cvi
+cvtfw:	and 2008 2008	argd1 goto fp_cvi
+cvtdw:	and 2108 2108	argd1 goto fp_cvi
+cvtgw:	and 2208 2208	argd1 goto fp_cvi
+cvthw:	and 2308 2308	argd1 goto fp_cvi
+cvtfl:	and 4008 4008	argd1 goto fp_cvi
+cvtdl:	and 4108 4108	argd1 goto fp_cvi
+cvtgl:	and 4208 4208	argd1 goto fp_cvi
+cvthl:	and 4308 4308	argd1 goto fp_cvi
+cvtrfl:	and C008 C008	argd1 goto fp_cvi
+cvtrdl:	and C108 C108	argd1 goto fp_cvi
+cvtrgl:	and C208 C208	argd1 goto fp_cvi
+cvtrhl:	and C308 C308	argd1 goto fp_cvi
+fp_cvi:	and 50 50	crn
+	plus argd1 0	crw wipr
+	and civ 1	nzcond goto fp_rsv
+	bic 2 psl	psl
+	and civ 10	zcond goto fp_cvi1
+	bis 2 psl	psl			# integer overflow
+fp_cvi1: and 55 55	crn
+	plus civ 0	argd0
+	and argd1 6000	zcond goto fp_cvib	# byte
+	and argd1 2000	nzcond goto fp_cviw	# word
+	plus argd0 0	savnz eoi		# long
+fp_cvib: plus argd0 0	savnz use8 eoi
+fp_cviw: plus argd0 0	savnz use16 eoi
+#
+# EMODx mulr.rx, mulrx.rb (rw for G, H), muld.rx, int.wl, fract.wx: S0
+# mulr, arg2 the extension, S2 muld; argp0 int, argp1 fract. The command
+# EMOD a=0 b=2, longword size. N Z from the fraction, V = integer overflow,
+# C = 0. The fraction's destination is checked for writing first, then the
+# integer is stored, then the fraction.
+emodf:	and 408A 408A	argd1 goto em
+emodd:	and 418A 418A	argd1 goto em
+emodg:	and 428A 428A	argd1 goto em
+emodh:	and 438A 438A	argd1
+em:	and 55 55	crn
+	plus arg2 0	crw wipr		# IR: the extension
+	and 50 50	crn
+	plus argd1 0	crw wipr
+	and civ 5	nzcond goto fp_exc	# reserved, underflow
+	bic 2 psl	psl
+	and civ 10	zcond goto em_1
+	bis 2 psl	psl			# integer overflow
+em_1:	and 56 56	crn
+	plus civ 0	savnz			# N Z of the fraction
+	and 55 55	crn
+	plus civ 0	argd0			# the integer
+	and argd1 300	arg3			# the format
+	plus arg3 0	nzcond goto em_q
+	and savpsw 20	nzcond goto em_f1	# F: wback and wback2
+	plus argp1 0	cpuaddr rmem wint
+em_f1:	and 51 51	crn
+	plus civ 0	argd1 wback wback2 eoi
+em_q:	and savpsw 20	nzcond goto em_q1	# fraction in registers
+	plus argp1 0	cpuaddr rmem byte wint
+	minus arg3 300	zcond goto em_q0
+	plus argp1 7	cpuaddr rmem byte wint goto em_q1
+em_q0:	plus argp1 F	cpuaddr rmem byte wint
+em_q1:	and savpsw 10	zcond goto em_q2	# the integer
+	and argp0 F	crn
+	plus argd0 0	crw wreg goto em_q3
+em_q2:	plus argd0 0	crw
+	plus argp0 0	cpuaddr wmem
+em_q3:	plus argp1 0	argp0			# then the fraction
+	and 58 58	crn
+	and @fp_end @fp_end	crw wipr
+	plus 0 0	goto fp_wr
+#
+# POLYx arg.rx, degree.rw, tbladdr.ab: S0 arg, arg2 degree, arg3 table.
+# Horner's method, the table from the highest order coefficient (SRM POLY):
+# R = C, then degree times R = R * arg + the next C (the command POLY, with
+# its chopping of the product and of the sum). A fault on the way restarts
+# the instruction (it does not save its state with PSL<FPD>, which the SRM
+# allows; nor does it put arg on the stack). R0 (R1'R0, R3'R2'R1'R0) the
+# result; F: R1 = R2 = 0, R3 the address past the table; D, G: R2 = 0, R3
+# that address, R4 = R5 = 0; H: R4 = 0, R5 that address. N Z from the
+# result, V = C = 0. argd1 the format, argp1 the coefficient size, argp0
+# poly_rd's return address.
+polyf:	and 0 0		argd1
+	and 4 4		argp1 goto poly
+polyd:	and 100 100	argd1
+	and 8 8		argp1 goto poly
+polyg:	and 200 200	argd1
+	and 8 8		argp1 goto poly
+polyh:	and 300 300	argd1
+	and 10 10	argp1
+poly:	and arg2 FFFF	arg2
+	minus 1F arg2	ncond goto fp_rsv	# degree above 31: reserved
+	and 50 50	crn
+	bis argd1 000D	crw wipr		# TST S0: arg reserved?
+	and civ 1	nzcond goto fp_rsv
+	and @poly_1 @poly_1	argp0
+	plus 0 0	goto poly_rd
+poly_1:	and 50 50	crn
+	bis argd1 0401	crw wipr		# LD S1: the first coefficient
+	bis argd1 0012	crw wipr		# MOV R = S1
+	and civ 1	nzcond goto fp_rsv
+	plus arg3 argp1	arg3
+poly_l:	plus arg2 0	zcond goto poly_e
+	and @poly_2 @poly_2	argp0
+	plus 0 0	goto poly_rd
+poly_2:	and 50 50	crn
+	bis argd1 0401	crw wipr		# LD S1: the next coefficient
+	bis argd1 004B	crw wipr		# R = R * S0 + S1
+	and civ F	nzcond goto fp_exc
+	plus arg3 argp1	arg3
+	minus arg2 1	arg2 goto poly_l
+# the coefficient at arg3, argp1 bytes, into W0-W3 (51-54)
+poly_rd: plus arg3 0	cpuaddr rmem
+	and 51 51	crn
+	plus rmemdat 0	crw wipr
+	minus argp1 4	zcond goto poly_rr
+	plus arg3 4	cpuaddr rmem
+	and 52 52	crn
+	plus rmemdat 0	crw wipr
+	minus argp1 8	zcond goto poly_rr
+	plus arg3 8	cpuaddr rmem
+	and 53 53	crn
+	plus rmemdat 0	crw wipr
+	plus arg3 C	cpuaddr rmem
+	and 54 54	crn
+	plus rmemdat 0	crw wipr
+poly_rr: plus argp0 0	jmp
+poly_e:	and 56 56	crn
+	plus civ 0	savnz
+	and 51 51	crn
+	plus civ 0	argd0
+	and 0 0		crn
+	plus argd0 0	crw wreg		# R0
+	minus argp1 4	nzcond goto poly_e2
+	and 1 1		crn			# F
+	and 0 0		crw wreg
+	and 2 2		crn
+	and 0 0		crw wreg
+	and 3 3		crn
+	plus arg3 0	crw wreg
+	plus 0 0	eoi
+poly_e2: and 52 52	crn
+	plus civ 0	argd0
+	and 1 1		crn
+	plus argd0 0	crw wreg		# R1
+	minus argp1 8	nzcond goto poly_eh
+	and 2 2		crn			# D, G
+	and 0 0		crw wreg
+	and 3 3		crn
+	plus arg3 0	crw wreg
+	and 4 4		crn
+	and 0 0		crw wreg
+	and 5 5		crn
+	and 0 0		crw wreg
+	plus 0 0	eoi
+poly_eh: and 53 53	crn			# H
+	plus civ 0	argd0
+	and 2 2		crn
+	plus argd0 0	crw wreg
+	and 54 54	crn
+	plus civ 0	argd0
+	and 3 3		crn
+	plus argd0 0	crw wreg
+	and 4 4		crn
+	and 0 0		crw wreg
+	and 5 5		crn
+	plus arg3 0	crw wreg
+	plus 0 0	eoi
+#
+# ACBx limit.rx, add.rx, index.mx, displ.bw: S0 limit, S1 add, S2 index
+# (its destination argp0), arg4 the branch destination, argp1 PC. index =
+# index + add, rounded; N Z from it, V = 0, C unchanged; branch if add >= 0
+# and index <= limit, or add < 0 and index >= limit. arg3 the format.
+acbf:	and 0 0		arg3 goto acbx
+acbd:	and 100 100	arg3 goto acbx
+acbg:	and 200 200	arg3 goto acbx
+acbh:	and 300 300	arg3
+acbx:	and 50 50	crn
+	bis arg3 001D	crw wipr		# TST S1: N = add < 0
+	and civ 1	nzcond goto fp_rsv
+	and civ 20	arg1
+	bis arg3 0064	crw wipr		# ADD R = S2 + S1
+	and civ F	nzcond goto fp_exc
+	and 56 56	crn
+	plus civ 0	savnz			# N Z of the new index
+	and 50 50	crn
+	bis arg3 0033	crw wipr		# CMP R, S0
+	and civ 1	nzcond goto fp_rsv
+	and civ 60	arg2			# <5> index < limit, <6> =
+	plus arg1 0	nzcond goto acb_n
+	plus 0 0	goto acb_w		# add >= 0: branch if <=
+acb_n:	and arg2 20	arg2
+	xor arg2 20	arg2			# add < 0: branch if not <
+acb_w:	plus arg3 0	nzcond goto acb_wx
+	and 51 51	crn
+	plus civ 0	argd0			# F: the index (wback)
+	plus arg4 0	argd1
+	plus arg2 0	nzcond wback2 eoi
+acb_wx:	and 58 58	crn			# D G H: the index by fp_wr
+	and @acb_b @acb_b	crw wipr
+	plus 0 0	goto fp_wr
+acb_b:	plus arg4 0	argd1
+	plus arg2 0	nzcond wback2 eoi
+#
 !INSTRUCTIONS
 #
 NOP	rl#0,rl#0		lbl=add				# 01
@@ -3788,12 +4316,60 @@ ACBW	rw,rw,mw,aw#w^d(pc),wl#pc lbl=acbw setnz setv wback intov	# 3d
 MOVAW	aw,wl		lbl=mov setnz clv wback			# 3e
 PUSHAW	aw,wl#-(sp)	lbl=mov setnz clv wback			# 3f
 #
+ADDF2	rf,mf		lbl=addf setnz clv clc wback		# 40
+ADDF3	rf,rf,wf	lbl=addf setnz clv clc wback		# 41
+SUBF2	rf,mf		lbl=subf setnz clv clc wback		# 42
+SUBF3	rf,rf,wf	lbl=subf setnz clv clc wback		# 43
+MULF2	rf,mf		lbl=mulf setnz clv clc wback		# 44
+MULF3	rf,rf,wf	lbl=mulf setnz clv clc wback		# 45
+DIVF2	rf,mf		lbl=divf setnz clv clc wback		# 46
+DIVF3	rf,rf,wf	lbl=divf setnz clv clc wback		# 47
+CVTFB	rf,wb		lbl=cvtfb setnz clc wback intov		# 48
+CVTFW	rf,ww		lbl=cvtfw setnz clc wback intov		# 49
+CVTFL	rf,wl		lbl=cvtfl setnz clc wback intov		# 4a
+CVTRFL	rf,wl		lbl=cvtrfl setnz clc wback intov	# 4b
+CVTBF	rb,wf		lbl=cvt_if setnz clv clc wback		# 4c
+CVTWF	rw,wf		lbl=cvt_if setnz clv clc wback		# 4d
+CVTLF	rl,wf		lbl=cvt_if setnz clv clc wback		# 4e
+ACBF	rf,rf,mf,aw#w^d(pc),wl#pc lbl=acbf setnz clv wback	# 4f
+MOVF	rf,wf		lbl=movf setnz clv wback		# 50
+CMPF	rf,rf		lbl=cmpf setnz clv clc			# 51
+MNEGF	rf,wf		lbl=mnegf setnz clv clc wback		# 52
+TSTF	rf		lbl=tstf setnz clv clc			# 53
+EMODF	rf,rb,rf,wl,wf	lbl=emodf setnz clc intov		# 54
+POLYF	rf,rw,ab	lbl=polyf setnz clv clc			# 55
+CVTFD	rf,wd		lbl=cvt_xd setnz clv clc wback		# 56
+#
 ADAWI	rw,ww		lbl=adawi setnz setc setv use16 wback intov	# 58
 #
 INSQHI	ab,aq		lbl=insqhi				# 5c
 INSQTI	ab,aq		lbl=insqti				# 5d
 REMQHI	aq,wl		lbl=remqhi				# 5e
 REMQTI	aq,wl		lbl=remqti				# 5f
+#
+ADDD2	rd,md		lbl=addd setnz clv clc wback		# 60
+ADDD3	rd,rd,wd	lbl=addd setnz clv clc wback		# 61
+SUBD2	rd,md		lbl=subd setnz clv clc wback		# 62
+SUBD3	rd,rd,wd	lbl=subd setnz clv clc wback		# 63
+MULD2	rd,md		lbl=muld setnz clv clc wback		# 64
+MULD3	rd,rd,wd	lbl=muld setnz clv clc wback		# 65
+DIVD2	rd,md		lbl=divd setnz clv clc wback		# 66
+DIVD3	rd,rd,wd	lbl=divd setnz clv clc wback		# 67
+CVTDB	rd,wb		lbl=cvtdb setnz clc wback intov		# 68
+CVTDW	rd,ww		lbl=cvtdw setnz clc wback intov		# 69
+CVTDL	rd,wl		lbl=cvtdl setnz clc wback intov		# 6a
+CVTRDL	rd,wl		lbl=cvtrdl setnz clc wback intov	# 6b
+CVTBD	rb,wd		lbl=cvt_id setnz clv clc wback		# 6c
+CVTWD	rw,wd		lbl=cvt_id setnz clv clc wback		# 6d
+CVTLD	rl,wd		lbl=cvt_id setnz clv clc wback		# 6e
+ACBD	rd,rd,md,aw#w^d(pc),wl#pc lbl=acbd setnz clv		# 6f
+MOVD	rd,wd		lbl=movd setnz clv wback		# 70
+CMPD	rd,rd		lbl=cmpd setnz clv clc			# 71
+MNEGD	rd,wd		lbl=mnegd setnz clv clc wback		# 72
+TSTD	rd		lbl=tstd setnz clv clc			# 73
+EMODD	rd,rb,rd,wl,wd	lbl=emodd setnz clc intov		# 74
+POLYD	rd,rw,ab	lbl=polyd setnz clv clc			# 75
+CVTDF	rd,wf		lbl=cvt_xf setnz clv clc wback		# 76
 #
 ASHL	rb,rl,wl	lbl=ashl setnz clc wback intov		# 78
 ASHQ	rb,rq,wq	lbl=ashq setnz clc wback wback2 intov		# 79
@@ -3938,4 +4514,61 @@ CALLS	rl,ab,rl#sp	lbl=calls 				# fb
 #
 XFC	rl#0	lbl=xfc						# fc
 RESIN	rl#0	lbl=resinflt					# ff
+#
+CVTDH	rd,wh		lbl=cvt_xh setnz clv clc		# fd32
+CVTGF	rg,wf		lbl=cvt_xf setnz clv clc wback		# fd33
+ADDG2	rg,mg		lbl=addg setnz clv clc wback		# fd40
+ADDG3	rg,rg,wg	lbl=addg setnz clv clc wback		# fd41
+SUBG2	rg,mg		lbl=subg setnz clv clc wback		# fd42
+SUBG3	rg,rg,wg	lbl=subg setnz clv clc wback		# fd43
+MULG2	rg,mg		lbl=mulg setnz clv clc wback		# fd44
+MULG3	rg,rg,wg	lbl=mulg setnz clv clc wback		# fd45
+DIVG2	rg,mg		lbl=divg setnz clv clc wback		# fd46
+DIVG3	rg,rg,wg	lbl=divg setnz clv clc wback		# fd47
+CVTGB	rg,wb		lbl=cvtgb setnz clc wback intov		# fd48
+CVTGW	rg,ww		lbl=cvtgw setnz clc wback intov		# fd49
+CVTGL	rg,wl		lbl=cvtgl setnz clc wback intov		# fd4a
+CVTRGL	rg,wl		lbl=cvtrgl setnz clc wback intov	# fd4b
+CVTBG	rb,wg		lbl=cvt_ig setnz clv clc wback		# fd4c
+CVTWG	rw,wg		lbl=cvt_ig setnz clv clc wback		# fd4d
+CVTLG	rl,wg		lbl=cvt_ig setnz clv clc wback		# fd4e
+ACBG	rg,rg,mg,aw#w^d(pc),wl#pc lbl=acbg setnz clv		# fd4f
+MOVG	rg,wg		lbl=movg setnz clv wback		# fd50
+CMPG	rg,rg		lbl=cmpg setnz clv clc			# fd51
+MNEGG	rg,wg		lbl=mnegg setnz clv clc wback		# fd52
+TSTG	rg		lbl=tstg setnz clv clc			# fd53
+EMODG	rg,rw,rg,wl,wg	lbl=emodg setnz clc intov		# fd54
+POLYG	rg,rw,ab	lbl=polyg setnz clv clc			# fd55
+CVTGH	rg,wh		lbl=cvt_xh setnz clv clc		# fd56
+ADDH2	rh,mh		lbl=addh setnz clv clc			# fd60
+ADDH3	rh,rh,wh	lbl=addh setnz clv clc			# fd61
+SUBH2	rh,mh		lbl=subh setnz clv clc			# fd62
+SUBH3	rh,rh,wh	lbl=subh setnz clv clc			# fd63
+MULH2	rh,mh		lbl=mulh setnz clv clc			# fd64
+MULH3	rh,rh,wh	lbl=mulh setnz clv clc			# fd65
+DIVH2	rh,mh		lbl=divh setnz clv clc			# fd66
+DIVH3	rh,rh,wh	lbl=divh setnz clv clc			# fd67
+CVTHB	rh,wb		lbl=cvthb setnz clc wback intov		# fd68
+CVTHW	rh,ww		lbl=cvthw setnz clc wback intov		# fd69
+CVTHL	rh,wl		lbl=cvthl setnz clc wback intov		# fd6a
+CVTRHL	rh,wl		lbl=cvtrhl setnz clc wback intov	# fd6b
+CVTBH	rb,wh		lbl=cvt_ih setnz clv clc		# fd6c
+CVTWH	rw,wh		lbl=cvt_ih setnz clv clc		# fd6d
+CVTLH	rl,wh		lbl=cvt_ih setnz clv clc		# fd6e
+ACBH	rh,rh,mh,aw#w^d(pc),wl#pc lbl=acbh setnz clv		# fd6f
+MOVH	rh,wh		lbl=movh setnz clv			# fd70
+CMPH	rh,rh		lbl=cmph setnz clv clc			# fd71
+MNEGH	rh,wh		lbl=mnegh setnz clv clc			# fd72
+TSTH	rh		lbl=tsth setnz clv clc			# fd73
+EMODH	rh,rw,rh,wl,wh	lbl=emodh setnz clc intov		# fd74
+POLYH	rh,rw,ab	lbl=polyh setnz clv clc			# fd75
+CVTHG	rh,wg		lbl=cvt_xg setnz clv clc wback		# fd76
+CLRO	wo		lbl=clro setnz clv			# fd7c
+MOVO	ro,wo		lbl=movo setnz clv			# fd7d
+MOVAO	ao,wl		lbl=mov setnz clv wback			# fd7e
+PUSHAO	ao,wl#-(sp)	lbl=mov setnz clv wback			# fd7f
+CVTFH	rf,wh		lbl=cvt_xh setnz clv clc		# fd98
+CVTFG	rf,wg		lbl=cvt_xg setnz clv clc wback		# fd99
+CVTHF	rh,wf		lbl=cvt_xf setnz clv clc wback		# fdf6
+CVTHD	rh,wd		lbl=cvt_xd setnz clv clc wback		# fdf7
 #

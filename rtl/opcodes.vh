@@ -31,6 +31,7 @@
 `define	PSL_N	3
 `define	PSL_T	4	/* trace enable */
 `define	PSL_IV	5	/* integer overflow trap enable */
+`define	PSL_FU	6	/* floating underflow fault enable */
 
 /* general regs */
 `define	REG_PC		4'hf

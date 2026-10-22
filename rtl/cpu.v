@@ -57,7 +57,7 @@
 `define PREEXEC		20
 `define EXEC		21
 `define XFAULT		22	/* enter microcode for a fault, maybe restoring state */
-`define DUWAIT		23	/* a decimal unit command runs */
+`define DUWAIT		23	/* a decimal or floating point unit command runs */
 
 /* WREG return states */
 `define	WREG_HALT	0
@@ -222,8 +222,6 @@ module cpu(
 	 */
 	(* ram_style = "DISTRIBUTED" *) (* ramstyle = "logic" *)
 	reg [31:0]	ipr_reg[63:0];
-	/* processor initialization: ASTLVL = 4, no AST pending (SRM 6.3) */
-	initial ipr_reg[6'h13] = 32'd4;		/* ASTLVL */
 
 	wire [6:0]	ipr_regaddr;
 	wire [31:0]	ipr_regwdata;
@@ -254,6 +252,33 @@ module cpu(
 			`IPR_CSWP:	cswp <= ipr_regwdata[3:0];
 			`IPR_MDCTL:	mdctl <= ipr_regwdata[14:0] & 15'h6F0F;
 			`IPR_EHSR:	ehsr_vmse <= ipr_regwdata[5];
+			default:	;
+			endcase
+
+	/*
+	 * The registers that processor initialization sets (SRM, System
+	 * Bootstrapping and Console): ASTLVL 4, SISR 0, MAPEN 0, PME 0. They
+	 * are read from here and not from the IPR RAM, which rst cannot clear.
+	 * They hold what MTPR checks and keeps: ASTLVL <2:0> (0-4), MAPEN and
+	 * PME <0>, SISR <15:1> (swint, also the software interrupt requests).
+	 */
+	reg [2:0]	ipr_astlvl;
+	reg		ipr_mapen, ipr_pme;
+	reg [15:0]	swint;
+	initial ipr_astlvl = 3'd4;
+	initial ipr_mapen = 1'b0;
+	initial ipr_pme = 1'b0;
+	initial swint = 16'd0;
+	always @(posedge clk)
+		if (rst) begin
+			ipr_astlvl <= 3'd4;
+			ipr_mapen <= 1'b0;
+			ipr_pme <= 1'b0;
+		end else if (ipr_write || state == `WRITEIPR)
+			case (ipr_regaddr)
+			`IPR_ASTLVL:	ipr_astlvl <= ipr_regwdata[2:0];
+			`IPR_MAPEN:	ipr_mapen <= ipr_regwdata[0];
+			`IPR_PME:	ipr_pme <= ipr_regwdata[0];
 			default:	;
 			endcase
 
@@ -289,10 +314,16 @@ module cpu(
 		`IPR_MDCTL: ipr_val = { 17'b0, mdctl };
 		`IPR_EHSR: ipr_val = { 26'b0, ehsr_vmse, 5'b0 };
 		`IPR_ACCS, `IPR_MERG: ipr_val = 32'b0;
+		`IPR_ASTLVL: ipr_val = { 29'b0, ipr_astlvl };
+		`IPR_SISR: ipr_val = { 16'b0, swint };
+		`IPR_MAPEN: ipr_val = { 31'b0, ipr_mapen };
+		`IPR_PME: ipr_val = { 31'b0, ipr_pme };
 		`IPR_MMVA: ipr_val = MMU_VA_I;
 		`IPR_MMPAR: ipr_val = { MMU_TNV_I, 28'b0, MMU_PAR_I };
-		`IPR_ARITH: ipr_val = { 28'b0, arith_code != 4'd0 ? arith_code : 4'd1 };
-		default: ipr_val = ipr_regaddr[6:4] == 3'b110 ? du_rd : ipr_val_tmp;
+		`IPR_ARITH: ipr_val = { 28'b0, afault_code != 4'd0 ? afault_code :
+		    arith_code != 4'd0 ? arith_code : 4'd1 };
+		default: ipr_val = ipr_regaddr[6:4] == 3'b110 ? du_rd :
+		    ipr_regaddr[6:4] == 3'b101 ? fpu_rd : ipr_val_tmp;
 		endcase
 
 	/*
@@ -310,6 +341,30 @@ module cpu(
 		.ra(ipr_regaddr[3:0]),
 		.rd(du_rd),
 		.busy(du_busy)
+	);
+
+	/*
+	 * The floating point unit, internal registers 50-5F. The operand
+	 * decoder loads the floating operands of an instruction into its
+	 * slots (ARGEND); a command keeps the CPU in DUWAIT until it is done.
+	 */
+	wire		fpu_busy;
+	wire [31:0]	fpu_rd;
+	fpunit fpunit(
+		.clk(clk),
+		.rst(rst),
+		.fu(psw[`PSL_FU]),
+		.ld(state == `ARGEND && a_fpu && arg_aR),
+		.ld_slot(a_rargno[1:0]),
+		.ld_fmt(a_fmt[1:0]),
+		.ld_lit(arg_lit),
+		.ld_data({ OP3, OP2, OPu, OP }),
+		.wr(state == `WRITEIPR && ipr_addr[6:4] == 3'b101),
+		.wa(ipr_addr[3:0]),
+		.wd(ipr_wdata),
+		.ra(ipr_regaddr[3:0]),
+		.rd(fpu_rd),
+		.busy(fpu_busy)
 	);
 
 	/*
@@ -370,6 +425,13 @@ initial psl_ipl = 5'h1f;
 	reg [31:0]	inslword;
 	reg		ivalid;
 	reg [7:0]	cur_byte, cur_inst;
+	/*
+	 * ext_op: the instruction has a two-byte opcode, FD and cur_inst
+	 * (SRM chapter 2, opcode formats). Set when the FD byte is taken
+	 * in S_FETCH, cleared when the instruction ends.
+	 */
+	reg		ext_op;
+	initial ext_op = 1'b0;
 
 	reg		writeback, writeback2;
 	reg		fpd_active;	/* microcode can save its state if a fault hits */
@@ -391,6 +453,25 @@ initial rifault = 1'b0;
 	 */
 	reg [3:0]	arith_code;
 initial arith_code = 4'd0;
+	/*
+	 * A floating fault (overflow, divide by zero, underflow; SCB 34, the
+	 * PC of the instruction, the registers as they were). The microcode
+	 * writes the type code to IPR_AFLT and ends in a reserved operand
+	 * fault; ENDINST then puts the instruction back (XFAULT) and enters
+	 * the arithmetic exception microcode (entry 9), which reads the code
+	 * from IPR_ARITH and clears it by writing there.
+	 */
+	reg [3:0]	afault_code;
+initial afault_code = 4'd0;
+	always @(posedge clk)
+		if (rst || (state == `S_HALT && cont))
+			afault_code <= 4'd0;
+		else if ((ipr_write || state == `WRITEIPR) &&
+		    ipr_regaddr == `IPR_AFLT)
+			afault_code <= ipr_regwdata[3:0];
+		else if ((ipr_write || state == `WRITEIPR) &&
+		    ipr_regaddr == `IPR_ARITH)
+			afault_code <= 4'd0;
 	always @(posedge clk)
 		if ((ipr_write || state == `WRITEIPR) && ipr_regaddr == `IPR_RIFLT)
 			rifault <= 1'b1;
@@ -409,8 +490,17 @@ initial arith_code = 4'd0;
 		    ipr_regaddr == `IPR_ARITH)
 			arith_code <= ipr_regwdata[3:0];
 initial fpd_active = 1'b0;
-	reg		arg_read_step1, arg_read_step2;
-	reg [31:0]	OA, IA, OP, OPu, OAu;
+	/*
+	 * Operand read: arg_wd is the longword of the operand being read
+	 * (0-3: an octaword or H_floating operand has four), arg_rd that its
+	 * memory read has been made and rmem_dat holds it. OP, OPu, OP2,
+	 * OP3 receive the longwords.
+	 */
+	reg [1:0]	arg_wd;
+	reg		arg_rd;
+	initial arg_wd = 2'd0;
+	initial arg_rd = 1'b0;
+	reg [31:0]	OA, IA, OP, OPu, OAu, OP2, OP3;
 	reg [31:0]	getbwl_OA, addto_OA, indir_OA;
 	reg		OA_isreg;
 	reg [3:0]	OA_regnum;
@@ -422,7 +512,7 @@ initial fpd_active = 1'b0;
 	reg [3:0] cur_reg_num_save;
 /* verilator lint_on UNUSED */
 	assign cur_reg_num = cur_byte[3:0];
-	assign arg_read_add = indir_OA + IA + { arg_read_step1 ? 32'h4 : 32'b0 };
+	assign arg_read_add = indir_OA + IA + { 28'b0, arg_wd, 2'b00 };
 
 	/*
 	 * get current instruction byte based on pc.
@@ -480,7 +570,7 @@ initial fpd_active = 1'b0;
 	assign anyfault = resinflt | resadflt | resopflt | mcheck;
 
 	always @(posedge clk) begin
-		if (CPU_STB_O == 0) begin
+		if (rst || CPU_STB_O == 0) begin
 			mchk_cnt <= 0;
 			mcheck <= 0;
 		end else if (MMU_PROG_I || CPU_MMF_I)
@@ -561,6 +651,9 @@ initial fpd_active = 1'b0;
 	wire [1:0]	a_argsz;
 	wire [2:0]	a_rargno;
 	wire		a_wargno;
+	wire		a_octa;		/* 16 bytes: octaword, H_floating */
+	wire		a_fpu;		/* floating: read into an FPU slot */
+	wire [2:0]	a_fmt;		/* its format: 0 F, 1 D, 2 G, 3 H */
 	reg [8:0]	acounter;
 	reg [7:0]	curarg;
 
@@ -590,7 +683,7 @@ initial fpd_active = 1'b0;
 		.clk(clk),
 
 		.i_enable(i_enable),
-		.i_opcode(cur_byte),
+		.i_opcode({ ext_op, cur_byte }),
 
 		.i_argoff(i_argoff),
 		.i_hasargs(i_hasargs),
@@ -659,6 +752,9 @@ initial fpd_active = 1'b0;
 		.a_wargno(a_wargno),
 		.a_emul(a_emul),
 		.a_last(a_last),
+		.a_octa(a_octa),
+		.a_fpu(a_fpu),
+		.a_fmt(a_fmt),
 		.a_arg(a_arg)
 	);
 
@@ -668,7 +764,7 @@ initial fpd_active = 1'b0;
 	wire		arg_adec, arg_ainc, arg_aincd, arg_indir;
 	wire		arg_lit, arg_reg;
 	wire [3:0]	arg_sh; /* bit mapping */
-	reg [4:0]	arg_radd;
+	reg [5:0]	arg_radd;	/* register change: -16..+16 */
 	reg [3:0]	arg_rdbmsk, bcnt;
 	reg		arg_indir_loop;
 	argdecode argdecode(
@@ -691,7 +787,8 @@ initial fpd_active = 1'b0;
 	 * the fault, through SCB 1C, in chapter 5), with the cases the SRM
 	 * leaves UNPREDICTABLE decided this way: a literal for anything but
 	 * a read operand; a register for an address operand, PC as the
-	 * register, or SP for a quadword;
+	 * register, SP for a quadword, or AP, FP, SP for an octaword (the
+	 * operand would run past R14);
 	 * PC in register deferred or autodecrement mode; index mode with PC
 	 * as the index register, or with a literal, register or index mode
 	 * base. Only real specifiers are checked, not the implied operands of
@@ -704,28 +801,30 @@ initial fpd_active = 1'b0;
 	    cur_mux[7:6] == 2'b00 ? (arg_aW | arg_aA | spec_idx) :
 	    cur_mux[7:4] == 4'h4 ? (spec_rn == 4'hf || spec_idx) :
 	    cur_mux[7:4] == 4'h5 ? (arg_aA || spec_idx || spec_rn == 4'hf ||
-	        (a_argsz == `O_QUAD && spec_rn == 4'he)) :
+	        (a_argsz == `O_QUAD && spec_rn == 4'he) ||
+	        (a_octa && spec_rn[3:2] == 2'b11)) :
 	    (cur_mux[7:4] == 4'h6 || cur_mux[7:4] == 4'h7) ? spec_rn == 4'hf :
 	    1'b0;
 
-	reg [3:0]	pos_arg_size;
+	/* the operand size in bytes, 1 to 16, for (Rx)+ and -(Rx) */
+	reg [4:0]	pos_arg_size;
 	always @*
+		if (a_octa)
+			pos_arg_size = 5'h10;
+		else
 		case (a_argsz)
-		2'b00: pos_arg_size = 4'h1;
-		2'b01: pos_arg_size = 4'h2;
-		2'b10: pos_arg_size = 4'h4;
-		2'b11: pos_arg_size = 4'h8;
+		2'b00: pos_arg_size = 5'h01;
+		2'b01: pos_arg_size = 5'h02;
+		2'b10: pos_arg_size = 5'h04;
+		2'b11: pos_arg_size = 5'h08;
 		endcase
 
-	/* used for -(Rx) */
-	reg [3:0]	neg_arg_size;
-	always @*
-		case (a_argsz)
-		2'b00: neg_arg_size = 4'hf;
-		2'b01: neg_arg_size = 4'he;
-		2'b10: neg_arg_size = 4'hc;
-		2'b11: neg_arg_size = 4'h8;
-		endcase
+	/* used for -(Rx): minus the size, in five bits */
+	wire [4:0]	neg_arg_size = 5'd0 - pos_arg_size;
+
+	/* the last longword of a read operand: 0, 1 (quadword), 3 (16 bytes) */
+	wire [1:0]	arg_last_wd = a_octa ? 2'd3 :
+			    a_argsz == `O_QUAD ? 2'd1 : 2'd0;
 
 	/* double mux for arguments */
 	reg [31:0]	cra, arg_rv;
@@ -868,7 +967,7 @@ initial debug = 0;
 	 * Deal with interrupt priority.
 	 * Load the interrupt request lines into FFs here as well.
 	 */
-	reg [15:0]	hwint, swint;
+	reg [15:0]	hwint;
 	wire [4:0]	intlvl;
 	wire		intrq18, intrq14;
 	wire		tx_intreq, rx_intreq;
@@ -878,7 +977,9 @@ initial debug = 0;
 	always @(posedge clk)
 		hwint <= { 7'b0, intrq18, 3'b0, intrq14, 4'b0 };
 	always @(posedge clk)
-		if ((ipr_write || state == `WRITEIPR) &&
+		if (rst)
+			swint <= 16'd0;		/* initialization: none pending */
+		else if ((ipr_write || state == `WRITEIPR) &&
 		    (ipr_regaddr == `IPR_SISR))	// listen to IPR writes
 			swint <= { ipr_regwdata[15:1], 1'b0 };
 
@@ -920,6 +1021,7 @@ initial debug = 0;
 
 	intclk intclk(
 		.clk(clk),
+		.rst(rst),
 		.intrq(intrq18),
 
 		.icr(icr),
@@ -948,6 +1050,7 @@ initial debug = 0;
 
 	constx constx(
 		.clk(clk),
+		.rst(rst),
 
 		.iprdb(ipr_regwdata[7:0]),
 		.wrtxcs(wrtxcs),
@@ -973,6 +1076,7 @@ initial debug = 0;
 	    (ipr_regaddr == `IPR_RXDB); // RO
 	consrx consrx(
 		.clk(clk),
+		.rst(rst),
 
 		.wrie(ipr_regwdata[6]),	// write interrupt enable
 		.wrrxcs(wrrxcs),
@@ -1026,9 +1130,50 @@ initial debug = 0;
 	endtask
 
 	always @(posedge clk) begin
-		if (rst)
+		if (rst) begin
+			/*
+			 * Processor initialization, as the SRM defines it: PSL
+			 * 041F0000 - kernel mode, interrupt stack, IPL 1F - and
+			 * nothing of an instruction in progress.
+			 * rst comes at power-up, with the OSD reset and with every
+			 * program the OSD loads, which may be while a program runs
+			 * and has a memory cycle in flight; that cycle is dropped
+			 * here. Left standing, it would run once the reset is over
+			 * (a write landing in the program just loaded), and its
+			 * acknowledge would be taken for the first instruction
+			 * fetch after the console starts the CPU.
+			 */
 			state <= `S_HALT;
-		else
+			cpu_stb <= 0;
+			cpu_write <= 0;
+			cpu_pmem <= 0;
+			cpu_wint <= 0;
+			cpu_probe <= 0;
+			cpu_xpush <= 0;
+			con_ack_o_reg <= 0;
+			ipr_write <= 0;
+			ivalid <= 0;
+			ext_op <= 0;
+			arg_wd <= 2'd0;
+			arg_rd <= 0;
+			OA_isreg <= 0;
+			IA <= 0;
+			spec_idx <= 0;
+			doing_intr <= 0;
+			resopflt <= 0;
+			xhalt <= 0;
+			writeback <= 0;
+			writeback2 <= 0;
+			fpd_active <= 0;
+			delay_halt <= 0;
+			psl_tp <= 0;
+			psl_fpd <= 0;
+			psl_is <= 1;
+			cur_mod <= 2'd0;
+			prv_mod <= 2'd0;
+			psl_ipl <= 5'h1f;
+			psw <= 8'd0;
+		end else
 		case (state)
 		`S_HALT: begin
 			manhalt <= 1;
@@ -1037,6 +1182,7 @@ initial debug = 0;
 				ivalid <= 0;
 				resopflt <= 0;
 				doing_intr <= 0;	/* a halt can come from microcode */
+				ext_op <= 0;
 				writeback <= 0;
 				writeback2 <= 0;
 				fpd_active <= 0;
@@ -1080,7 +1226,21 @@ initial debug = 0;
 			manhalt <= 0;
 			if (CPU_ACK_I)
 				cpu_stb <= 0;
-			if (halt_pend) begin
+			if (ext_op) begin
+				/*
+				 * The second byte of a two-byte opcode: the
+				 * instruction has started at the FD byte (oldpc,
+				 * oldpsl and TP are set).
+				 */
+				if (isvalid) begin
+					cur_inst <= cur_byte;
+					curpc <= pc_plus_1;
+					state <= `S_DECODE;
+				end else begin
+					state <= `S_FILLUP;
+					fupstate <= `FUP_FETCH;
+				end
+			end else if (halt_pend) begin
 				state <= `S_HALT;
 				haltpos <= `HALT_CONSOLE;
 			end else if (step && delay_halt) begin
@@ -1106,7 +1266,11 @@ if (debug) $fdisplay(32'h80000002, "FETCH: pc %x curbyte %x inslword %x pc+1 %x\
 				oldpc <= curpc;
 				oldpsl <= psl;
 				curpc <= pc_plus_1;
-				state <= `S_DECODE;
+				/* FD: a two-byte opcode, its second byte next */
+				if (cur_byte == 8'hFD)
+					ext_op <= 1;
+				else
+					state <= `S_DECODE;
 				/* the instruction starts: TP <- T */
 				psl_tp <= psw[`PSL_T];
 			end else begin
@@ -1126,7 +1290,7 @@ if (debug) $fdisplay(32'h80000002, "S_DECODE: i_hasargs %d i_emul %d pc %x\r", i
 			acounter <= i_argoff;
 			scounter <= i_stepoff;
 			if (i_dohalt) begin
-				if (cur_inst == 8'h00 && cur_mod == 2'd0) begin
+				if (cur_inst == 8'h00 && !ext_op && cur_mod == 2'd0) begin
 					/* HALT in kernel mode; PC is past it */
 					state <= `S_HALT;
 					haltpos <= `HALT_KERNEL;
@@ -1152,10 +1316,13 @@ if (debug) $fdisplay(32'h80000002, "S_DECODE: i_hasargs %d i_emul %d pc %x\r", i
 				if (i_fpdok)
 					scounter <= i_stepoff + 12'd1;
 				else begin
-					/* reserved instruction fault: TP cleared */
-					scounter <= 12'd6;
-					doing_intr <= 1;
-					psl_tp <= 0;
+					/*
+					 * reserved instruction fault, PC at the
+					 * opcode (one or two bytes back), TP cleared
+					 */
+					state <= `XFAULT;
+					xentry <= 12'd7;
+					xrestore <= 1;
 				end
 			end else if (i_hasargs == 0)
 				state <= `S_HALT;
@@ -1191,7 +1358,9 @@ if (debug) $fdisplay(32'h80000002, "ASETUPx: isvalid %x curpc %x inslword %x\r",
 				end else if (cur_mux[7:6] == 0) // literal
 					state <= `ARG_READ;
 				else if (cur_mux[7:4] == 4'b0100) begin
-					IA <= cur_reg_val << a_argsz;
+					/* the index times the operand size */
+					IA <= a_octa ? cur_reg_val << 4 :
+					    cur_reg_val << a_argsz;
 					spec_idx <= 1;
 if (debug) $fdisplay(32'h80000002, "ASETUP2: cur_reg_val %x a_argsz %x\r", cur_reg_val, a_argsz);
 					state <= `ASETUP;
@@ -1211,13 +1380,13 @@ if (debug) $fdisplay(32'h80000002, "ASETUP2: cur_reg_val %x a_argsz %x\r", cur_r
 if (debug)$fdisplay(32'h80000002, "ARG_GETBWL: pc %x arg_rdbmsk %x bcnt %x argsh %x\r",
 	curpc, arg_rdbmsk, bcnt, arg_sh);
 			if (arg_adec)
-				getbwl_OA <= { 28'hfffffff, neg_arg_size };
+				getbwl_OA <= { 27'h7ffffff, neg_arg_size };
 			if (arg_adec)
 				arg_radd <= { 1'b1, neg_arg_size };
 			if (arg_ainc)
 				arg_radd <= { 1'b0, pos_arg_size };
 			if (arg_aincd)
-				arg_radd <= 5'd4;
+				arg_radd <= 6'd4;
 			if (arg_sh[0]) begin
 				if (arg_rdbmsk[0]) begin
 if (debug)$fdisplay(32'h80000002, "ARG_GETBWL2: isvalid %x getbwl_OA %x cur_byte %x\r", isvalid, getbwl_OA, cur_byte);
@@ -1249,7 +1418,7 @@ if (debug)$fdisplay(32'h80000002, "ARG_ADDTO: getbwl_OA %x cur_reg_val %x cur_re
 			wregstate <= `WREG_ARG_INDIR;
 			if (arg_adec|arg_ainc|arg_aincd) begin
 				greg_wbdata <= cur_reg_val +
-				    { {27{arg_radd[4]}}, arg_radd };
+				    { {26{arg_radd[5]}}, arg_radd };
 				greg_wregnum <= cur_reg_num_save;
 				state <= `S_WREG;
 			end else
@@ -1271,46 +1440,66 @@ if (debug)$fdisplay(32'h80000002, "ARG_INDIR: addto_OA %x indir %d", addto_OA, a
 		end
 
 		`ARG_READ: begin
-if (debug)$fdisplay(32'h80000002, "ARG_READ: OA %x IA %x cur_byte %x curarg %x step1 %d step2 %d", OA, IA, cur_byte, curarg, arg_read_step1, arg_read_step2);
+if (debug)$fdisplay(32'h80000002, "ARG_READ: OA %x IA %x cur_byte %x curarg %x wd %d rd %d", OA, IA, cur_byte, curarg, arg_wd, arg_rd);
 if (debug)$fdisplay(32'h80000002, "ARG_READ2: arg_read_add %x indir_OA %x lit %d R %d reg %d", arg_read_add, indir_OA, arg_lit, arg_aR, arg_reg);
-			arg_read_step1 <= 1;
 			state <= `ARGEND;
-			if (arg_read_step1 == 0)
+			if (arg_wd == 2'd0 && !arg_rd)
 				OA <= arg_read_add;
-			else
+			if (arg_wd == 2'd1 && !arg_rd)
 				OAu <= arg_read_add;
 			if (arg_lit && arg_aR) begin
 				OP <= { 24'b0, curarg};
 				OPu <= 0;
+				OP2 <= 0;
+				OP3 <= 0;
 			end else if (arg_reg && arg_aR) begin
-				if (arg_read_step1 == 0)
-					OP <= cur_reg_val;
-				else
-					OPu <= cur_reg_val;
+				/* register mode: Rn, Rn+1, ... */
+				case (arg_wd)
+				2'd0: OP <= cur_reg_val;
+				2'd1: OPu <= cur_reg_val;
+				2'd2: OP2 <= cur_reg_val;
+				default: OP3 <= cur_reg_val;
+				endcase
 				cur_reg_num_save <= cur_reg_num_save +1;
-				if (a_argsz == `O_QUAD && arg_read_step1 == 0)
+				if (arg_wd != arg_last_wd) begin
+					arg_wd <= arg_wd + 2'd1;
 					state <= `ARG_READ;
+				end
 			end else if (arg_aR) begin
-				if (arg_read_step2) begin
-					OPu <= rmem_dat;
-				end else if (arg_read_step1) begin
-					OP <= rmem_dat;
-					if (a_argsz == `O_QUAD)
-						state <= `S_READMEM;
-					arg_read_step2 <= 1;
-				end else
-					state <= `S_READMEM;
-				cpu_addr <= arg_read_add;
+				/* memory: the longwords one after the other */
 				cpu_size <= a_argsz;
 				cpu_wint <= arg_aW;	/* modify operand */
 				rmemstate <= `RMEM_ARG_READ;
+				if (!arg_rd) begin
+					cpu_addr <= arg_read_add;
+					arg_rd <= 1;
+					state <= `S_READMEM;
+				end else begin
+					case (arg_wd)
+					2'd0: OP <= rmem_dat;
+					2'd1: OPu <= rmem_dat;
+					2'd2: OP2 <= rmem_dat;
+					default: OP3 <= rmem_dat;
+					endcase
+					if (arg_wd != arg_last_wd) begin
+						arg_wd <= arg_wd + 2'd1;
+						cpu_addr <= arg_read_add + 32'd4;
+						if (arg_wd == 2'd0)
+							OAu <= arg_read_add + 32'd4;
+						state <= `S_READMEM;
+					end
+				end
 			end else begin
-				if (arg_read_step1 == 0)
+				/* address or write operand: its address (of both
+				   longwords of a quadword) */
+				if (arg_wd == 2'd0)
 					OP <= arg_read_add;
 				else
 					OPu <= arg_read_add;
-				if (a_argsz == `O_QUAD && arg_read_step1 == 0)
+				if (a_argsz == `O_QUAD && !a_octa && arg_wd == 2'd0) begin
+					arg_wd <= 2'd1;
 					state <= `ARG_READ; // OAu set
+				end
 			end
 		end
 
@@ -1321,12 +1510,20 @@ if (debug)$fdisplay(32'h80000002, "ARG_READ2: arg_read_add %x indir_OA %x lit %d
 if (debug) $fdisplay(32'h80000002, "ARGEND: OP %x OPu %x OA %x arg_rv %x acounter %d isreg %d regnum %d \r", OP, OPu, OA, arg_rv, acounter, OA_isreg, OA_regnum);
 if (debug) $fdisplay(32'h80000002, "ARGEND: a_rargno %d a_wargno %d arg_aR %d arg_aA %d arg_aW %d\r\n", a_rargno, a_wargno, arg_aR, arg_aA, arg_aW);
 			if (arg_aR|arg_aA) begin
-				if (a_rargno[2])
-					argd[a_rargno[0]] <= arg_rv;
-				else
-					arg[a_rargno[1:0]] <= arg_rv;
-				if (a_argsz == `O_QUAD)
-					arg[a_rargno[1:0]+1] <= OPu;
+				/* a floating operand goes to the FPU (fpu_ld) */
+				if (!(a_fpu && arg_aR)) begin
+					if (a_rargno[2])
+						argd[a_rargno[0]] <= arg_rv;
+					else
+						arg[a_rargno[1:0]] <= arg_rv;
+					if (a_argsz == `O_QUAD && !(a_octa && arg_aA))
+						arg[a_rargno[1:0]+1] <= OPu;
+					/* an octaword: arg[0..3] */
+					if (a_octa && arg_aR) begin
+						arg[a_rargno[1:0]+2] <= OP2;
+						arg[a_rargno[1:0]+3] <= OP3;
+					end
+				end
 			end
 
 			if (arg_aW) begin
@@ -1367,8 +1564,8 @@ if (debug) $fdisplay(32'h80000002, "ARGEND: a_rargno %d a_wargno %d arg_aR %d ar
 //if (cur_inst == 8'h2d) $fdisplay(32'h80000002, "CMPC5 arg1 %x arg2 %x arg3 %x arg4 %x argd0 %x psl %x", arg[0], arg[1], arg[2], arg_rv, argd[0], psl);
 //if (cur_inst == 8'heb) $fdisplay(32'h80000002, "FFC arg1 %x arg2 %x argp0 %x argp1 %x isreg %d psl %x", arg[0], arg[1], argp[0], arg_rv, argp_isreg[0], psl);
 			end
-			arg_read_step1 <= 0;
-			arg_read_step2 <= 0;
+			arg_wd <= 2'd0;
+			arg_rd <= 0;
 			OA_isreg <= 0;
 			IA <= 0;
 			spec_idx <= 0;
@@ -1562,6 +1759,7 @@ if (debug) $fdisplay(32'h80000002, "ENDINST: pc %x argd[1] %x argpsz[1] %d arg2p
 //if (cur_inst == 8'heb) $fdisplay(32'h80000002, "FFC END: argd1 %x psl %x", argd[1], psl);
 			state <= `S_FETCH;
 			doing_intr <= 0;
+			ext_op <= 0;
 
 //if (doing_intr)
 //$fdisplay(32'h80000002, "DOING INTR: i_setnz %d", i_setnz);
@@ -1579,7 +1777,8 @@ if (debug) $fdisplay(32'h80000002, "ENDINST: pc %x argd[1] %x argpsz[1] %d arg2p
 				doing_intr <= 1;
 				if (resopflt && !mcheck && !doing_intr) begin
 					/* a fault: PC and registers as at the start */
-					xentry <= rafault ? 12'd8 :
+					xentry <= afault_code != 4'd0 ? 12'd9 :
+					    rafault ? 12'd8 :
 					    rifault ? 12'd7 : 12'd2;
 					xrestore <= 1;
 					state <= `XFAULT;
@@ -1677,8 +1876,8 @@ if (debug) $fdisplay(32'h80000002, "WB1: argd1 %x size %d addr %x\r", argd[1], a
 			end
 			if (step)
 				delay_halt <= 1;
-			arg_read_step1 <= 0;
-			arg_read_step2 <= 0;
+			arg_wd <= 2'd0;
+			arg_rd <= 0;
 			OA_isreg <= 0;
 			IA <= 0;
 		end
@@ -1760,7 +1959,7 @@ if (debug) $fdisplay(32'h80000002, "MCODE: ctr %d mc_rv %x\r", mcodectr, mc_rv);
 
 		`WRITEIPR: begin
 			state <= `PREEXEC;
-			if (ipr_addr == `IPR_DU)
+			if (ipr_addr == `IPR_DU || ipr_addr == `IPR_FPU)
 				state <= `DUWAIT;
 			if (ipr_addr == `IPR_HALT) begin
 				/* microcode asks for a halt (IPR_HALT in ipr.vh) */
@@ -1779,8 +1978,9 @@ if (debug) $fdisplay(32'h80000002, "MCODE: ctr %d mc_rv %x\r", mcodectr, mc_rv);
 // $fdisplay(32'h80000002, "WIPR: wdata %x ipr 0x%x pc %x", ipr_wdata, ipr_addr, oldpc);
 		end
 
-		/* a decimal unit command: wait until it is done */
-		`DUWAIT: if (!du_busy) state <= `PREEXEC;
+		/* a decimal or floating point unit command: wait until it is
+		   done */
+		`DUWAIT: if (!du_busy && !fpu_busy) state <= `PREEXEC;
 
 		`S_WRITEMEM: begin
 			cpu_write <= 1;
@@ -1851,12 +2051,13 @@ if (debug) $fdisplay(32'h80000002, "S_READMEM2: addr %x dat %x pc %x size %d", c
 			scounter <= xentry;
 			state <= `PREEXEC;
 			doing_intr <= 1;
+			ext_op <= 0;
 			writeback <= 0;
 			writeback2 <= 0;
 			resopflt <= 0;
 			fpd_active <= 0;
-			arg_read_step1 <= 0;
-			arg_read_step2 <= 0;
+			arg_wd <= 2'd0;
+			arg_rd <= 0;
 			OA_isreg <= 0;
 			IA <= 0;
 			spec_idx <= 0;

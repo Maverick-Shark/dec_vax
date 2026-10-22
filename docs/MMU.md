@@ -11,7 +11,7 @@ observe behaves like a **VAX 8600**. DEC's documents define the behaviour,
 a VAX 8600 reference simulator run on the PC is the executable cross-check,
 and no logic is taken from other VAX implementations.
 
-Status: complete. 41 directed tests give the same results as the reference
+Status: complete. 47 directed tests give the same results as the reference
 simulator (or, where it departs from the SRM, the SRM's); EVKAA,
 `hello.bin` and `bench.bin` still pass; the Quartus build meets timing and
 the memory management tests pass on the board. DEC's EVKAE, under the 8600
@@ -276,6 +276,14 @@ EVKAE, because the tests and any operating system need them:
   SID. Anything else - the 780's and 750's registers among them - is a
   reserved operand. The console storage registers STXCS and STXDB are not
   there yet. MTPR to SIRR with level 0 requests nothing.
+* **Processor initialization** - the reset at power-up, with the OSD *Reset*
+  and with every *Load Program* - sets what the SRM's chapter *System
+  Bootstrapping and Console* lists: PSL `041F0000`, ASTLVL 4, SISR 0, MAPEN 0
+  (and the TB invalidated), PME 0, ICCS\<6\> and \<0\> clear (the interval
+  clock stops, with no request pending), RXCS 0 and TXCS\<IE\> clear. No
+  instruction, interrupt or memory reference is left in progress, and the
+  console monitor starts afresh. ASTLVL, SISR, MAPEN and PME are read from
+  registers that the reset clears, not from the IPR RAM, which it cannot.
 * **Trace** (PSL\<T\> and \<TP\>): when an instruction is about to be
   fetched, a set TP takes the trace fault (SCB 28) with TP clear in the
   saved PSL and the PC of that instruction; otherwise TP is loaded from T as
@@ -342,7 +350,7 @@ Found with EVKAB, or while adding the arithmetic traps, and fixed:
 
 ## How it was checked
 
-`tests/mmu/` holds 41 test programs in VAX assembler (assembled by
+`tests/mmu/` holds 47 test programs in VAX assembler (assembled by
 `tools/vasm.py`). `tests/mmu/run.py` runs each one on the reference
 simulator and on a CPU-level test bench (`sim/cpu_tb/`: cpu, vcache, mmu and 8 MB of plain
 memory), and compares R0-R14, PSL, PC after the final HALT, and the memory
@@ -392,6 +400,9 @@ fault, its parameter, VA, PC, PSL and the PSL the handler ran with.
 | t38_tracemovc | Trace with interval timer interrupts in the middle of MOVC3 and MOVC5: each traced once, when it completes |
 | t39_strfpd | MOVTUC, MATCHC, CRC stopped by a page fault and by timer interrupts (with trace), resumed with PSL\<FPD\>; MOVTUC in place across an invalid page |
 | t40_cmpc | CMPC3 and CMPC5: empty strings, the fill on either side, bytes that compare differently signed and unsigned, a fault part way (generated: `tests/mmu/gen/mk_t40.py`) |
+| t41_octa | The two-byte (FD) opcodes and octaword operands: CLRO, MOVO, MOVAO, PUSHAO in every addressing mode; an opcode split across a page boundary; a destination running into an invalid page; AP, FP, SP as octaword registers (reserved addressing mode); undefined FD opcodes ([FPU.md](FPU.md)) |
+| t42_fpf, t43_fpd, t44_fpg, t45_fph | The F, D, G and H floating point instructions on random operands, with every floating exception and the integer overflow trap (generated: `tests/mmu/gen/mk_fp.py`) |
+| t46_fpexc | Floating faults in detail: frames, registers put back, TP with trace, CVTR's halves, dirty zeros, destinations and a POLY table running into an invalid page |
 
 ```
 make -C sim cputb                 # the CPU test bench

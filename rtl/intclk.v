@@ -50,6 +50,7 @@
 
 module intclk(
 	input		clk,
+	input		rst,		/* processor initialization */
 	output		intrq,
 
 	output reg [31:0] icr, // ICR
@@ -78,9 +79,12 @@ parameter TODRCNTINIT =	15'h18f1; // 10 ms clock: 6385..16384 = 10000 us
 		if (wrnicr)
 			nicr <= iprdb;
 
-	/* set ICCS bits */
+	/* set ICCS bits; initialization clears RUN and IE (SRM) */
 	always @(posedge clk) begin
-		if (wriccs) begin
+		if (rst) begin
+			running <= 1'b0;
+			inten <= 1'b0;
+		end else if (wriccs) begin
 			running <= iprdb[`RUN];
 			inten <= iprdb[`IE];
 //$fdisplay(32'h80000002, "WRICCS: run %d ie %d xfr %d" , iprdb[`RUN], iprdb[`IE], iprdb[`XFR]);
@@ -149,6 +153,11 @@ parameter TODRCNTINIT =	15'h18f1; // 10 ms clock: 6385..16384 = 10000 us
 			intreq <= 1;
 			if (intreq)
 				error <= 1;
+		end
+		if (rst) begin
+			/* no interval clock interrupt pending */
+			intreq <= 0;
+			error <= 0;
 		end
 	end
 

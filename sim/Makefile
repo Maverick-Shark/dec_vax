@@ -3,7 +3,7 @@
 MISTER = vax_uart.v vax_kbd.v vt_font.v vt_term.v vax_msg.v vax_selftest.v \
          vax_sdram.v vax_cache.v vax_core.v vax_system.v
 RVAX = div.v ucode.v intrpt.v intclk.v constx.v consrx.v console.v mmu.v \
-       argdecode.v alu.v vcache.v decunit.v cpu.v
+       argdecode.v alu.v vcache.v decunit.v fpunit.v cpu.v
 SRC = $(addprefix ../rtl/,$(RVAX)) $(addprefix ../rtl/mister/,$(MISTER)) sdram_model.v tb_top.v
 
 obj/Vtb_top: $(SRC) tb.cpp
@@ -41,8 +41,18 @@ obj_du/Vdecunit: ../rtl/decunit.v du_tb/du_tb.cpp
 	  --top-module decunit -Mdir obj_du ../rtl/decunit.v du_tb/du_tb.cpp \
 	  -CFLAGS "-O1 -w" -o Vdecunit
 
+# unit test of the floating point unit against the exact model in
+# fpu_tb/vaxfp.py:  make -C sim fputb && python3 sim/fpu_tb/vaxfp.py v.txt
+# 20000 && sim/obj_fpu/Vfpunit v.txt
+fputb: obj_fpu/Vfpunit
+
+obj_fpu/Vfpunit: ../rtl/fpunit.v fpu_tb/fpu_tb.cpp
+	verilator --cc --exe --build -j 4 -O2 -Wno-fatal -Wno-WIDTH -Wno-TIMESCALEMOD \
+	  --top-module fpunit -Mdir obj_fpu ../rtl/fpunit.v fpu_tb/fpu_tb.cpp \
+	  -CFLAGS "-O1 -w" -o Vfpunit
+
 clean:
-	rm -rf obj obj_unit obj_nc obj_e obj_l obj_cpu obj_fast obj_du obj_dqma
+	rm -rf obj obj_unit obj_nc obj_e obj_l obj_cpu obj_fast obj_du obj_dqma obj_fpu
 
 UNIT = $(addprefix ../rtl/mister/,vt_font.v vt_term.v vax_kbd.v) unit_top.v
 
@@ -87,3 +97,4 @@ lint:
 	iverilog -g2012 -o /dev/null -I../rtl -DMISTER -DCLKPERBIT=16 -DCACHEIDX=10 \
 	  -s tb_top $(SRC)
 	iverilog -g2012 -o /dev/null -I../rtl -DMISTER -s decunit ../rtl/decunit.v
+	iverilog -g2012 -o /dev/null -I../rtl -DMISTER -s fpunit ../rtl/fpunit.v

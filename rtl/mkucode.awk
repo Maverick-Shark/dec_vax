@@ -29,7 +29,9 @@
 #	uc-args.hex - the arg steps executed for each instruction.
 #	uc-step.hex - the microcode steps taken for this instruction.
 #
-# uc-insn.hex is 256 rows of 64 (72) bits each.
+# uc-insn.hex is 512 rows of 64 (72) bits each: rows 0-255 for the one-byte
+# opcodes, rows 256-511 for the two-byte ones (FD xx, written FDxx in the
+# !OPCODES list).
 # Bit definition (right to left)
 #	0-7	offset into uc-args (bit 8 of it in bit 15)
 #	8	instruction has args
@@ -47,13 +49,18 @@
 #	The next two (3-4) are the size of the arg;
 #	byte    00
 #	word    01
-#	long    10
-#	quad    11
+#	long    10	(also F_floating)
+#	quad    11	(also D_ and G_floating; with bit 7 octaword and
+#			H_floating)
 #
 #	5	set if emulated
 #	6	set if last arg
+#	7	16 bytes (o, h)
 #	15-8	argument byte if emulated
 #	19-16	arg register to put arg in
+#	20	a floating operand (f, d, g, h): read, it goes to slot
+#		<17:16> of the floating point unit instead of arg[]
+#	23-21	its format: 0 F, 1 D, 2 G, 3 H
 #
 #	# Bit 36-39 are used to mask the psw.
 #
@@ -318,7 +325,13 @@ BEGIN {
 		if ($1 == "!INSTRUCTIONS") { state = 3; continue; }
 
 		if (state == 1) {
-			opmap[$2] = hex2dec($1)+0;
+			# FDxx: a two-byte opcode, FD then xx
+			if (length($1) == 4) {
+				if (toupper(substr($1,1,2)) != "FD")
+					err("bad opcode " $1);
+				opmap[$2] = 256 + hex2dec(substr($1,3,2));
+			} else
+				opmap[$2] = hex2dec($1)+0;
 			continue;
 		}
 
@@ -453,11 +466,22 @@ BEGIN {
 			else if (c == "b") { al = "011"; setrd = 1; } # XXX
 			else err("bad c " c);
 
+			# size; o and h are 16 bytes (quad and the octa bit),
+			# f d g h floating (the fpu bit and the format)
 			c = substr(a[i], 2, 1);
+			octa = "0";
+			fpu = "0";
+			fmt = "000";
 			if (c == "b") al = "00" al;
 			else if (c == "w") al = "01" al;
 			else if (c == "l") al = "10" al;
 			else if (c == "q") al = "11" al;
+			else if (c == "o") { al = "11" al; octa = "1"; }
+			else if (c == "f") { al = "10" al; fpu = "1"; }
+			else if (c == "d") { al = "11" al; fpu = "1"; fmt = "001"; }
+			else if (c == "g") { al = "11" al; fpu = "1"; fmt = "010"; }
+			else if (c == "h") { al = "11" al; fpu = "1"; fmt = "011";
+				octa = "1"; }
 			else err("bad c2 " c);
 
 			earg = "00000000";
@@ -488,8 +512,8 @@ BEGIN {
 			} else
 				rdwr = "0" rdwr;
 			arglist[curargoff++] = \
-			    "00000000000000000000000000000000000000000000" \
-			    rdwr earg "0" (i==n? "1" : "0") isearg al;
+			    "0000000000000000000000000000000000000000" \
+			    fmt fpu rdwr earg octa (i==n? "1" : "0") isearg al;
 
 		}
 	}
@@ -539,7 +563,7 @@ print "resolving " resolve[i] " pos " i " as " steplbl[resolve[i]];
 	# print out instructions
 	FN="uc-insn.hex";
 	system("rm -f " FN);
-	for (i = 0; i < 256; i++) {
+	for (i = 0; i < 512; i++) {
 		if (i in inslist) {
 			print line2hex(i, inslist[i], 64) >> FN;
 			numinst++;

@@ -97,3 +97,11 @@
 /* write: the next reserved operand fault is a reserved addressing mode
    fault (a bit field from R14 or PC) */
 `define IPR_RAFLT	7'h75
+/* write: the next reserved operand fault is an arithmetic fault instead,
+   type code <3:0> (8 floating overflow, 9 floating divide by zero, A
+   floating underflow; SCB 34, PC at the instruction) */
+`define IPR_AFLT	7'h76
+/* 50-5F: the floating point unit (fpunit.v): 50 command and status, 51-54
+   operand in / result out, 55 integer in and out, 56 N and Z, 58-5B
+   scratch */
+`define IPR_FPU		7'h50

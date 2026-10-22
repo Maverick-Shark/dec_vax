@@ -7,9 +7,12 @@ everything after it depends on it; it is complete and passes its tests on the
 board. M4, the 8600's privileged architecture, followed, and DEC's privileged
 architecture exerciser, EVKAE, runs under the 8600 Diagnostic Supervisor.
 Then M6: the decimal and character string instructions, with a decimal unit
-in the datapath, which completes the one-byte opcodes but for floating
-point; DEC's basic instruction exerciser, EVKAB, passes under the
-supervisor too.
+in the datapath; DEC's basic instruction exerciser, EVKAB, passes under the
+supervisor too. Then M7: floating point in its four formats, with a
+floating point unit in the datapath, the octaword instructions and the
+two-byte opcodes, which completes the VAX instruction set but for PDP-11
+compatibility mode; DEC's floating point exerciser, EVKAC, runs under the
+supervisor.
 
 Relative size: **S** a change in one module, **M** a new module or a block of
 microcode, **L** a subsystem, **XL** the largest pieces.
@@ -38,11 +41,11 @@ OpenVMS VAX 7.3, the last VAX release, still supports the 8600.
 
 ## Where it stands
 
-- r-vax CPU: microcode for every one-byte VAX opcode but the 46 F and D
-  floating point ones - integer, string, queue, packed decimal (with a new
-  decimal unit, [docs/CIS.md](docs/CIS.md)) and EDITPC; none of the two-byte
-  (FD) ones yet (G and H floating point, the octaword instructions). It
-  passes **EVKAA V8.0**, DEC's hardcore instruction test.
+- r-vax CPU: microcode for every VAX instruction - integer, string, queue,
+  packed decimal (with a decimal unit, [docs/CIS.md](docs/CIS.md)), EDITPC,
+  and the two-byte (FD) opcodes: F, D, G and H floating point (with a
+  floating point unit, [docs/FPU.md](docs/FPU.md)) and the octaword
+  instructions. It passes **EVKAA V8.0**, DEC's hardcore instruction test.
 - **Memory management as on the VAX 8600** (M5, below): the 8600's translation
   buffer, page table walk, protection and modify bit, access-control and
   translation-not-valid faults with instruction restart, PSL<FPD> for MOVC3 and
@@ -55,7 +58,7 @@ OpenVMS VAX 7.3, the last VAX release, still supports the 8600.
   addressing mode faults, HALT as a privileged instruction, trace (PSL<T>,
   <TP>), the arithmetic traps, the 8600's halt codes, its internal registers,
   a console halt with Ctrl+P or from the OSD.
-- 41 directed and random tests (`tests/mmu`) give the same results as the
+- 47 directed and random tests (`tests/mmu`) give the same results as the
   reference simulator; `software/mmutest.bin` runs them on the core. **EVKAE**, DEC's
   privileged architecture exerciser, passes 10 of its 11 tests under the 8600
   Diagnostic Supervisor (loaded as a memory image taken from a simulator); the
@@ -64,8 +67,7 @@ OpenVMS VAX 7.3, the last VAX release, still supports the 8600.
 - 16 KB cache in M10K, SDRAM controller with read-phase calibration, power-on
   memory test, on-screen VT terminal with USB keyboard, MiSTer UART, program
   loader with autostart, and r-vax's hardware console monitor (`>` prompt).
-- Not there yet: floating point, the two-byte opcodes, PDP-11 compatibility
-  mode, real I/O adapters, and a disk.
+- Not there yet: PDP-11 compatibility mode, real I/O adapters, and a disk.
 
 ## Milestone 3: Halt, and the tools for everything after
 
@@ -120,8 +122,8 @@ cross-compiler gives the same trace on the core and on the simulator.
 
 | Area | VAX 8600 | r-vax today |
 |---|---|---|
-| Instructions | All 304 opcodes in hardware, plus PDP-11 compatibility mode. | Every one-byte opcode but floating point. Missing: 46 F and D floating point, and the two-byte (FD) opcodes: G and H floating point and the 4 octaword instructions. |
-| Exceptions and privileged architecture | Every SCB vector with its parameters; four access modes with five stack pointers; CHMx; REI with all its checks; ASTs (ASTLVL); software interrupts; LDPCTX/SVPCTX; privileged-instruction checks; arithmetic traps; trace; 8600 machine-check frame; kernel stack not valid; the 8600's halt codes. | Done: SCB dispatch for the interval timer, console and software interrupts; CHMK, CHME, CHMS, CHMU; BPT, XFC; reserved instruction, reserved operand and reserved addressing mode faults; machine check and the memory management faults; kernel stack not valid; interrupt stack not valid; REI with all its checks; AST delivery; LDPCTX/SVPCTX; MTPR/MFPR privileged and checked; trace; the arithmetic traps (integer overflow, integer and decimal divide by zero, decimal overflow, subscript range); the 8600's halt codes (4, 6, 7, 8, A, B, 11). Missing: the floating point traps and faults (with floating point), PDP-11 compatibility mode, the 8600 machine-check frame's contents. |
+| Instructions | All 304 opcodes in hardware, plus PDP-11 compatibility mode. | All 304 opcodes ([docs/FPU.md](docs/FPU.md) for the floating point and octaword ones). Missing: PDP-11 compatibility mode. |
+| Exceptions and privileged architecture | Every SCB vector with its parameters; four access modes with five stack pointers; CHMx; REI with all its checks; ASTs (ASTLVL); software interrupts; LDPCTX/SVPCTX; privileged-instruction checks; arithmetic traps; trace; 8600 machine-check frame; kernel stack not valid; the 8600's halt codes. | Done: SCB dispatch for the interval timer, console and software interrupts; CHMK, CHME, CHMS, CHMU; BPT, XFC; reserved instruction, reserved operand and reserved addressing mode faults; machine check and the memory management faults; kernel stack not valid; interrupt stack not valid; REI with all its checks; AST delivery; LDPCTX/SVPCTX; MTPR/MFPR privileged and checked; trace; the arithmetic traps (integer overflow, integer and decimal divide by zero, decimal overflow, subscript range); the 8600's halt codes (4, 6, 7, 8, A, B, 11). the floating faults (overflow, divide by zero, underflow; types 8, 9, A). Missing: PDP-11 compatibility mode, the 8600 machine-check frame's contents. |
 | Memory management | P0, P1 and S0 regions, page tables, translation buffer, protection, modify bit, access-violation and translation-not-valid faults, restartable instructions. | Done, in simulation ([docs/MMU.md](docs/MMU.md)). |
 | 8600 registers | SID with type 4; IPRs ACCS, PAMACC, PAMLOC, CSWP, MDECC, MENA, MDCTL, MCCTL, MERG, CRBT, DFI, EHSR, STXCS, STXDB, ESPA, ESPD; console registers with the 8600's ID codes (console terminal, remote services, environmental monitor, logical console). | SID returns `040704D2`: type 4 (8600), ECO level 7, serial number 1234. ACCS (no accelerator), PAMACC, PAMLOC, CSWP, MDCTL, MERG, CRBT, EHSR and PME are there; MDECC, MENA, MCCTL, DFI, ESPA and ESPD are not yet (reserved operands, as the 780's and 750's registers are). Missing: STXCS and STXDB (console storage); console registers in the basic 780 format. |
 | I/O | SBIA with SBI fault and error registers; memory controllers; DW780 Unibus adapter (map registers, interrupt vectors); RH780 Massbus adapter (map registers); disks behind them; interrupts at IPL 20-23; DMA. | Fixed-value stubs for the SBIA, DW780 and RH780 configuration registers. No DMA, no device interrupts. |
@@ -195,7 +197,7 @@ and SVK (which needs the cross-compiler from milestone 3).
 **Done when:** directed and random tests match the reference simulator, and
 SVK runs.
 
-### M6 - Decimal, string and octaword instructions (L) - done but the octaword ones
+### M6 - Decimal, string and octaword instructions (L) - done
 
 - Done ([docs/CIS.md](docs/CIS.md)): ADDP4, ADDP6, SUBP4, SUBP6, MULP, DIVP,
   CMPP3, CMPP4, MOVP, ASHP, CVTLP, CVTPL, CVTPT, CVTTP, CVTPS, CVTSP, EDITPC,
@@ -208,27 +210,45 @@ SVK runs.
 - MOVTUC, MATCHC and CRC keep their progress in R0-R5 with PSL<FPD>, as
   MOVC3 and MOVC5 do, on faults and on interrupts; MOVTC probes all its
   pages before it moves.
-- Left: CLRO, MOVO, MOVAO, PUSHAO, which need the two-byte (FD) opcodes and
-  so come with G and H floating point (M7); PSL<FPD> for MOVTC and EDITPC,
-  which start again after a fault (allowed, but they hold off interrupts
-  until they finish).
+- CLRO, MOVO, MOVAO, PUSHAO came with the two-byte opcodes in M7.
+- Left: PSL<FPD> for MOVTC and EDITPC, which start again after a fault
+  (allowed, but they hold off interrupts until they finish).
 - Reference: the VAX Architecture Reference Manual.
 
 **Done when:** random operands give the same results as the reference
 simulator - true for the 21 that exist.
 
-### M7 - Floating point: F, D, G and H (XL)
+### M7 - Floating point: F, D, G and H (XL) - done
 
-- 98 opcodes, the 8600's FBox in function: add and subtract with alignment and
-  normalisation, multiply on the DSP blocks (fractions up to 113 bits for H,
-  over several cycles), iterative divide, all conversions, rounded and
-  truncated conversion, ACB, EMOD and POLY, VAX rounding, reserved operand on
-  the -0 pattern, floating overflow, underflow and divide by zero with PSL<FU>.
-- Golden model: random operands compared bit for bit with the reference
-  simulator, as for the decimal instructions.
+- Done ([docs/FPU.md](docs/FPU.md)): the two-byte opcodes; the 98 floating
+  point opcodes and the 4 octaword ones. A floating point unit in the
+  datapath (`rtl/fpunit.v`) works on 128-bit fractions, so that every
+  result has its exact rounding bit: add and subtract with alignment and
+  normalisation, multiply on the DSP blocks (32 x 32 products, one to four
+  passes), a divide one bit a clock, all conversions, rounded and chopped,
+  EMOD and POLY with the SRM's chopping, ACB; reserved operands, and the
+  floating overflow, divide by zero and underflow faults (types 8, 9, A)
+  with the instruction put back.
+- Golden models: an exact model of the arithmetic written from the SRM
+  (`sim/fpu_tb/vaxfp.py`, some 150 000 random vectors against the unit
+  alone), and random operands compared bit for bit with the reference
+  simulator (`tests/mmu/t42`-`t45`, some 1 600 cases).
+- On the core itself: `software/fptest.bin`, built by
+  `tests/fp/mkfptest.py`, runs any number of random cases of the 98
+  instructions (a new set for each seed) and checks them against
+  `vaxfp.py` - no reference simulator needed.
+- The Quartus build meets timing: 53 % of the ALMs with the MiSTer
+  framework, +1.9 ns of setup slack on the 50 MHz clock in the slow model.
+- Found on the board: loading a program while another one ran could leave
+  the old program's memory reference standing across the reset, and the new
+  program then failed at once. The reset of every load is now a processor
+  initialization as the SRM defines it (PSL `041F0000`, ASTLVL, SISR, MAPEN,
+  PME, ICCS, RXCS, TXCS), with the console and every bus request cleared;
+  `tb.cpp` loads over a running program at any chosen moment (`!L`,
+  `!L+w`, `!L+r` in `SESSION`) to check it.
 
 **Done when:** the random comparison is clean and the Diagnostic Supervisor's
-EVKAC passes (M9).
+EVKAC passes - both true in simulation.
 
 ### M8 - SBI, Massbus disk and Unibus (XL)
 
@@ -301,13 +321,14 @@ multi-user.
 | Program | What it exercises | When |
 |---|---|---|
 | EVKAA V8.0 | basic instructions | passes now |
-| `tests/mmu` (41 programs) | memory management, faults and restart, FPD, PROBE, LDPCTX/SVPCTX, REI, CHMx, BPT, XFC, halt codes, IPRs, reserved addressing modes, CASE, BBx, ACB, arithmetic traps, trace, the string, queue and decimal instructions (random operands), compared with the reference simulator | pass now |
+| `tests/mmu` (47 programs) | memory management, faults and restart, FPD, PROBE, LDPCTX/SVPCTX, REI, CHMx, BPT, XFC, halt codes, IPRs, reserved addressing modes, CASE, BBx, ACB, arithmetic traps, trace, the string, queue and decimal instructions, the octaword and floating point instructions (random operands), compared with the reference simulator | pass now |
 | `software/mmutest.bin` | the same programs on the core itself, self-checking | passes on the full-system model; the MMU ones on the board |
 | EVKAB (Basic Instructions Exerciser) | every integer, branch, bit field, queue, character string and decimal instruction, with every addressing mode, page faults on the operands, timer interrupts and trace | all 161 tests pass under the Diagnostic Supervisor image |
+| EVKAC (Floating Point Instructions Exerciser) | every floating point instruction of the four formats, with every addressing mode, page faults on the operands and timer interrupts | all 98 tests pass under the Diagnostic Supervisor image, with the QUICK flag and without it (page faults on the operands) |
 | EVKAE (Privileged Architecture Exerciser) | interrupts, exceptions, REI, CHMx, IPRs, interval timer, memory management, kernel stack not valid, PROBE, LDPCTX/SVPCTX - DEC's own test of the MMU work | 10 of 11 tests pass under the Diagnostic Supervisor image; test 3 needs compatibility mode (M11) |
 | Own C and assembler tests | each new instruction and exception, traced against the reference simulator | from M3 |
 | SVK | MMU, SCB, interval timer and console interrupts, software interrupts, SVPCTX/LDPCTX | M5 |
-| Random-operand comparison with the reference simulator | decimal, string (done), floating point | M6, M7 |
+| Random-operand comparison with the reference simulator | decimal, string, floating point (done) | M6, M7 |
 | EDSAA + EVKAB, EVKAC, EVKAD, EVKAE | DEC's own exercisers under the 8600 Diagnostic Supervisor | M9 |
 | NetBSD/vax | a complete OS | M9 |
 | OpenVMS VAX 7.3 | the goal | M10 |

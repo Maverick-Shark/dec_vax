@@ -12,7 +12,9 @@ Syntax, a subset of VAX MACRO:
     name = expr                 define a symbol
     ; comment                   comments start with ';'
     .org  expr                  set the location counter
-    .byte / .word / .long / .quad  expr, ...
+    .byte / .word / .long / .quad / .octa  expr, ...
+    .f_floating (.float) / .d_floating (.double) / .g_floating / .h_floating
+                                decimal numbers, e.g. 3.25, -1.5E-10
     .ascii "text"   .asciz "text"   (\\n \\r \\t \\0 \\\\ \\" escapes)
     .blkb n   .blkw n   .blkl n     reserve zeroed space
     .align n                    align to n bytes (n a power of two)
@@ -22,7 +24,11 @@ Operands (any general-mode operand may be followed by [Rx] for index mode):
 
     R0..R11 AP FP SP PC         register
     #expr                       short literal (0..63, integer read operands)
-                                or immediate; S^#expr / I^#expr force either
+                                or immediate; S^#expr / I^#expr force either;
+                                for a floating operand a decimal number is a
+                                floating constant (a short literal when it
+                                is one of the 64 values, 0.5 to 120), any
+                                other expression its bits
     (Rn)  (Rn)+  -(Rn)  @(Rn)+  register deferred, autoincrement, ...
     @#expr                      absolute
     [B^|W^|L^]expr(Rn)          displacement; @ in front for deferred
@@ -41,6 +47,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from vax_optable import OPTABLE  # noqa: E402
+import vaxfloat  # noqa: E402
 
 REGS = {('R%d' % i): i for i in range(12)}
 REGS.update({'AP': 12, 'FP': 13, 'SP': 14, 'PC': 15})
@@ -198,6 +205,21 @@ class Assembler:
             v = self.try_value(t[2:])
             return bytes([0x9F]) + struct.pack('<I', (v or 0) & 0xFFFFFFFF)
         m = re.match(r'^([SI])\^#(.*)$', t, re.I)
+        if (t.startswith('#') or m) and dtype in 'fdgh' and \
+                vaxfloat.is_number(m.group(2) if m else t[1:]):
+            # a floating constant: a short literal if it is one of the 64
+            # values, else immediate (S^# forces the literal)
+            force = m.group(1).upper() if m else None
+            fv = vaxfloat.parse(m.group(2) if m else t[1:])
+            lit = vaxfloat.literal(fv)
+            if force == 'S' or (force is None and acc == 'r' and lit is not None):
+                if lit is None:
+                    raise AsmError('not a floating short literal: %s' % t)
+                return bytes([lit])
+            try:
+                return bytes([0x8F]) + vaxfloat.encode(fv, dtype)
+            except ValueError as e:
+                raise AsmError(str(e))
         if t.startswith('#') or m:
             force = m.group(1).upper() if m else None
             ex = m.group(2) if m else t[1:]
@@ -300,7 +322,8 @@ class Assembler:
         ops = split_operands(rest)
         if len(ops) != len(specs):
             raise AsmError('%s takes %d operands, got %d' % (mn, len(specs), len(ops)))
-        out = struct.pack('<H', code) if code > 0xFF else bytes([code])
+        # a two-byte opcode is FD (or FF) first, as the table writes it
+        out = bytes([code >> 8, code & 0xFF]) if code > 0xFF else bytes([code])
         for i, (o, s) in enumerate(zip(ops, specs)):
             out += self.operand(o, s, (idx, i), self.dot + len(out))
         self.emit(image, out)
@@ -313,6 +336,19 @@ class Assembler:
             for e in split_operands(rest):
                 v = self.try_value(e) or 0
                 self.emit(image, (v & ((1 << (8 * n)) - 1)).to_bytes(n, 'little'))
+        elif d in ('.f_floating', '.float', '.d_floating', '.double',
+                   '.g_floating', '.h_floating'):
+            fmt = {'.f_floating': 'f', '.float': 'f', '.d_floating': 'd',
+                   '.double': 'd', '.g_floating': 'g', '.h_floating': 'h'}[d]
+            for e in split_operands(rest):
+                try:
+                    self.emit(image, vaxfloat.encode(vaxfloat.parse(e), fmt))
+                except ValueError as err:
+                    raise AsmError(str(err))
+        elif d == '.octa':
+            for e in split_operands(rest):
+                v = self.try_value(e) or 0
+                self.emit(image, (v & ((1 << 128) - 1)).to_bytes(16, 'little'))
         elif d in ('.ascii', '.asciz'):
             m = re.match(r'^"(.*)"$', rest.strip())
             if not m:

@@ -38,6 +38,7 @@
 
 module constx(
 	input		clk,
+	input		rst,		/* processor initialization: IE cleared */
 
 	input [7:0]	iprdb,
 	input		wrtxcs,
@@ -73,7 +74,9 @@ module constx(
 	initial xmit_rdy = 1;
 
 	always @(posedge clk) begin
-		if (rdy & ie & last_ie_rdy == 0)
+		if (rst)
+			intreq <= 0;
+		else if (rdy & ie & last_ie_rdy == 0)
 			intreq <= 1;
 		else if (intack)
 			intreq <= 0;
@@ -83,7 +86,9 @@ module constx(
 
 	// int enable/disab only bit that can be changed
 	always @(posedge clk)
-		if (wrtxcs)
+		if (rst)
+			inten <= 0;
+		else if (wrtxcs)
 			inten <= iprdb[6];
 
 	always @(posedge clk)

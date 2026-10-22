@@ -33,5 +33,6 @@ set_global_assignment -name VERILOG_FILE rtl/alu.v
 set_global_assignment -name VERILOG_FILE rtl/vcache.v
 set_global_assignment -name VERILOG_FILE rtl/mmu.v
 set_global_assignment -name VERILOG_FILE rtl/decunit.v
+set_global_assignment -name VERILOG_FILE rtl/fpunit.v
 set_global_assignment -name VERILOG_FILE rtl/cpu.v
 set_global_assignment -name VERILOG_FILE rtl/mister/nettype_reset.v
