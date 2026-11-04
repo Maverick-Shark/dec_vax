@@ -26,7 +26,8 @@ module vax_system #(
 	parameter CLK_HZ   = 50000000,
 	parameter CPB      = 16,        // internal console bit period - 1
 	parameter UART_CPB = 434,       // 115200 baud at 50 MHz
-	parameter CACHEIDX = 10
+	parameter CACHEIDX = 10,
+	parameter TSCALE   = 1          // disk mechanical times / TSCALE (simulation)
 ) (
 	input             clk,
 	input             rst_mem,      // power-up reset (PLL not locked)
@@ -70,6 +71,22 @@ module vax_system #(
 	output     [15:0] sd_dq_o,
 	output            sd_dq_oe,
 	input      [15:0] sd_dq_i,
+
+	// disk images: hps_io block devices 0 and 1 (RP07 units 0 and 1)
+	output     [31:0] dk_lba0,
+	output     [31:0] dk_lba1,
+	output      [1:0] dk_rd,
+	output      [1:0] dk_wr,
+	input       [1:0] dk_ack,
+	input       [8:0] dk_buff_addr,
+	input       [7:0] dk_buff_dout,
+	input             dk_buff_wr,
+	output      [7:0] dk_buff_din0,
+	output      [7:0] dk_buff_din1,
+	input       [1:0] img_mounted,
+	input             img_readonly,
+	input      [63:0] img_size,
+	output            disk_active,
 
 	// video
 	output            ce_pix,
@@ -273,7 +290,7 @@ module vax_system #(
 
 	wire tti_rx, tto_tx;
 
-	vax_core #(.CLK_HZ(CLK_HZ), .CACHEIDX(CACHEIDX)) core (
+	vax_core #(.CLK_HZ(CLK_HZ), .CACHEIDX(CACHEIDX), .TSCALE(TSCALE)) core (
 		.clk        (clk),
 		.rst_mem    (rst_mem),
 		.rst_cpu    (rst_cpu),
@@ -309,7 +326,22 @@ module vax_system #(
 		.sd_dqmh    (sd_dqmh),
 		.sd_dq_o    (sd_dq_o),
 		.sd_dq_oe   (sd_dq_oe),
-		.sd_dq_i    (sd_dq_i)
+		.sd_dq_i    (sd_dq_i),
+
+		.dk_lba0      (dk_lba0),
+		.dk_lba1      (dk_lba1),
+		.dk_rd        (dk_rd),
+		.dk_wr        (dk_wr),
+		.dk_ack       (dk_ack),
+		.dk_buff_addr (dk_buff_addr),
+		.dk_buff_dout (dk_buff_dout),
+		.dk_buff_wr   (dk_buff_wr),
+		.dk_buff_din0 (dk_buff_din0),
+		.dk_buff_din1 (dk_buff_din1),
+		.img_mounted  (img_mounted),
+		.img_readonly (img_readonly),
+		.img_size     (img_size),
+		.disk_active  (disk_active)
 	);
 
 	// --------------------------------------------- console output (TTO)

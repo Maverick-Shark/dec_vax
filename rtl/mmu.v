@@ -81,6 +81,7 @@ module mmu(
 	input		IN_WE_I,
 	input [31:0]	IN_ADR_I,
 	input [31:0]	IN_DAT_I,
+	input [3:0]	IN_SEL_I,	/* byte mask, passed on */
 	output [31:0]	IN_DAT_O,
 	output		IN_ACK_O,
 
@@ -112,6 +113,7 @@ module mmu(
 	output		UT_WE_O,
 	output [31:0]	UT_ADR_O,
 	output [31:0]	UT_DAT_O,
+	output [3:0]	UT_SEL_O,
 	input [31:0]	UT_DAT_I,
 	input		UT_ACK_I
 );
@@ -218,6 +220,8 @@ module mmu(
 	assign UT_ADR_O = thru ? { 2'b00, IN_ADR_I[29:0] } :
 			  (state == S_ACC) ? pa : badr;
 	assign UT_DAT_O = (thru || state == S_ACC) ? IN_DAT_I : bwdat;
+	/* page table entries are whole longwords */
+	assign UT_SEL_O = (thru || state == S_ACC) ? IN_SEL_I : 4'b1111;
 
 	/* virtual side */
 	assign IN_ACK_O = (thru || state == S_ACC) ? UT_ACK_I :

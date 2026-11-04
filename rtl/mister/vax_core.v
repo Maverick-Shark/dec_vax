@@ -1,9 +1,15 @@
 //============================================================================
 //  vax_core.v - r-vax system for MiSTer (replaces sbi.v of the original board).
 //
-//      cpu --- vcache (aligner) --- mmu --+-- vax_cache (M10K) --- vax_sdram --- 32 MB
-//                                         |
-//                                         +-- SBI / DW780 / RH780 register stubs
+//      cpu --- vcache (aligner) --- mmu --- vax_io --+-- vax_cache (M10K) --- vax_sdram --- 32 MB
+//                                                    |
+//                                                    +-- vax_sbi: SBIA 0 --- SBI --+-- RH780 (vax_mba)
+//                                                                                  |   RP07 0, 1 (vax_rp07)
+//                                                                                  +-- DW780 (vax_uba)
+//                                                                                      Unibus: empty
+//
+//  The RP07s' disks are images on the SD card, served by the HPS (hps_io's
+//  block devices 0 and 1; the dk_* ports).
 //
 //  A second master (the HPS program loader or the power-on memory test) can
 //  take the SDRAM over while the CPU is held in reset; dma_en switches the
@@ -18,7 +24,8 @@
 
 module vax_core #(
 	parameter CLK_HZ   = 50000000,
-	parameter CACHEIDX = 10          // 2^CACHEIDX lines of 16 bytes
+	parameter CACHEIDX = 10,         // 2^CACHEIDX lines of 16 bytes
+	parameter TSCALE   = 1           // disk mechanical times / TSCALE (simulation)
 ) (
 	input             clk,
 	input             rst_mem,       // SDRAM controller reset (power-up only)
@@ -59,11 +66,30 @@ module vax_core #(
 	output            sd_dqmh,
 	output     [15:0] sd_dq_o,
 	output            sd_dq_oe,
-	input      [15:0] sd_dq_i
+	input      [15:0] sd_dq_i,
+
+	// disk images: hps_io block devices 0 and 1 (RP07 units 0 and 1)
+	output     [31:0] dk_lba0,
+	output     [31:0] dk_lba1,
+	output      [1:0] dk_rd,
+	output      [1:0] dk_wr,
+	input       [1:0] dk_ack,
+	input       [8:0] dk_buff_addr,
+	input       [7:0] dk_buff_dout,
+	input             dk_buff_wr,
+	output      [7:0] dk_buff_din0,
+	output      [7:0] dk_buff_din1,
+	input       [1:0] img_mounted,
+	input             img_readonly,
+	input      [63:0] img_size,
+	output            disk_active
 );
 
 	/* CPU */
 	wire        mcheck;
+	wire        io_err;
+	wire  [4:0] io_ipl, pamm_rd;
+	wire [31:0] io_mstat2, io_mear;
 	wire [31:0] cpu_addr, cpu_wdata, cpu_rdata;
 	wire        cpu_write, cpu_stb, cpu_ack;
 	wire        cpu_pmem;
@@ -108,12 +134,19 @@ module vax_core #(
 		.tti_rx     (tti_rx),
 		.halt_req   (halt_req),
 		.cpu_halted (cpu_halted),
-		.cpu_mcheck (mcheck)
+		.cpu_mcheck (mcheck),
+
+		.IO_ERR_I   (io_err),
+		.IO_MSTAT2_I(io_mstat2),
+		.IO_MEAR_I  (io_mear),
+		.IO_IPL_I   (io_ipl),
+		.PAMM_I     (pamm_rd)
 	);
 
 	/* alignment unit: splits unaligned/partial accesses into longwords */
 	wire        va_write, va_stb, va_ack;
 	wire [31:0] va_addr, va_wdata, va_rdata;
+	wire  [3:0] va_sel;
 
 	vcache vcache (
 		.clk        (clk),
@@ -134,6 +167,7 @@ module vax_core #(
 		.UT_STB_O   (va_stb),
 		.UT_ADR_O   (va_addr),
 		.UT_DAT_O   (va_wdata),
+		.UT_SEL_O   (va_sel),
 		.UT_WE_O    (va_write),
 		.UT_DAT_I   (va_rdata),
 		.UT_ACK_I   (va_ack)
@@ -142,6 +176,7 @@ module vax_core #(
 	/* memory management: translation buffer, page table walks, faults */
 	wire        bus_write, bus_stb, bus_ack;
 	wire [31:0] bus_addr, bus_wdata, bus_rdata;
+	wire  [3:0] bus_sel;
 
 	mmu mmu (
 		.clk        (clk),
@@ -151,6 +186,7 @@ module vax_core #(
 		.IN_WE_I    (va_write),
 		.IN_ADR_I   (va_addr),
 		.IN_DAT_I   (va_wdata),
+		.IN_SEL_I   (va_sel),
 		.IN_DAT_O   (va_rdata),
 		.IN_ACK_O   (va_ack),
 
@@ -177,69 +213,86 @@ module vax_core #(
 		.UT_WE_O    (bus_write),
 		.UT_ADR_O   (bus_addr),
 		.UT_DAT_O   (bus_wdata),
+		.UT_SEL_O   (bus_sel),
 		.UT_DAT_I   (bus_rdata),
 		.UT_ACK_I   (bus_ack)
 	);
 
 	/*
-	 * SBI adapter stubs (from sbi.v): SBIA configuration and silo registers,
-	 * DW780 Unibus adapter (TR3) and RH780 Massbus adapter (TR8) configuration
-	 * registers. Enough for the adapter probes done by VMB and the r-vax test
-	 * software; there is no real I/O behind them yet.
+	 * Behind the MMU: installed memory (the cache) and the 8600's I/O
+	 * side (vax_io.v, vax_sbi.v).
 	 */
-	reg         sbia_ack;
-	reg  [31:0] sbia_reg, sbi_fs, sbi_tmo;
-	wire        sbia_addressed      = bus_addr[29] & ~bus_addr[25];
-	wire        sbia_regs           = (bus_addr[20:18] == 3'b010);
-	wire        sbia_regs_addressed = bus_stb && sbia_addressed && sbia_regs;
-	wire        tr03_addressed      = (bus_addr[16:13] == 4'b0011);
-	wire        tr08_addressed      = (bus_addr[16:13] == 4'b1000);
-	wire        sbi0_tr03_addressed = bus_stb && sbia_addressed && tr03_addressed;
-	wire        sbi0_tr08_addressed = bus_stb && sbia_addressed && tr08_addressed;
+	wire        mem_stb, mem_we, mem_ack;
+	wire [31:0] mem_adr, mem_wdat, mem_rdat;
+	wire  [3:0] mem_sel;
 
-	initial begin
-		sbia_ack = 1'b0;
-		sbia_reg = 32'd0;
-		sbi_fs   = 32'd0;
-		sbi_tmo  = 32'd0;
-	end
+	vax_io #(.CLK_HZ(CLK_HZ), .MEMMB(32), .TSCALE(TSCALE)) io (
+		.clk      (clk),
+		.rst      (rst_cpu),
 
-	always @(posedge clk) begin
-		sbia_reg <= 32'd0;
-		if (!bus_stb)
-			sbia_ack <= 1'b0;
-		if (sbia_regs_addressed) begin
-			if (bus_addr[6:2] == 5'b00000)
-				sbia_reg <= 32'h00400010;
-			if (bus_addr[6:2] == 5'b01111) begin
-				if (bus_write)
-					sbi_fs <= bus_wdata & 32'h03140000;
-				sbia_reg <= sbi_fs;
-			end
-			if (bus_addr[6:2] == 5'b01110)
-				sbia_reg <= sbi_tmo;
-			sbia_ack <= 1'b1;
-		end
-		if (sbi0_tr03_addressed) begin
-			if (bus_addr[12:0] == 13'd0)
-				sbia_reg <= 32'h00010028;   // UBA + INIT DONE
-			sbia_ack <= 1'b1;
-		end
-		if (sbi0_tr08_addressed) begin
-			if (bus_addr[12:0] == 13'd0)
-				sbia_reg <= 32'h00000020;   // MBA
-			sbia_ack <= 1'b1;
-		end
-	end
+		.stb      (bus_stb),
+		.we       (bus_write),
+		.adr      (bus_addr),
+		.wdat     (bus_wdata),
+		.sel      (bus_sel),
+		.rdat     (bus_rdata),
+		.ack      (bus_ack),
 
-	always @(posedge clk)
-		if (mcheck & sbia_addressed)
-			sbi_tmo <= {4'h2, bus_addr[29:2]};
+		.ipr_we   (ipr_we),
+		.ipr_adr  (ipr_adr),
+		.ipr_dat  (ipr_dat),
+		.pamm_rd  (pamm_rd),
+
+		.m_stb    (mem_stb),
+		.m_we     (mem_we),
+		.m_adr    (mem_adr),
+		.m_wdat   (mem_wdat),
+		.m_sel    (mem_sel),
+		.m_rdat   (mem_rdat),
+		.m_ack    (mem_ack),
+
+		.io_err   (io_err),
+		.io_mstat2(io_mstat2),
+		.io_mear  (io_mear),
+		.io_ipl   (io_ipl),
+
+		.sd_lba0      (dk_lba0),
+		.sd_lba1      (dk_lba1),
+		.sd_rd        (dk_rd),
+		.sd_wr        (dk_wr),
+		.sd_ack       (dk_ack),
+		.sd_buff_addr (dk_buff_addr),
+		.sd_buff_dout (dk_buff_dout),
+		.sd_buff_wr   (dk_buff_wr),
+		.sd_buff_din0 (dk_buff_din0),
+		.sd_buff_din1 (dk_buff_din1),
+		.img_mounted  (img_mounted),
+		.img_readonly (img_readonly),
+		.img_size     (img_size),
+		.disk_active  (disk_active),
+		// the Unibus: no devices on it yet
+		.ub_a     (),
+		.ub_c     (),
+		.ub_d     (),
+		.ub_msyn  (),
+		.ub_ssyn  (1'b0),
+		.ub_rd    (16'd0),
+		.dv_npr   (1'b0),
+		.dv_npg   (),
+		.dv_a     (18'd0),
+		.dv_c     (2'd0),
+		.dv_d     (16'd0),
+		.dv_msyn  (1'b0),
+		.dv_ssyn  (),
+		.dv_rd    (),
+		.ub_br    (4'd0),
+		.ub_bg    (),
+		.ub_intr  (1'b0),
+		.ub_vec   (16'd0),
+		.ub_init  ()
+	);
 
 	/* memory: 32 MB at physical 0x00000000-0x01FFFFFF */
-	wire        mem_hit = ~|bus_addr[31:25];
-	wire [31:0] cache_rdata;
-	wire        cache_ack;
 
 	wire        c_req, c_we;
 	wire [22:0] c_adr;
@@ -258,12 +311,13 @@ module vax_core #(
 		.clk      (clk),
 		.rst      (rst_cpu),
 
-		.STB_I    (bus_stb & mem_hit),
-		.ADR_I    (bus_addr),
-		.DAT_I    (bus_wdata),
-		.WE_I     (bus_write),
-		.DAT_O    (cache_rdata),
-		.ACK_O    (cache_ack),
+		.STB_I    (mem_stb),
+		.ADR_I    (mem_adr),
+		.DAT_I    (mem_wdat),
+		.SEL_I    (mem_sel),
+		.WE_I     (mem_we),
+		.DAT_O    (mem_rdat),
+		.ACK_O    (mem_ack),
 
 		.req      (c_req),
 		.req_we   (c_we),
@@ -334,8 +388,6 @@ module vax_core #(
 		.sd_dq_i  (sd_dq_i)
 	);
 
-	assign bus_rdata = cache_rdata | sbia_reg;
-	assign bus_ack   = cache_ack | sbia_ack;
 
 endmodule
 

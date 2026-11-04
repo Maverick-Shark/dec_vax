@@ -28,6 +28,9 @@ Each test is a VAX MACRO-subset source for tools/vasm.py. Lines starting with
     ;@ expect=R6:0,R5:5       register values the RTL must end with (noref)
     ;@ board=halt|skip        for mkboard.py: the test ends in a processor
                              halt (runs last on the board) / is left out
+    ;@ disk0=pattern[:n][:ro] the image of RP07 unit 0 (disk1: unit 1) on
+                             the RTL bench: a generated disk (see
+                             sim/cpu_tb/tb_cpu.cpp), n sectors, read only
 
 The program runs from PSL 041F0000 (kernel mode, interrupt stack, IPL 1F) and
 must end in HALT. Both machines are compared on R0..R14, PSL, the PC after the
@@ -124,11 +127,15 @@ def run_ref(binf, load, start, dumps, tmp):
     return res, out
 
 
-def run_rtl(binf, load, start, dumps, clocks):
+def run_rtl(binf, load, start, dumps, clocks, disks=None):
     args = [RTL, binf, '%X' % load, '%X' % start, clocks]
     args += ['%X:%X' % (a, n) for a, n in dumps]
+    env = dict(os.environ)
+    env.pop('DISK0', None)
+    env.pop('DISK1', None)
+    env.update(disks or {})
     out = subprocess.run(args, capture_output=True, text=True, cwd=ROOT,
-                         timeout=600).stdout
+                         timeout=600, env=env).stdout
     res = {'stop': ''}
     for line in out.splitlines():
         f = line.split()
@@ -165,11 +172,19 @@ def main():
                 fails += 1
                 continue
             start = int(d['start'], 16) if d['start'] else load
+            # every longword a test checks is dumped, whether or not a
+            # dump= range covers it
+            covered = set('M%08X' % (a + 4 * k) for a, n in d['dump']
+                          for k in range(n))
+            for key in sorted(set(d['rtl']) | set(d['mask']) | d['page']):
+                if key not in covered:
+                    d['dump'].append((int(key[1:], 16), 1))
             if d['noref']:
                 s, sout = dict(d['expect'], stop='(not run: noref)'), ''
             else:
                 s, sout = run_ref(binf, load, start, d['dump'], tmp)
-            r, rout = run_rtl(binf, load, start, d['dump'], d['clocks'])
+            disks = {k.upper(): d[k] for k in ('disk0', 'disk1') if k in d}
+            r, rout = run_rtl(binf, load, start, d['dump'], d['clocks'], disks)
         keys = ['R%d' % i for i in range(15)] + ['PSL', 'PC']
         keys += ['M%08X' % (a + 4 * k) for a, n in d['dump'] for k in range(n)]
         if d['noref']:

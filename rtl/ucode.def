@@ -398,8 +398,24 @@ intrq:
 intrq_hw:
 	and argd0 1F	argd0		# 12 make vector.  Set mod as 0.
 	minus argd0 18	zcond goto intrq_hw18 # skip if timer
-	minus argd0 14	zcond goto intrq_14	# skip if timer
-	plus 0 0	resopflt eoi
+	minus argd0 14	nzcond goto intrq_io	# 15-17, 19, 1B, 1C, 1E: SBIA 0
+	and savpsw C000	nzcond goto intrq_14	# IPL 14: the console first
+#
+# SBIA 0 (VAX 8600/8650 SBIA Technical Description, 3.6): read the vector
+# register of the level, 2008 0080 + 4 * (IPL - 10), with a physical
+# reference. At IPL 14-17 that is an interrupt summary read on the SBI,
+# which gives SCB 100 + 40 * (IPL - 14) + 4 * TR for the nexus with the
+# highest priority, or 0, a passive release (SCB 00), when none answers;
+# the request stays until software clears its cause. 50, 58, 5C or 60, 64
+# for the adapter's own levels 19, 1B, 1C, 1E.
+#
+intrq_io:
+	and 2008 2008	arg1
+	shl arg1 10	arg1		# 2008 0000
+	shl argd0 2	arg2
+	plus arg1 arg2	arg1		# + 4 * IPL
+	plus arg1 40	cpuaddr rmem phys	# + 40
+	plus rmemdat 0	argd1 goto scb_common
 
 intrq_hw18: and C0 C0	argd1 goto scb_common	# interval timer
 
@@ -412,16 +428,16 @@ intrq_14:
 	bis psl 0	psl		# reset clear bit
 	and FC FC	argd1 goto scb_common # console TX interrupt
 intrq_14_1:
-	and savpsw 4000	zcond goto intrq_14_2 # 21 check for rx intr
 	bis psl 4000	psl		# set clear interrupt request
 	bis psl 0	psl		# reset clear bit
 	and F8 F8	argd1 goto scb_common # console RX interrupt
-intrq_14_2:
-	plus 0 0	resopflt eoi
 
 #
-# Machine check (SCB 04, the vector must have bit 0 set).
-# Frame: the VAX 8600 one, 0x58 bytes of 0 and a byte count.
+# Machine check (SCB 04, the vector must have bit 0 set): the MBox could
+# not complete a reference (non-existent memory, or a CP I/O buffer error
+# from the SBIA). The VAX 8600 frame (DEC STD 032 table B-26): the byte
+# count, 58, and 22 longwords, EHM.STS to CSES, which the hardware keeps
+# for us behind IPR_MCFRAME (7A, cpu.v); then PC and PSL.
 #
 mcheck:
 	and 20 20	argd0		# an exception
@@ -430,15 +446,17 @@ mcheck:
 mcheck_1:
 	and E E		crn		# fetch stack pointer
 	plus crv 0	arg2		# sp in arg2
-	and 16 16	arg1		# 0x16 longs on stack
+	and 16 16	arg1		# 22 longwords, CSES (21) first
 mcheck_2:
-	minus arg2 4 	arg2		# next stack position
-	plus arg2 0	cpuaddr		# prepare for write
-	and 0 0		crw wmem xpush	# write 0
-	minus arg1 1	arg1 nzcond goto mcheck_2 # count to 22
-
-	minus arg2 4	cpuaddr		# last word onstack
-	and 58 58	crw wmem xpush	# write 0x58
+	minus arg1 1	arg1		# the next one's index
+	and 7A 7A	crn		# IPR_MCFRAME
+	plus arg1 0	crw wipr	# select it
+	minus arg2 4	arg2		# its place
+	plus arg2 0	cpuaddr
+	plus civ 0	crw wmem xpush	# write it
+	plus arg1 0	nzcond goto mcheck_2
+	minus arg2 4	cpuaddr		# the byte count
+	and 58 58	crw wmem xpush
 	and E E		crn		# stack pointer
 	minus arg2 4	crw wreg	# write back
 	plus 0 0	eoi		# Done!
@@ -724,11 +742,11 @@ mtpr_2:
 	minus arg2 23	zcond goto mtpr_ok	# TXDB
 	minus arg2 28	zcond goto mtpr_end	# ACCS: no accelerator, ignored
 	minus arg2 3D	zcond goto mtpr_pme	# PME
-	minus arg2 40	zcond goto mtpr_end	# 8600 PAMACC: ignored
+	minus arg2 40	zcond goto mtpr_ok	# 8600 PAMACC (vax_io.v)
 	minus arg2 41	zcond goto mtpr_ok	# 8600 PAMLOC
 	minus arg2 42	zcond goto mtpr_ok	# 8600 CSWP
 	minus arg2 45	zcond goto mtpr_ok	# 8600 MDCTL
-	minus arg2 47	zcond goto mtpr_end	# 8600 MERG: ignored
+	minus arg2 47	zcond goto mtpr_ok	# 8600 MERG
 	minus arg2 48	zcond goto mtpr_end	# 8600 CRBT: ignored
 	minus arg2 4A	zcond goto mtpr_ok	# 8600 EHSR
 
@@ -855,7 +873,7 @@ mfpr_1:
 	minus arg1 41	zcond goto mfpr_ok	# 8600 PAMLOC
 	minus arg1 42	zcond goto mfpr_ok	# 8600 CSWP
 	minus arg1 45	zcond goto mfpr_ok	# 8600 MDCTL
-	minus arg1 47	zcond goto mfpr_ok	# 8600 MERG (zero)
+	minus arg1 47	zcond goto mfpr_ok	# 8600 MERG
 	minus arg1 4A	zcond goto mfpr_ok	# 8600 EHSR
 
 	minus arg1 12	nzcond goto mfpr_12	# IPL

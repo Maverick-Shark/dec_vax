@@ -31,6 +31,11 @@
 //               or 200) for the loads after it
 //   PRELOAD=f@a put file f into memory at hex address a after the memory
 //               test, as if a previous program had left it there
+//   MEMDUMP=a:n,... at the end, print n longwords of memory from hex a
+//               (as "M addr value" lines, like the CPU bench)
+//   DISK0/DISK1 the images of RP07 units 0 and 1 (an image file or a
+//               generated disk, see hpsdisk.h; SDLAT, SDTRACE too), mounted
+//               after the SDRAM is ready, before the HPS's reset
 
 #include <cstdio>
 #include <cstdlib>
@@ -38,12 +43,14 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+#include "hpsdisk.h"
 #include "Vtb_top.h"
 #include "Vtb_top___024root.h"
 #include "verilated.h"
 
 static Vtb_top *tb;
 static uint64_t cycles = 0;
+static HpsDisk hps;                     // the disk images (hpsdisk.h)
 static uint64_t nhit = 0, nmiss = 0, nrun = 0, ninst = 0;
 static FILE *itr = 0;                   // ITRACE file
 static int      halted_d = 1, state_d = 0;
@@ -90,6 +97,7 @@ static void prof_print() {
 }
 
 static void tick() {
+	hps.step(cycles);
 	tb->clk = 1; tb->eval();
 	tb->clk = 0; tb->eval();
 	cycles++;
@@ -367,6 +375,10 @@ int main(int argc, char **argv) {
 	tb->selftest_go = 0; tb->uart_rxd = 1;
 	tb->rdphase_sel = getenv("PHASE") ? atoi(getenv("PHASE")) : 0;
 	tb->sdram_sz = 0;                       // the HPS reports it later
+	hps.init(HpsPorts{{&tb->dk_lba0, &tb->dk_lba1}, &tb->dk_rd, &tb->dk_wr,
+	                  &tb->dk_ack, &tb->dk_buff_addr, &tb->dk_buff_dout,
+	                  &tb->dk_buff_wr, {&tb->dk_buff_din0, &tb->dk_buff_din1},
+	                  &tb->img_mounted, &tb->img_readonly, &tb->img_size});
 	run(20);
 	// after the first eval, so the model's initial block has already run
 	if (const char *mf = getenv("MEMFILL")) {
@@ -388,6 +400,9 @@ int main(int argc, char **argv) {
 	run(30000);
 	tb->sdram_sz = 0x8001;                  // valid, 32 MB
 	run(20);
+	// the disk images the user has mounted
+	for (int u = 0; u < 2; u++)
+		for (int k = 0; k < 3; k++) { hps.mount_step(u, k); tick(); }
 	if (!getenv("NOHPSRST")) {
 		// MiSTer Main: UIO_SET_MEMSZ, then status[0] = 1 a few microseconds
 		// later, held while it loads the saved settings, then released
@@ -586,6 +601,24 @@ int main(int argc, char **argv) {
 	if (const char *tl = getenv("TTOLOG")) {        // everything the CPU printed
 		FILE *f = fopen(tl, "wb");
 		if (f) { fwrite(tto_log.data(), 1, tto_log.size(), f); fclose(f); }
+	}
+	if (const char *md = getenv("MEMDUMP")) {       // addr:count,... (hex)
+		std::string spec(md);
+		size_t p = 0;
+		while (p < spec.size()) {
+			size_t e = spec.find(',', p);
+			std::string it = spec.substr(p, e == std::string::npos ? std::string::npos : e - p);
+			unsigned a = strtoul(it.c_str(), 0, 16), n = 1;
+			size_t c = it.find(':');
+			if (c != std::string::npos) n = strtoul(it.c_str() + c + 1, 0, 16);
+			for (unsigned k = 0; k < n; k++, a += 4) {
+				unsigned lo = R->tb_top__DOT__sdram__DOT__mem[(a >> 1) & 0xFFFFFF];
+				unsigned hi = R->tb_top__DOT__sdram__DOT__mem[((a >> 1) + 1) & 0xFFFFFF];
+				printf("M %08X %08X\n", a, (hi << 16) | lo);
+			}
+			if (e == std::string::npos) break;
+			p = e + 1;
+		}
 	}
 	delete tb;
 	return 0;

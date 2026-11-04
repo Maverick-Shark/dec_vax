@@ -7,6 +7,12 @@
 ; write is ignored and it reads as zero). The log gets the value read, or
 ; 5E5E5E5E for a reserved operand fault; R7 counts the faults.
 ;@ dump=18000:30
+;
+; Two registers keep more than the reference simulator does: EHSR is an E-box
+; scratch pad longword (VAX 8600/8650 Fault Isolation Manual, appendix K) and
+; reads back all 32 bits; MERG keeps <12:9> and <5:0>, and its <8> (memory
+; management enabled) is MAPEN.
+;@ rtl=18010:FFFFFFFF,18014:00001F3F
 	.include "mmsetup.inc"
 ACCS	= ^x28
 PME	= ^x3D
@@ -29,11 +35,12 @@ test:
 	mfpr	#CSWP, (r11)+
 	mtpr	#-1, #MDCTL			; <14:13,11:8,3:0>
 	mfpr	#MDCTL, (r11)+
-	mtpr	#-1, #EHSR			; <5>
+	mtpr	#-1, #EHSR			; all of it
 	mfpr	#EHSR, (r11)+
 	mtpr	#0, #EHSR
-	mtpr	#-1, #MERG			; ignored, reads as zero
+	mtpr	#-1, #MERG			; <12:9,5:0>, <8> MAPEN
 	mfpr	#MERG, (r11)+
+	mtpr	#0, #MERG
 	mtpr	#^x12345678, #NICR		; reads back
 	mfpr	#NICR, (r11)+
 	mtpr	#^xFFFF, #SISR			; <15:1>, at IPL 1F nothing is taken

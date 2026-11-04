@@ -13,6 +13,11 @@ set_global_assignment -name VERILOG_FILE rtl/mister/vax_msg.v
 set_global_assignment -name VERILOG_FILE rtl/mister/vax_selftest.v
 set_global_assignment -name VERILOG_FILE rtl/mister/vax_sdram.v
 set_global_assignment -name VERILOG_FILE rtl/mister/vax_cache.v
+set_global_assignment -name VERILOG_FILE rtl/mister/vax_sbi.v
+set_global_assignment -name VERILOG_FILE rtl/mister/vax_uba.v
+set_global_assignment -name VERILOG_FILE rtl/mister/vax_mba.v
+set_global_assignment -name VERILOG_FILE rtl/mister/vax_rp07.v
+set_global_assignment -name VERILOG_FILE rtl/mister/vax_io.v
 set_global_assignment -name VERILOG_FILE rtl/mister/vax_core.v
 set_global_assignment -name VERILOG_FILE rtl/mister/vax_system.v
 set_global_assignment -name SYSTEMVERILOG_FILE dec_vax.sv

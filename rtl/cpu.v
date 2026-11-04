@@ -93,7 +93,7 @@
  */
 `define	HALT_RESET	0	/* power-up, reset */
 `define	HALT_CONSOLE	8'h11	/* halt requested from the console (Ctrl+P, OSD) */
-`define	HALT_MCHECK	2	/* machine check: a bus cycle got no answer */
+`define	HALT_MCHECK	2	/* a bus cycle got no answer at all (hang) */
 `define	HALT_STEP	3	/* single step done */
 `define	HALT_ISNV	4	/* interrupt stack not valid */
 `define	HALT_KERNEL	6	/* HALT instruction in kernel mode */
@@ -137,9 +137,20 @@ module cpu(
 	input		tti_rx,
 	input		halt_req,	/* console halt request (Ctrl+P, OSD) */
 	output		cpu_halted,
-	output		cpu_mcheck
+	output		cpu_mcheck,
 
-
+	/*
+	 * The MBox's I/O side (vax_io.v, vax_sbi.v): a reference the MBox
+	 * could not complete (non-existent memory, or a CP I/O buffer error
+	 * from the SBIA) with its MSTAT2 and MEAR for the machine check
+	 * frame, the highest interrupt level the SBIA requests (ABUS IPR
+	 * RETURN, 0 none), and the PAMM code at PAMLOC (MFPR PAMACC).
+	 */
+	input		IO_ERR_I,
+	input [31:0]	IO_MSTAT2_I,
+	input [31:0]	IO_MEAR_I,
+	input [4:0]	IO_IPL_I,
+	input [4:0]	PAMM_I
 );
 
 	/*
@@ -236,24 +247,42 @@ module cpu(
 
 	/*
 	 * VAX 8600 registers above 3F that hold a value: CSWP (cache sweep)
-	 * <3:0>, MDCTL (M-box data control) <14:13,11:8,3:0>, EHSR (error
-	 * handling status) <5>, VMS entered. ACCS reads as zero: no floating
-	 * point accelerator.
+	 * <3:0>, MDCTL (M-box data control) <14:13,11:8,3:0>, MERG (M-box
+	 * error generation) <12:9,5:0> - its <8>, memory management enabled,
+	 * is MAPEN - and EHSR (error handling status), an E-box scratch pad
+	 * longword (Fault Isolation Manual EK-8600S-MM-004 appendix K). The
+	 * error handling microcode updates EHSR when it takes a machine check
+	 * (mc_tog): <23:16> micro-trap vector 8, <6> EHM entered clear, <5>
+	 * VMS entered set; VMS clears <5> before its REI. ACCS reads as zero:
+	 * no floating point accelerator.
 	 */
 	reg [3:0]	cswp;
 	reg [14:0]	mdctl;
-	reg		ehsr_vmse;
+	reg [9:0]	merg;
+	reg [31:0]	ehsr;
+	reg		mc_tog, mc_tog_q;
 	initial cswp = 4'd0;
 	initial mdctl = 15'd0;
-	initial ehsr_vmse = 1'b0;
-	always @(posedge clk)
-		if (ipr_write || state == `WRITEIPR)
+	initial merg = 10'd0;
+	initial ehsr = 32'd0;
+	initial mc_tog = 1'b0;
+	initial mc_tog_q = 1'b0;
+	always @(posedge clk) begin
+		mc_tog_q <= mc_tog;
+		if (rst) begin
+			merg <= 10'd0;
+			ehsr <= 32'd0;
+		end else if (mc_tog != mc_tog_q)
+			ehsr <= (ehsr & ~32'h00FF0040) | 32'h00080020;
+		else if (ipr_write || state == `WRITEIPR)
 			case (ipr_regaddr)
 			`IPR_CSWP:	cswp <= ipr_regwdata[3:0];
 			`IPR_MDCTL:	mdctl <= ipr_regwdata[14:0] & 15'h6F0F;
-			`IPR_EHSR:	ehsr_vmse <= ipr_regwdata[5];
+			`IPR_MERG:	merg <= { ipr_regwdata[12:9], ipr_regwdata[5:0] };
+			`IPR_EHSR:	ehsr <= ipr_regwdata;
 			default:	;
 			endcase
+	end
 
 	/*
 	 * The registers that processor initialization sets (SRM, System
@@ -285,7 +314,7 @@ module cpu(
 	reg [31:0]	ipr_val;
 	wire [31:0]	du_rd;
 	reg [9:0]	pamloc;
-	reg [4:0]	pamacc;
+	initial pamloc = 10'd0;
 	wire [31:0]	icr, ipr_val_tmp, todr;
 	wire		iccs_err, iccs_int, iccs_ie, iccs_run;
 	wire		txcs_rdy, txcs_ie;
@@ -308,17 +337,19 @@ module cpu(
 //		`IPR_TXCS: ipr_val = { 24'h000100, txcs_rdy, txcs_ie, 6'b0 };
 		`IPR_RXCS: ipr_val = { 24'b0, rxcs_rdy, rxcs_ie, 6'b0 };
 		`IPR_RXDB: ipr_val = { 24'b0, rxdb };
-		`IPR_PAMACC: ipr_val = { 2'b0, pamloc, 15'b0, pamacc };
+		`IPR_PAMACC: ipr_val = { 2'b0, pamloc, 15'b0, PAMM_I };
 		`IPR_PAMLOC: ipr_val = { 2'b0, pamloc, 20'b0 };
 		`IPR_CSWP: ipr_val = { 28'b0, cswp };
 		`IPR_MDCTL: ipr_val = { 17'b0, mdctl };
-		`IPR_EHSR: ipr_val = { 26'b0, ehsr_vmse, 5'b0 };
-		`IPR_ACCS, `IPR_MERG: ipr_val = 32'b0;
+		`IPR_EHSR: ipr_val = ehsr;
+		`IPR_MERG: ipr_val = { 19'b0, merg[9:6], ipr_mapen, 2'b0, merg[5:0] };
+		`IPR_ACCS: ipr_val = 32'b0;
 		`IPR_ASTLVL: ipr_val = { 29'b0, ipr_astlvl };
 		`IPR_SISR: ipr_val = { 16'b0, swint };
 		`IPR_MAPEN: ipr_val = { 31'b0, ipr_mapen };
 		`IPR_PME: ipr_val = { 31'b0, ipr_pme };
 		`IPR_MMVA: ipr_val = MMU_VA_I;
+		`IPR_MCFRAME: ipr_val = mc_frame;
 		`IPR_MMPAR: ipr_val = { MMU_TNV_I, 28'b0, MMU_PAR_I };
 		`IPR_ARITH: ipr_val = { 28'b0, afault_code != 4'd0 ? afault_code :
 		    arith_code != 4'd0 ? arith_code : 4'd1 };
@@ -373,13 +404,17 @@ module cpu(
 	wire wrpamloc;
 	assign wrpamloc = (ipr_write || state == `WRITEIPR) &&
 	    (ipr_regaddr == `IPR_PAMLOC);
-	always @(posedge clk) begin
-		if (wrpamloc) begin
+	/*
+	 * The physical address memory map itself (one 5-bit code per
+	 * megabyte) is in the MBox, vax_io.v, which watches the IPR writes:
+	 * MTPR PAMACC writes the code for the megabyte PAMLOC<29:20> selects,
+	 * MFPR PAMACC reads it back (PAMM_I).
+	 */
+	always @(posedge clk)
+		if (rst)
+			pamloc <= 10'd0;
+		else if (wrpamloc)
 			pamloc[9:0] <= ipr_regwdata[29:20];
-			pamacc <= (ipr_regwdata[29:25] == 5'b10_000 ) ?
-			    5'h18 : 5'h1f;
-		end
-	end
 
 	/*
 	 * arg1/2 are arg value read. (if R|A)
@@ -551,7 +586,7 @@ initial fpd_active = 1'b0;
 	 * Faults.
 	 */
 	reg manhalt;
-	reg [6:0] mchk_cnt;
+	reg [15:0] mchk_cnt;
 
 	/*
 	 * Console halt request (Ctrl+P or the OSD): taken at the next
@@ -569,6 +604,20 @@ initial fpd_active = 1'b0;
 	assign isvalid = (itag[31:2] == curpc[31:2]) && ivalid;
 	assign anyfault = resinflt | resadflt | resopflt | mcheck;
 
+	/*
+	 * Machine check: the MBox could not complete a reference - non-
+	 * existent memory, or an I/O adapter reported a CP I/O buffer error
+	 * (vax_io.v, vax_sbi.v). What the 8600 machine check frame records
+	 * about the reference is kept here. mc_hang: nothing answered at all
+	 * for 2^16 clocks (an SBI timeout is 102.4 us, about 5000); the
+	 * processor halts with code 2, r-vax's own (the 8600 console would
+	 * find the machine hung).
+	 */
+	reg		mc_hang, mc_we, mc_ifetch;
+	reg [31:0]	mc_va, mc_viba, mc_pc, mc_ehmsts;
+	reg [4:0]	mc_idx;		/* IPR_MCFRAME: longword selected */
+	initial mc_hang = 1'b0;
+
 	always @(posedge clk) begin
 		if (rst || CPU_STB_O == 0) begin
 			mchk_cnt <= 0;
@@ -577,9 +626,25 @@ initial fpd_active = 1'b0;
 			mchk_cnt <= 0;	/* a bus cycle done, or a translation fault */
 		else if (CPU_ACK_I == 0)
 			mchk_cnt <= mchk_cnt + 1;
-		if (&mchk_cnt)
+		if (CPU_STB_O && IO_ERR_I && !mcheck) begin
 			mcheck <= 1;
+			mc_hang <= 0;
+			mc_we <= cpu_write;
+			mc_ifetch <= (state == `S_FILLUP);
+			mc_va <= cpu_addr;
+			mc_viba <= (state == `S_FILLUP) ? cpu_addr :
+			    { itag, 2'b00 };
+			mc_pc <= oldpc;
+			/* EHMSTS: the error handling microcode's copy of EHSR,
+			   EHM entered, micro-trap vector 8 */
+			mc_ehmsts <= { ehsr[7], 1'b1, 1'b0, ehsr[4], ehsr[3:0],
+			    ehsr[31:27], ehsr[26], ehsr[25], 1'b0, 8'h08, 8'h00 };
+		end else if (CPU_STB_O && &mchk_cnt && !mcheck) begin
+			mcheck <= 1;
+			mc_hang <= 1;
+		end
 	end
+
 
 	/*
 	 * General register file, currently in Distributed RAM.
@@ -974,8 +1039,58 @@ initial debug = 0;
 
 	assign intrq14 = tx_intreq | rx_intreq;
 
+	/*
+	 * Hardware requests, IPL 10-1F: the highest level SBIA 0 requests
+	 * (ABUS IPR RETURN: 14-17 the SBI REQ lines, 19, 1B, 1C, 1E its own),
+	 * 18 the interval clock, 14 the console as well.
+	 */
 	always @(posedge clk)
-		hwint <= { 7'b0, intrq18, 3'b0, intrq14, 4'b0 };
+		hwint <= (IO_IPL_I[4] ? (16'd1 << IO_IPL_I[3:0]) : 16'd0) |
+		    { 7'b0, intrq18, 3'b0, intrq14, 4'b0 };
+
+	/*
+	 * The machine check frame (DEC STD 032 table B-26; the Fault
+	 * Isolation Manual EK-8600S-MM-004, appendix K, defines each field),
+	 * read by the microcode one longword at a time through IPR_MCFRAME.
+	 * Index 0 is EHM.STS, the longword after the byte count. The fields
+	 * this processor has nothing for (parity and correction status, the
+	 * F-box, the console control store) are 0.
+	 */
+	/* an I/O adapter's error: CP I/O buffer error or bad read data */
+	wire		mc_iobuf = IO_MSTAT2_I[2] | IO_MSTAT2_I[14];
+	reg [31:0]	mc_frame;
+	always @*
+		case (mc_idx)
+		5'd0:	mc_frame = mc_ehmsts;
+		/* EVMQSAV, IVASAV: the virtual address of the operand */
+		5'd1, 5'd8:	mc_frame = mc_ifetch ? 32'd0 : mc_va;
+		/* EBCS: frame revision 1, PME, M-box fatal error, M-box
+		   interrupt pending, memory write, I/O read */
+		5'd2:	mc_frame = { 8'h00, 3'b001, ipr_pme, 4'h0, 2'b11, 11'h000,
+			    mc_we, mc_iobuf & ~mc_we, 1'b0 };
+		/* CSLINT: the interrupt requests pending - console halt, M-box
+		   error, interval timer, console transmit done and receive -,
+		   the highest an internal one at IPL 1D */
+		5'd4:	mc_frame = { 2'b00, halt_pend, 1'b0, 1'b1, intrq18, 1'b0,
+			    tx_intreq, rx_intreq, 2'b00, 1'b1, 4'hD, 16'h0000 };
+		5'd9:	mc_frame = mc_viba;	/* VIBASAV */
+		/* ESASAV, ISASAV, CPC: the instruction */
+		5'd10, 5'd11, 5'd12:	mc_frame = mc_pc;
+		/* MSTAT1: destination I-buffer (fetch) or E-box, cycle CP
+		   write (D) or CP read (E) */
+		5'd13:	mc_frame = { mc_ifetch ? 2'b11 : 2'b10,
+			    mc_we ? 4'hD : 4'hE, 26'd0 };
+		5'd14:	mc_frame = IO_MSTAT2_I;
+		5'd16:	mc_frame = { 19'b0, merg[9:6], ipr_mapen, 2'b0, merg[5:0] };
+		5'd17:	mc_frame = 32'd3;	/* CSHCTL: both caches on */
+		5'd18:	mc_frame = IO_MEAR_I;
+		default: mc_frame = 32'd0;
+		endcase
+
+	always @(posedge clk)
+		if ((ipr_write || state == `WRITEIPR) &&
+		    ipr_regaddr == `IPR_MCFRAME)
+			mc_idx <= ipr_regwdata[4:0];
 	always @(posedge clk)
 		if (rst)
 			swint <= 16'd0;		/* initialization: none pending */
@@ -1102,6 +1217,44 @@ initial debug = 0;
 	 * notes 5 and 6). In an instruction that saves its progress with
 	 * PSL<FPD>, its save routine runs first.
 	 */
+	/*
+	 * A reference the MBox could not complete (instruction stream or
+	 * data, read or write): the 8600's machine check (SCB 04), taken like
+	 * a fault, with the PC, the registers and the PSL as at the start of
+	 * the instruction - the error handling microcode rolls the
+	 * instruction back (Fault Isolation Manual M-03, M-04); the frame
+	 * says which reference failed. One while an exception or interrupt is
+	 * being initiated, or while EHSR<05> says the VMS machine check
+	 * handler has not finished with the last one, halts the processor
+	 * with code 5, "non-E-box double error" (DEC STD 032 table B-24).
+	 */
+	task mchkfault;
+		begin
+			if (mc_hang) begin
+				/* nothing answered the reference at all */
+				haltpos <= `HALT_MCHECK;
+				state <= `S_HALT;
+			end else if (doing_intr) begin
+				haltpos <= 8'h05;
+				state <= `S_HALT;
+			end else if (ehsr[5]) begin
+				/* VMS entered: the machine check handler has not
+				   finished with the last one (Fault Isolation Manual,
+				   EHSR<05>); halt 5 with the instruction put back */
+				xhalt <= 1;
+				xhaltcode <= 8'h05;
+				xrestore <= 1;
+				state <= `XFAULT;
+			end else begin
+				mc_tog <= ~mc_tog;	/* EHSR: vector 8, VMS entered */
+				xentry <= 12'd1;
+				xrestore <= 1;
+				state <= `XFAULT;
+			end
+			ivalid <= 0;	/* an instruction fetch got no data */
+		end
+	endtask
+
 	task mmfault;
 		begin
 			cpu_stb <= 0;
@@ -1589,7 +1742,9 @@ if (debug) $fdisplay(32'h80000002, "PREEXEC: op %d sleft %d sright %d scounter %
 			    { 11'b0, intlvl, tx_intreq, rx_intreq,
 			      intrq, |cur_mod, 6'b0, argp_isreg[1], argp_isreg[0],
 			      Ntmp, Ztmp, Vtmp, Ctmp };
-			/* <13>: interrupt pending, <12>: not in kernel mode,
+			/* <20:16>: the highest interrupt level requested,
+			   <15:14>: console transmit and receive requests,
+			   <13>: interrupt pending, <12>: not in kernel mode,
 			   <5:4>: argp1, argp0 are registers (an address can
 			   have bits 31:30 set too) */
 			4'b1110: alu_left <= alu_upper_res;
@@ -1926,10 +2081,8 @@ if (debug) $fdisplay(32'h80000002, "MCODE: ctr %d mc_rv %x\r", mcodectr, mc_rv);
 				default: state <= `S_HALT;
 				endcase
 			end
-			if (mcheck) begin
-				state <= `S_HALT;
-				haltpos <= `HALT_MCHECK;
-			end
+			if (mcheck)
+				mchkfault;
 			if (CPU_MMF_I)
 				mmfault;
 		end
@@ -2002,11 +2155,8 @@ if (debug) $fdisplay(32'h80000002, "MCODE: ctr %d mc_rv %x\r", mcodectr, mc_rv);
 			`WMEM_xENDINST: state <= `ENDINST;
 			default: state <= `S_HALT;
 			endcase
-			if (mcheck) begin
-if (debug) $fdisplay(32'h80000002, "S_WRITEMEM2: mcheck %x", cpu_addr);
-				state <= `S_HALT;
-				haltpos <= `HALT_MCHECK;
-			end
+			if (mcheck)
+				mchkfault;
 		end
 
 		`S_READMEM: begin
@@ -2033,12 +2183,8 @@ if (debug) $fdisplay(32'h80000002, "S_READMEM2: addr %x dat %x pc %x size %d", c
 			`RMEM_xENDINST: state <= `ENDINST;
 			default: state <= `S_HALT;
 			endcase
-			if (mcheck) begin
-//$fdisplay(32'h80000002, "S_READMEM2: mcheck %x", cpu_addr);
-				state <= `ENDINST;
-//				state <= `S_HALT;
-//				haltpos <= `HALT_MCHECK;
-			end
+			if (mcheck)
+				mchkfault;
 		end
 
 		/*

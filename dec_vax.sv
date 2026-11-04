@@ -67,6 +67,7 @@ assign VIDEO_ARY = (!ar) ? 12'd3 : 12'd0;
 //  13:11   SDRAM read phase: 0 = calibrated, 1..4 = force phase 0..3
 //  14      halt the CPU now (trigger), as Ctrl+P does
 //  15      Ctrl+P: 0 = halts the CPU, 1 = goes to the program as a character
+//  16      disk LED: 0 = disk activity, 1 = CPU running
 //  122:121 aspect ratio
 
 `include "build_id.v"
@@ -74,6 +75,8 @@ localparam CONF_STR = {
 	"DEC_VAX;;",
 	"-;",
 	"F1,BINEXE,Load Program;",
+	"S0,DSKIMG,RP07 Unit 0;",
+	"S1,DSKIMG,RP07 Unit 1;",
 	"O[2:1],Load Address,0x00001000,0x00000000,0x00000200,0x00010000;",
 	"O[3],Start Address,Load address,0x00000200;",
 	"O[4],Autostart,Yes,No;",
@@ -84,6 +87,7 @@ localparam CONF_STR = {
 	"O[15],Ctrl+P,Halts the CPU,Is a character;",
 	"T[14],Halt CPU (Ctrl+P);",
 	"O[122:121],Aspect Ratio,Original,Full Screen,[ARC1],[ARC2];",
+	"O[16],Disk LED,Disk activity,CPU running;",
 	"-;",
 	"O[9],Power-on Memory Test,On,Off;",
 	"O[13:11],SDRAM Read Phase,Calibrated,Force 0,Force 1,Force 2,Force 3;",
@@ -108,7 +112,17 @@ wire   [7:0] ioctl_dout;
 wire         ioctl_wait;
 wire  [15:0] sdram_sz;
 
-hps_io #(.CONF_STR(CONF_STR)) hps_io
+// the RP07s' disk images: block devices 0 and 1, 512-byte blocks
+wire  [31:0] dk_lba0, dk_lba1;
+wire   [1:0] dk_rd, dk_wr, dk_ack;
+wire  [13:0] dk_buff_addr;
+wire   [7:0] dk_buff_dout, dk_buff_din0, dk_buff_din1;
+wire         dk_buff_wr;
+wire   [1:0] img_mounted;
+wire         img_readonly;
+wire  [63:0] img_size;
+
+hps_io #(.CONF_STR(CONF_STR), .VDNUM(2)) hps_io
 (
 	.clk_sys(clk_sys),
 	.HPS_BUS(HPS_BUS),
@@ -129,6 +143,19 @@ hps_io #(.CONF_STR(CONF_STR)) hps_io
 	.ioctl_addr(ioctl_addr),
 	.ioctl_dout(ioctl_dout),
 	.ioctl_wait(ioctl_wait),
+
+	.img_mounted(img_mounted),
+	.img_readonly(img_readonly),
+	.img_size(img_size),
+	.sd_lba('{dk_lba0, dk_lba1}),
+	.sd_blk_cnt('{6'd0, 6'd0}),
+	.sd_rd(dk_rd),
+	.sd_wr(dk_wr),
+	.sd_ack(dk_ack),
+	.sd_buff_addr(dk_buff_addr),
+	.sd_buff_dout(dk_buff_dout),
+	.sd_buff_din('{dk_buff_din0, dk_buff_din1}),
+	.sd_buff_wr(dk_buff_wr),
 
 	.sdram_sz(sdram_sz)
 );
@@ -213,7 +240,7 @@ sdramclk_ddr
 wire        ce_pix, hs, vs, hblank, vblank;
 wire  [7:0] vr, vg, vb;
 wire [15:0] audio;
-wire        led, led_run;
+wire        led, led_run, disk_act;
 
 vax_system #(.CLK_HZ(50000000), .CPB(`CLKPERBIT), .UART_CPB(434), .CACHEIDX(`CACHEIDX)) vax
 (
@@ -257,6 +284,21 @@ vax_system #(.CLK_HZ(50000000), .CPB(`CLKPERBIT), .UART_CPB(434), .CACHEIDX(`CAC
 	.sd_dq_oe       (sd_dq_oe),
 	.sd_dq_i        (SDRAM_DQ),
 
+	.dk_lba0        (dk_lba0),
+	.dk_lba1        (dk_lba1),
+	.dk_rd          (dk_rd),
+	.dk_wr          (dk_wr),
+	.dk_ack         (dk_ack),
+	.dk_buff_addr   (dk_buff_addr[8:0]),
+	.dk_buff_dout   (dk_buff_dout),
+	.dk_buff_wr     (dk_buff_wr),
+	.dk_buff_din0   (dk_buff_din0),
+	.dk_buff_din1   (dk_buff_din1),
+	.img_mounted    (img_mounted),
+	.img_readonly   (img_readonly),
+	.img_size       (img_size),
+	.disk_active    (disk_act),
+
 	.ce_pix         (ce_pix),
 	.hs             (hs),
 	.vs             (vs),
@@ -286,6 +328,17 @@ assign AUDIO_L = audio;
 assign AUDIO_R = audio;
 
 assign LED_USER = led;
-assign LED_DISK = {1'b1, led_run};   // CPU running
+
+// The disk LED: the RP07s' activity (a seek, a transfer, a sector going to
+// or from the SD card), held for 50 ms so that one sector shows; or, with
+// the OSD option, the CPU running.
+reg [21:0] dk_led_t;
+always @(posedge clk_sys)
+	if (disk_act)
+		dk_led_t <= 22'd2500000;
+	else if (dk_led_t != 22'd0)
+		dk_led_t <= dk_led_t - 22'd1;
+
+assign LED_DISK = {1'b1, status[16] ? led_run : (dk_led_t != 22'd0)};
 
 endmodule

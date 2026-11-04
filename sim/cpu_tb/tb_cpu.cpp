@@ -17,11 +17,19 @@
 //
 // Environment: TRACE=1 prints every instruction (PC, opcode); BUSTRACE=1
 // prints every state change of the CPU, vcache and MMU with the bus signals.
+//
+// Disks: DISK0 and DISK1 give the images of the RP07 units 0 and 1, served
+// as the HPS serves them on the board (see ../hpsdisk.h: an image file or a
+// generated disk); no DISKn, no image mounted on that unit. SDLAT and
+// SDTRACE: see there.
 
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <vector>
+#include <map>
+#include <string>
+#include "../hpsdisk.h"
 #include "Vtb_cpu.h"
 #include "Vtb_cpu___024root.h"
 #include "verilated.h"
@@ -31,7 +39,10 @@ static uint64_t cycles = 0;
 #define R (tb->rootp)
 #define CPU(x) R->tb_cpu__DOT__cpu__DOT__##x
 
+static HpsDisk hps;                     // the disk images (../hpsdisk.h)
+
 static void tick() {
+	hps.step(cycles);
 	tb->clk = 1; tb->eval();
 	tb->clk = 0; tb->eval();
 	cycles++;
@@ -52,7 +63,21 @@ int main(int argc, char **argv) {
 	bool utrace = getenv("UTRACE") != 0;
 	bool strace = getenv("STRACE") != 0;	// every state change
 
+	hps.init(HpsPorts{{&tb->sd_lba0, &tb->sd_lba1}, &tb->sd_rd, &tb->sd_wr,
+	                  &tb->sd_ack, &tb->sd_buff_addr, &tb->sd_buff_dout,
+	                  &tb->sd_buff_wr, {&tb->sd_buff_din0, &tb->sd_buff_din1},
+	                  &tb->img_mounted, &tb->img_readonly, &tb->img_size});
 	tb->clk = 0; tb->rst = 1;
+	for (int i = 0; i < 10; i++) tick();
+	tb->rst = 0;
+	for (int i = 0; i < 10; i++) tick();
+
+	// the images, mounted one after the other as the HPS does
+	for (int u = 0; u < 2; u++)
+		for (int k = 0; k < 3; k++) { hps.mount_step(u, k); tick(); }
+	// then processor initialization, as a program load on the board does:
+	// the drives' attention from the mount is cleared
+	tb->rst = 1;
 	for (int i = 0; i < 10; i++) tick();
 	tb->rst = 0;
 	for (int i = 0; i < 10; i++) tick();
@@ -120,7 +145,7 @@ int main(int argc, char **argv) {
 		const char *colon = strchr(argv[i], ':');
 		if (colon) n = strtoul(colon + 1, 0, 16);
 		for (unsigned k = 0; k < n; k++, a += 4)
-			printf("M %08X %08X\n", a, R->tb_cpu__DOT__mem[(a >> 2) & 0x1FFFFF]);
+			printf("M %08X %08X\n", a, R->tb_cpu__DOT__mem[(a >> 2) & 0x7FFFFF]);
 	}
 	printf("CLOCKS %llu\n", (unsigned long long)(cycles - t0));
 	delete tb;

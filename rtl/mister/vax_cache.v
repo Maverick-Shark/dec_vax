@@ -15,12 +15,17 @@
 //
 //  Policy: write through, no write allocate, with a one-entry posted write
 //  buffer so a write costs the CPU two clocks instead of fourteen. A write
-//  that hits also updates the cached line. A line fill is held back while the
-//  write buffer is still draining, so a read can never pass an older write to
-//  the same address.
+//  carries a byte mask (SEL_I): only those bytes are written, in the SDRAM
+//  (its DQM lines) and in the cached line if it hits. A line fill is held
+//  back while the write buffer is still draining, so a read can never pass
+//  an older write to the same address.
 //
-//  Tag RAM: 2^IDXB x (TAGB+1)      Data RAM: 2^(IDXB+2) x 32
-//  Both inferred as M10K (ramstyle attribute below). Valid bits are cleared
+//  Tag RAM: 2^IDXB x (TAGB+1)      Data RAM: 2^(IDXB+2) x 32, as four
+//  byte lanes of 2^(IDXB+2) x 8, each with its own write enable: that is
+//  how the byte mask reaches the RAM. (Quartus does not infer byte enables
+//  from part-selects of one memory word: with a single 32-bit array it
+//  built the 16 KB out of registers.) All inferred as M10K (ramstyle
+//  attributes below). Valid bits are cleared
 //  by walking the tag RAM after reset, which also covers the case where the
 //  HPS loader has written to memory behind the cache's back.
 //
@@ -45,6 +50,7 @@ module vax_cache #(
 	input             STB_I,
 	input      [31:0] ADR_I,
 	input      [31:0] DAT_I,
+	input       [3:0] SEL_I,        // byte mask of a write
 	input             WE_I,
 	output     [31:0] DAT_O,
 	output            ACK_O,
@@ -68,10 +74,14 @@ module vax_cache #(
 
 	// ---------------------------------------------------------------- RAMs
 	(* ramstyle = "M10K" *) reg [TAGB:0]  tag_ram [0:(1<<IDXB)-1];
-	(* ramstyle = "M10K" *) reg [31:0]    dat_ram [0:(1<<(IDXB+2))-1];
+	(* ramstyle = "M10K" *) reg [7:0]     dat_ram0 [0:(1<<(IDXB+2))-1];
+	(* ramstyle = "M10K" *) reg [7:0]     dat_ram1 [0:(1<<(IDXB+2))-1];
+	(* ramstyle = "M10K" *) reg [7:0]     dat_ram2 [0:(1<<(IDXB+2))-1];
+	(* ramstyle = "M10K" *) reg [7:0]     dat_ram3 [0:(1<<(IDXB+2))-1];
 
 	reg [TAGB:0]      tag_q;
-	reg [31:0]        dat_q;
+	reg [7:0]         dat_q0, dat_q1, dat_q2, dat_q3;
+	wire [31:0]       dat_q = {dat_q3, dat_q2, dat_q1, dat_q0};
 	reg [AB-1:0]      la_q;
 
 	reg               tw;
@@ -80,6 +90,7 @@ module vax_cache #(
 	reg               dw;
 	reg [IDXB+1:0]    dw_adr;
 	reg [31:0]        dw_dat;
+	reg  [3:0]        dw_be;
 
 	wire [AB-1:0]     la    = ADR_I[AB+1:2];
 	wire [IDXB-1:0]   idx   = la[IDXB+1:2];
@@ -88,9 +99,25 @@ module vax_cache #(
 	always @(posedge clk) begin
 		if (tw) tag_ram[tw_adr] <= tw_dat;
 		tag_q <= tag_ram[idx];
-		if (dw) dat_ram[dw_adr] <= dw_dat;
-		dat_q <= dat_ram[la[IDXB+1:0]];
 		la_q  <= la;
+	end
+
+	// one simple dual-port RAM per byte lane
+	always @(posedge clk) begin
+		if (dw && dw_be[0]) dat_ram0[dw_adr] <= dw_dat[7:0];
+		dat_q0 <= dat_ram0[la[IDXB+1:0]];
+	end
+	always @(posedge clk) begin
+		if (dw && dw_be[1]) dat_ram1[dw_adr] <= dw_dat[15:8];
+		dat_q1 <= dat_ram1[la[IDXB+1:0]];
+	end
+	always @(posedge clk) begin
+		if (dw && dw_be[2]) dat_ram2[dw_adr] <= dw_dat[23:16];
+		dat_q2 <= dat_ram2[la[IDXB+1:0]];
+	end
+	always @(posedge clk) begin
+		if (dw && dw_be[3]) dat_ram3[dw_adr] <= dw_dat[31:24];
+		dat_q3 <= dat_ram3[la[IDXB+1:0]];
 	end
 
 	// Cyclone V M10K gives "don't care" for a mixed-port read-during-write,
@@ -99,15 +126,21 @@ module vax_cache #(
 	reg        tw_q, dw_q;
 	reg [TAGB:0] tw_dat_q;
 	reg [31:0]   dw_dat_q;
+	reg  [3:0]   dw_be_q;
 	reg [IDXB-1:0]  tw_adr_q;
 	reg [IDXB+1:0]  dw_adr_q;
 	always @(posedge clk) begin
 		tw_q <= tw; tw_adr_q <= tw_adr; tw_dat_q <= tw_dat;
-		dw_q <= dw; dw_adr_q <= dw_adr; dw_dat_q <= dw_dat;
+		dw_q <= dw; dw_adr_q <= dw_adr; dw_dat_q <= dw_dat; dw_be_q <= dw_be;
 	end
 
 	wire [TAGB:0] tag_eff = (tw_q && tw_adr_q == la_q[IDXB+1:2]) ? tw_dat_q : tag_q;
-	wire [31:0]   dat_eff = (dw_q && dw_adr_q == la_q[IDXB+1:0]) ? dw_dat_q : dat_q;
+	wire          dw_byp  = dw_q && dw_adr_q == la_q[IDXB+1:0];
+	wire [31:0]   dat_eff = {
+		(dw_byp && dw_be_q[3]) ? dw_dat_q[31:24] : dat_q[31:24],
+		(dw_byp && dw_be_q[2]) ? dw_dat_q[23:16] : dat_q[23:16],
+		(dw_byp && dw_be_q[1]) ? dw_dat_q[15:8]  : dat_q[15:8],
+		(dw_byp && dw_be_q[0]) ? dw_dat_q[7:0]   : dat_q[7:0] };
 
 	// tag_q/dat_q belong to the current address only if it has been stable
 	wire fresh = (la_q == la);
@@ -123,6 +156,7 @@ module vax_cache #(
 	reg            wb_v;
 	reg [AB-1:0]   wb_a;
 	reg [31:0]     wb_d;
+	reg  [3:0]     wb_s;
 
 	// ------------------------------------------------------------- main FSM
 	localparam [2:0] S_CLR  = 3'd0,
@@ -146,7 +180,7 @@ module vax_cache #(
 	assign req_we  = wb_v & ~fill_rq;
 	assign req_adr = fill_rq ? {fill_la[AB-1:2], 2'b00} : wb_a;
 	assign req_dat = wb_d;
-	assign req_sel = 4'b1111;
+	assign req_sel = fill_rq ? 4'b1111 : wb_s;
 
 	initial begin
 		state    = S_CLR;
@@ -156,6 +190,8 @@ module vax_cache #(
 		ack      = 1'b0;
 		tw       = 1'b0;
 		dw       = 1'b0;
+		dw_be    = 4'b1111;
+		wb_s     = 4'b1111;
 		stat_hit = 1'b0;
 		stat_miss= 1'b0;
 	end
@@ -195,10 +231,12 @@ module vax_cache #(
 						wb_v <= 1'b1;
 						wb_a <= la;
 						wb_d <= DAT_I;
+						wb_s <= SEL_I;
 						if (hit) begin         // keep the cached copy current
 							dw     <= 1'b1;
 							dw_adr <= la[IDXB+1:0];
 							dw_dat <= DAT_I;
+							dw_be  <= SEL_I;
 						end
 						ack   <= 1'b1;
 						state <= S_ACK;
@@ -221,6 +259,7 @@ module vax_cache #(
 					dw     <= 1'b1;
 					dw_adr <= {fill_la[IDXB+1:2], rd_idx};
 					dw_dat <= rd_dat;
+					dw_be  <= 4'b1111;
 					if (rd_idx == fill_la[1:0])
 						dout <= rd_dat;        // the longword the CPU asked for
 				end

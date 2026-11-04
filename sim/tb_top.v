@@ -5,7 +5,8 @@
 `default_nettype none
 
 module tb_top #(
-	parameter integer CL_SKEW = 0
+	parameter integer CL_SKEW = 0,
+	parameter integer TSCALE  = 16    // disk mechanical times / 16
 ) (
 	input         clk,
 	input         rst_mem,
@@ -41,7 +42,23 @@ module tb_top #(
 	output [15:0] audio,
 	output        led,
 	output        led_disk,
-	output        uart_txd
+	output        uart_txd,
+
+	// disk images, served by tb.cpp as the HPS would
+	output [31:0] dk_lba0,
+	output [31:0] dk_lba1,
+	output  [1:0] dk_rd,
+	output  [1:0] dk_wr,
+	input   [1:0] dk_ack,
+	input   [8:0] dk_buff_addr,
+	input   [7:0] dk_buff_dout,
+	input         dk_buff_wr,
+	output  [7:0] dk_buff_din0,
+	output  [7:0] dk_buff_din1,
+	input   [1:0] img_mounted,
+	input         img_readonly,
+	input  [63:0] img_size,
+	output        disk_active
 );
 
 	wire [12:0] sd_a;
@@ -53,7 +70,7 @@ module tb_top #(
 	wire [15:0] dq_bus = m_drive ? m_dq : sd_dq_oe ? sd_dq_o : 16'h0000;
 
 	vax_system #(.CLK_HZ(50000000), .CPB(`CLKPERBIT), .UART_CPB(434),
-	             .CACHEIDX(`CACHEIDX)) sys (
+	             .CACHEIDX(`CACHEIDX), .TSCALE(TSCALE)) sys (
 		.clk(clk), .rst_mem(rst_mem), .rst_sys(rst_sys),
 		.ioctl_download(ioctl_download), .ioctl_index(ioctl_index),
 		.ioctl_wr(ioctl_wr), .ioctl_addr(ioctl_addr), .ioctl_dout(ioctl_dout),
@@ -69,7 +86,13 @@ module tb_top #(
 		.sd_dq_o(sd_dq_o), .sd_dq_oe(sd_dq_oe), .sd_dq_i(dq_bus),
 		.ce_pix(ce_pix), .hs(hs), .vs(vs), .hblank(hblank), .vblank(vblank),
 		.r(r), .g(g), .b(b), .audio(audio),
-		.led_user(led), .led_disk(led_disk)
+		.led_user(led), .led_disk(led_disk),
+		.dk_lba0(dk_lba0), .dk_lba1(dk_lba1), .dk_rd(dk_rd), .dk_wr(dk_wr),
+		.dk_ack(dk_ack), .dk_buff_addr(dk_buff_addr),
+		.dk_buff_dout(dk_buff_dout), .dk_buff_wr(dk_buff_wr),
+		.dk_buff_din0(dk_buff_din0), .dk_buff_din1(dk_buff_din1),
+		.img_mounted(img_mounted), .img_readonly(img_readonly),
+		.img_size(img_size), .disk_active(disk_active)
 	);
 
 	// DQM_ON_A models the modules (128 MB among them) whose chips take their

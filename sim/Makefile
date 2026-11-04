@@ -1,19 +1,20 @@
 # Verilator simulation of the MiSTer port (run from the project root:
 #   make -C sim   then   sim/obj/Vtb_top software/hello.bin 0 "1000P~"   )
 MISTER = vax_uart.v vax_kbd.v vt_font.v vt_term.v vax_msg.v vax_selftest.v \
-         vax_sdram.v vax_cache.v vax_core.v vax_system.v
+         vax_sdram.v vax_cache.v vax_sbi.v vax_uba.v vax_mba.v vax_rp07.v vax_io.v \
+         vax_core.v vax_system.v
 RVAX = div.v ucode.v intrpt.v intclk.v constx.v consrx.v console.v mmu.v \
        argdecode.v alu.v vcache.v decunit.v fpunit.v cpu.v
 SRC = $(addprefix ../rtl/,$(RVAX)) $(addprefix ../rtl/mister/,$(MISTER)) sdram_model.v tb_top.v
 
-obj/Vtb_top: $(SRC) tb.cpp
+obj/Vtb_top: $(SRC) tb.cpp hpsdisk.h
 	verilator --cc --exe --build -j 4 -O2 -Wno-fatal -Wno-WIDTH -Wno-TIMESCALEMOD \
 	  -DMISTER -DCLKPERBIT=16 -DCACHEIDX=10 --public-flat-rw -I../rtl --top-module tb_top \
 	  -Mdir obj $(SRC) tb.cpp -CFLAGS "-O1 -w" -o Vtb_top
 
 # the same, optimized harder: for long runs (the Diagnostic Supervisor and
 # EVKAE, tests/evkae/run_sim.sh)
-obj_fast/Vtb_top: $(SRC) tb.cpp
+obj_fast/Vtb_top: $(SRC) tb.cpp hpsdisk.h
 	verilator --cc --exe --build -j 4 -O3 --x-assign fast --x-initial fast \
 	  -Wno-fatal -Wno-WIDTH -Wno-TIMESCALEMOD -DMISTER -DCLKPERBIT=16 -DCACHEIDX=10 \
 	  --public-flat-rw -I../rtl --top-module tb_top -Mdir obj_fast $(SRC) tb.cpp \
@@ -22,11 +23,13 @@ obj_fast/Vtb_top: $(SRC) tb.cpp
 fast: obj_fast/Vtb_top
 
 # CPU-level test bench (cpu, vcache, mmu, plain memory) for tests/mmu
-CPUTB = $(addprefix ../rtl/,$(RVAX)) cpu_tb/tb_cpu.v
+CPUTB = $(addprefix ../rtl/,$(RVAX)) ../rtl/mister/vax_sbi.v ../rtl/mister/vax_uba.v \
+        ../rtl/mister/vax_mba.v \
+        ../rtl/mister/vax_rp07.v ../rtl/mister/vax_io.v cpu_tb/ubdev.v cpu_tb/tb_cpu.v
 
 cputb: obj_cpu/Vtb_cpu
 
-obj_cpu/Vtb_cpu: $(CPUTB) cpu_tb/tb_cpu.cpp
+obj_cpu/Vtb_cpu: $(CPUTB) cpu_tb/tb_cpu.cpp hpsdisk.h
 	verilator --cc --exe --build -j 4 -O2 -Wno-fatal -Wno-WIDTH -Wno-TIMESCALEMOD \
 	  -DMISTER -DCLKPERBIT=16 --public-flat-rw -I../rtl --top-module tb_cpu \
 	  -Mdir obj_cpu $(CPUTB) cpu_tb/tb_cpu.cpp -CFLAGS "-O1 -w" -o Vtb_cpu

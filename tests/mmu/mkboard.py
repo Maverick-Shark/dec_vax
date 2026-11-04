@@ -20,6 +20,8 @@ A test with ";@ board=halt" (t16_isnv) ends in a processor halt; it runs
 last and is checked by eye: the console must show the halt code. Tests with
 ";@ board=skip" (other processor halts) are left out. A HALT that is itself
 under test is written as ".byte 0", so that it is not turned into the exit.
+A test the reference simulator does not run (";@ noref") is checked against
+what it expects (";@ expect=", ";@ rtl=") instead.
 
 Load the result at 1000 and start it there (the OSD defaults). Needs the
 reference simulator (see run.py).
@@ -80,6 +82,16 @@ def board_source(path):
 def expected_entries(d):
     """(what, rtl key) for everything run.py compares, in table order."""
     ents = []
+    if d['noref']:
+        # no reference run: what the test states it expects
+        for i in range(15):
+            if 'R%d' % i in d['expect']:
+                ents.append((REG + i, 'R%d' % i))
+        if 'PSL' in d['expect']:
+            ents.append((PSL, 'PSL'))
+        for key in sorted(d['rtl']):
+            ents.append((int(key[1:], 16), key))
+        return ents
     for i in range(15):
         if 'R%d' % i not in d['ignore']:
             ents.append((REG + i, 'R%d' % i))
@@ -152,7 +164,8 @@ def main():
             raise SystemExit('%s: does not start at %X' % (name, TBASE))
         img = bytearray(img)
         if not halts:
-            res = run_ref(binf, syms['finish'], d['dump'], work)
+            res = d['expect'] if d['noref'] else \
+                run_ref(binf, syms['finish'], d['dump'], work)
             table = [len(ents)]
             for what, key in ents:
                 val = d['rtl'].get(key, res.get(key))

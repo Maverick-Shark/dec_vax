@@ -12,7 +12,9 @@ supervisor too. Then M7: floating point in its four formats, with a
 floating point unit in the datapath, the octaword instructions and the
 two-byte opcodes, which completes the VAX instruction set but for PDP-11
 compatibility mode; DEC's floating point exerciser, EVKAC, runs under the
-supervisor.
+supervisor. Then M8: the 8600's I/O side - the physical address memory map,
+SBIA 0, the RH780 Massbus adapter with two RP07 disks on SD card images and
+the DW780 Unibus adapter.
 
 Relative size: **S** a change in one module, **M** a new module or a block of
 microcode, **L** a subsystem, **XL** the largest pieces.
@@ -58,8 +60,15 @@ OpenVMS VAX 7.3, the last VAX release, still supports the 8600.
   addressing mode faults, HALT as a privileged instruction, trace (PSL<T>,
   <TP>), the arithmetic traps, the 8600's halt codes, its internal registers,
   a console halt with Ctrl+P or from the OSD.
-- 47 directed and random tests (`tests/mmu`) give the same results as the
-  reference simulator; `software/mmutest.bin` runs them on the core. **EVKAE**, DEC's
+- **The 8600's I/O side** (M8, below): the physical address memory map,
+  SBIA 0 with interrupts and DMA, the 8600's machine checks, an RH780
+  Massbus adapter with two RP07 disks on SD card images, and a DW780
+  Unibus adapter, with no devices on its Unibus yet
+  ([docs/IO.md](docs/IO.md)).
+- 60 directed and random tests (`tests/mmu`) give the same results as the
+  reference simulator, or the values DEC's documents give where the
+  simulator models the 8600 differently; `software/mmutest.bin` runs them on
+  the core. **EVKAE**, DEC's
   privileged architecture exerciser, passes 10 of its 11 tests under the 8600
   Diagnostic Supervisor (loaded as a memory image taken from a simulator); the
   eleventh needs compatibility mode. **EVKAB**, the basic instruction
@@ -67,7 +76,8 @@ OpenVMS VAX 7.3, the last VAX release, still supports the 8600.
 - 16 KB cache in M10K, SDRAM controller with read-phase calibration, power-on
   memory test, on-screen VT terminal with USB keyboard, MiSTer UART, program
   loader with autostart, and r-vax's hardware console monitor (`>` prompt).
-- Not there yet: PDP-11 compatibility mode, real I/O adapters, and a disk.
+- Not there yet: PDP-11 compatibility mode, Unibus devices, and a way to
+  boot from the disks (VMB).
 
 ## Milestone 3: Halt, and the tools for everything after
 
@@ -126,7 +136,7 @@ cross-compiler gives the same trace on the core and on the simulator.
 | Exceptions and privileged architecture | Every SCB vector with its parameters; four access modes with five stack pointers; CHMx; REI with all its checks; ASTs (ASTLVL); software interrupts; LDPCTX/SVPCTX; privileged-instruction checks; arithmetic traps; trace; 8600 machine-check frame; kernel stack not valid; the 8600's halt codes. | Done: SCB dispatch for the interval timer, console and software interrupts; CHMK, CHME, CHMS, CHMU; BPT, XFC; reserved instruction, reserved operand and reserved addressing mode faults; machine check and the memory management faults; kernel stack not valid; interrupt stack not valid; REI with all its checks; AST delivery; LDPCTX/SVPCTX; MTPR/MFPR privileged and checked; trace; the arithmetic traps (integer overflow, integer and decimal divide by zero, decimal overflow, subscript range); the 8600's halt codes (4, 6, 7, 8, A, B, 11). the floating faults (overflow, divide by zero, underflow; types 8, 9, A). Missing: PDP-11 compatibility mode, the 8600 machine-check frame's contents. |
 | Memory management | P0, P1 and S0 regions, page tables, translation buffer, protection, modify bit, access-violation and translation-not-valid faults, restartable instructions. | Done, in simulation ([docs/MMU.md](docs/MMU.md)). |
 | 8600 registers | SID with type 4; IPRs ACCS, PAMACC, PAMLOC, CSWP, MDECC, MENA, MDCTL, MCCTL, MERG, CRBT, DFI, EHSR, STXCS, STXDB, ESPA, ESPD; console registers with the 8600's ID codes (console terminal, remote services, environmental monitor, logical console). | SID returns `040704D2`: type 4 (8600), ECO level 7, serial number 1234. ACCS (no accelerator), PAMACC, PAMLOC, CSWP, MDCTL, MERG, CRBT, EHSR and PME are there; MDECC, MENA, MCCTL, DFI, ESPA and ESPD are not yet (reserved operands, as the 780's and 750's registers are). Missing: STXCS and STXDB (console storage); console registers in the basic 780 format. |
-| I/O | SBIA with SBI fault and error registers; memory controllers; DW780 Unibus adapter (map registers, interrupt vectors); RH780 Massbus adapter (map registers); disks behind them; interrupts at IPL 20-23; DMA. | Fixed-value stubs for the SBIA, DW780 and RH780 configuration registers. No DMA, no device interrupts. |
+| I/O | SBIA with SBI fault and error registers; memory controllers; DW780 Unibus adapter (map registers, interrupt vectors); RH780 Massbus adapter (map registers); disks behind them; interrupts at IPL 20-23; DMA. | Done ([docs/IO.md](docs/IO.md)): the PAMM (the 8600's memory arrays hang off the MBox, not the SBI), SBIA 0 with its registers, errors, interrupts and DMA side, the RH780 at TR 8 with two RP07 disks on SD card images, the DW780 at TR 3 with its map, data paths and interrupts. Missing: Unibus devices. |
 | Boot | The console loads VMB.EXE at `0x200` with R0-R5 describing the boot device. | Programs are loaded from the OSD and started by the monitor. |
 
 ## How the MMU was built
@@ -250,30 +260,51 @@ simulator - true for the 21 that exist.
 **Done when:** the random comparison is clean and the Diagnostic Supervisor's
 EVKAC passes - both true in simulation.
 
-### M8 - SBI, Massbus disk and Unibus (XL)
+### M8 - SBI, Massbus disk and Unibus (XL) - done
 
-- The SBIA for real: configuration, silo, fault and error registers, nexus
-  interrupts at IPL 20-23 with the 8600's vectors.
-- Memory controller registers at TR 1 and 2, reporting the memory size.
-- RH780 Massbus adapter at TR 8: its registers and map, DMA, interrupts. The
-  disk behind it: an **RP07** (516 MB, enough for VMS 7.3) on the MiSTer SD
-  card through `sd_lba`/`sd_rd`/`sd_wr`, as a raw image of the disk's
-  blocks. Massbus disks are register-level devices, much simpler than MSCP, and
-  an 8600 could boot from them.
-- DW780 Unibus adapter at TR 3: map registers, data paths, interrupt vector
-  registers. Behind it, later: a DZ11 for more terminals on the MiSTer UART, a
-  UDA50 if MSCP disks are ever wanted.
-- Every DMA write invalidates the matching cache lines.
+- 8.1 (done): the 8600's I/O side as DEC documents it - the physical
+  address memory map (PAMM) in the MBox, which also says how much memory
+  there is (the 8600 has no memory controllers on the SBI: its arrays hang
+  off the MBox); SBIA 0 with its registers, CPU transactions to the SBI,
+  timeouts and errors; the 8600's machine check frame and EHSR; SBI
+  interrupts at IPL 20-23 (14-17 hex) with the interrupt summary read and
+  the 8600's vectors. Tests t47-t49.
+- 8.2 (done): byte masks on every physical reference; the MBox's DMA port,
+  sharing memory with the CPU through the cache (which writes through, so
+  DMA and the CPU always see the same memory); the SBIA's DMA side, its
+  transaction buffers, quadclear and the memory interlock. Test t50.
+- 8.3 (done): the RH780 Massbus adapter at TR 8 (BR5) - registers, map,
+  silo, DMA, interrupts, its errors - with two **RP07** drives (516 MB,
+  enough for VMS 7.3) whose disks are raw images on the MiSTer SD card,
+  through `sd_lba`/`sd_rd`/`sd_wr`, mounted from the OSD. Massbus disks are
+  register-level devices, much simpler than MSCP, and an 8600 could boot
+  from them. Tests t51-t54, on the CPU bench and on the full system.
+- 8.4 (done): the DW780 Unibus adapter at TR 3 (its own interrupts on
+  BR4) - registers, software references to the Unibus with its timeouts,
+  the 496 map registers, the direct data path and 15 buffered data paths
+  (prefetch, purge, byte offset, longword access mode), its DMA errors,
+  Unibus interrupts through the BRRVRs, the adapter's initialization and
+  the Unibus power fail sequence. Tests t55-t59; t59 with a test device on
+  the CPU bench's Unibus. Behind it, later: a DZ11 for more terminals on
+  the MiSTer UART, a UDA50 if MSCP disks are ever wanted.
 
-**Done when:** the core and a reference simulator read and write the same
-image identically.
+All of it in [docs/IO.md](docs/IO.md).
+
+**Done when:** the adapters behave as DEC's documents say, test by test
+(the reference simulator models them differently in several places, so the
+tests check DEC's values), and an image written by the core reads back the
+same on a reference simulator and the other way round.
 
 ### M9 - Boot like an 8600 (M)
 
 - VMB.EXE, DEC's primary bootstrap, loaded at `0x200` with R0 = device type,
   R1 = adapter TR, R2 and R3 = unit, R5 = boot flags, as the 8600 console does.
   A *Boot* entry in the OSD (or a `B` command in the monitor) sets them for the
-  RP07. VMS media carry their own VMB.EXE.
+  RP07. VMS media carry their own VMB.EXE. The console's side is in
+  *OpenVMS Systems Operations Guide: VAX 8600 Systems* (EK-V8600-OG,
+  chapter 3): the boot command procedures on the console RL02 (DB0BOO.COM
+  and the others for an RP07: device code DB), what they deposit in R0-R5
+  and `LOAD/START:@ VMB`.
 - The 8600/8650 Diagnostic Supervisor (EDSAA) from `VAX_MINIMUM_DIAGS.dsk`,
   with EVKAB (basic instructions), EVKAC (floating point), EVKAD
   (compatibility mode, once it exists) and EVKAE (privileged architecture).

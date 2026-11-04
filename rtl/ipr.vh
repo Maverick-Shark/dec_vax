@@ -105,3 +105,6 @@
    operand in / result out, 55 integer in and out, 56 N and Z, 58-5B
    scratch */
 `define IPR_FPU		7'h50
+/* the machine check frame (cpu.v, mc_frame): write the index of a
+   longword (0 EHM.STS ... 21 CSES), read it */
+`define IPR_MCFRAME	7'h7a

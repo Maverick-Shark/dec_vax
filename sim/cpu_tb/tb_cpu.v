@@ -5,18 +5,40 @@
 // dumps registers and memory when it halts. Used to compare the RTL with
 // a VAX 8600 reference simulator on small test programs (tests/mmu).
 //
-// Memory: 8 MB at physical 0. Every access takes MEMLAT clocks; addresses
+// Disks: the RH780 at TR 8 with two RP07 drives; the C++ driver serves
+// their images (DISK0, DISK1) the way the HPS does on the board.
+//
+// Unibus: the DW780 at TR 3 with a test device on its Unibus (ubdev.v,
+// registers at 777400): device registers, interrupts and device DMA.
+//
+// Memory: 32 MB at physical 0. Every access takes MEMLAT clocks; addresses
 // beyond the memory and I/O space are never acknowledged, so they end in the
 // CPU's bus-timeout machine check like on the real board.
 
 `default_nettype none
 
 module tb_cpu #(
-	parameter MEMLAT = 2
+	parameter MEMLAT = 2,
+	parameter TSCALE = 16           // the disks' mechanical times / 16
 ) (
 	input         clk,
 	input         rst,
-	output        halted
+	output        halted,
+
+	// the disk images, played by the C++ driver as the HPS would
+	output [31:0] sd_lba0,
+	output [31:0] sd_lba1,
+	output  [1:0] sd_rd,
+	output  [1:0] sd_wr,
+	input   [1:0] sd_ack,
+	input   [8:0] sd_buff_addr,
+	input   [7:0] sd_buff_dout,
+	input         sd_buff_wr,
+	output  [7:0] sd_buff_din0,
+	output  [7:0] sd_buff_din1,
+	input   [1:0] img_mounted,
+	input         img_readonly,
+	input  [63:0] img_size
 );
 
 	wire        mcheck;
@@ -33,6 +55,10 @@ module tb_cpu #(
 	wire        ipr_we;
 	wire  [6:0] ipr_adr;
 	wire [31:0] ipr_dat;
+
+	wire        io_err;
+	wire  [4:0] io_ipl, pamm_rd;
+	wire [31:0] io_mstat2, io_mear;
 
 	cpu cpu (
 		.clk        (clk),
@@ -61,11 +87,17 @@ module tb_cpu #(
 		.tti_rx     (1'b1),
 		.halt_req   (1'b0),
 		.cpu_halted (halted),
-		.cpu_mcheck (mcheck)
+		.cpu_mcheck (mcheck),
+		.IO_ERR_I   (io_err),
+		.IO_MSTAT2_I(io_mstat2),
+		.IO_MEAR_I  (io_mear),
+		.IO_IPL_I   (io_ipl),
+		.PAMM_I     (pamm_rd)
 	);
 
 	wire        va_write, va_stb, va_ack;
 	wire [31:0] va_addr, va_wdata, va_rdata;
+	wire  [3:0] va_sel;
 
 	vcache vcache (
 		.clk        (clk),
@@ -83,6 +115,7 @@ module tb_cpu #(
 		.UT_STB_O   (va_stb),
 		.UT_ADR_O   (va_addr),
 		.UT_DAT_O   (va_wdata),
+		.UT_SEL_O   (va_sel),
 		.UT_WE_O    (va_write),
 		.UT_DAT_I   (va_rdata),
 		.UT_ACK_I   (va_ack)
@@ -90,6 +123,7 @@ module tb_cpu #(
 
 	wire        bus_write, bus_stb, bus_ack;
 	wire [31:0] bus_addr, bus_wdata, bus_rdata;
+	wire  [3:0] bus_sel;
 
 	mmu mmu (
 		.clk        (clk),
@@ -98,6 +132,7 @@ module tb_cpu #(
 		.IN_WE_I    (va_write),
 		.IN_ADR_I   (va_addr),
 		.IN_DAT_I   (va_wdata),
+		.IN_SEL_I   (va_sel),
 		.IN_DAT_O   (va_rdata),
 		.IN_ACK_O   (va_ack),
 		.cpu_stb    (cpu_stb),
@@ -120,19 +155,118 @@ module tb_cpu #(
 		.UT_WE_O    (bus_write),
 		.UT_ADR_O   (bus_addr),
 		.UT_DAT_O   (bus_wdata),
+		.UT_SEL_O   (bus_sel),
 		.UT_DAT_I   (bus_rdata),
 		.UT_ACK_I   (bus_ack)
 	);
 
+	// ---------------------------------------------- I/O side (vax_io.v)
+	wire        mem_stb, mem_we;
+	wire [31:0] mem_adr, mem_wdat, mem_rdat;
+	wire  [3:0] mem_sel;
+	wire        mem_ack;
+	// the Unibus (the DW780's) and the test device on it
+	wire [17:0] ub_a, dv_a;
+	wire  [1:0] ub_c, dv_c;
+	wire [15:0] ub_d, ub_rd, dv_d, dv_rd, ub_vec;
+	wire        ub_msyn, ub_ssyn, dv_npr, dv_npg, dv_msyn, dv_ssyn;
+	wire  [3:0] ub_br, ub_bg;
+	wire        ub_intr, ub_init;
+
+	vax_io #(.CLK_HZ(50000000), .MEMMB(32), .TSCALE(TSCALE)) io (
+		.clk      (clk),
+		.rst      (rst),
+		.stb      (bus_stb),
+		.we       (bus_write),
+		.adr      (bus_addr),
+		.wdat     (bus_wdata),
+		.sel      (bus_sel),
+		.rdat     (bus_rdata),
+		.ack      (bus_ack),
+		.ipr_we   (ipr_we),
+		.ipr_adr  (ipr_adr),
+		.ipr_dat  (ipr_dat),
+		.pamm_rd  (pamm_rd),
+		.m_stb    (mem_stb),
+		.m_we     (mem_we),
+		.m_adr    (mem_adr),
+		.m_wdat   (mem_wdat),
+		.m_sel    (mem_sel),
+		.m_rdat   (mem_rdat),
+		.m_ack    (mem_ack),
+		.io_err   (io_err),
+		.io_mstat2(io_mstat2),
+		.io_mear  (io_mear),
+		.io_ipl   (io_ipl),
+		.sd_lba0  (sd_lba0),
+		.sd_lba1  (sd_lba1),
+		.sd_rd    (sd_rd),
+		.sd_wr    (sd_wr),
+		.sd_ack   (sd_ack),
+		.sd_buff_addr(sd_buff_addr),
+		.sd_buff_dout(sd_buff_dout),
+		.sd_buff_wr  (sd_buff_wr),
+		.sd_buff_din0(sd_buff_din0),
+		.sd_buff_din1(sd_buff_din1),
+		.img_mounted (img_mounted),
+		.img_readonly(img_readonly),
+		.img_size    (img_size),
+		.disk_active (),
+		.ub_a     (ub_a),
+		.ub_c     (ub_c),
+		.ub_d     (ub_d),
+		.ub_msyn  (ub_msyn),
+		.ub_ssyn  (ub_ssyn),
+		.ub_rd    (ub_rd),
+		.dv_npr   (dv_npr),
+		.dv_npg   (dv_npg),
+		.dv_a     (dv_a),
+		.dv_c     (dv_c),
+		.dv_d     (dv_d),
+		.dv_msyn  (dv_msyn),
+		.dv_ssyn  (dv_ssyn),
+		.dv_rd    (dv_rd),
+		.ub_br    (ub_br),
+		.ub_bg    (ub_bg),
+		.ub_intr  (ub_intr),
+		.ub_vec   (ub_vec),
+		.ub_init  (ub_init)
+	);
+
+	// a test device on the DW780's Unibus (cpu_tb/ubdev.v), at 777400
+	ubdev ubd (
+		.clk     (clk),
+		.rst     (rst),
+		.ub_a    (ub_a),
+		.ub_c    (ub_c),
+		.ub_d    (ub_d),
+		.ub_msyn (ub_msyn),
+		.ub_ssyn (ub_ssyn),
+		.ub_rd   (ub_rd),
+		.dv_npr  (dv_npr),
+		.dv_npg  (dv_npg),
+		.dv_a    (dv_a),
+		.dv_c    (dv_c),
+		.dv_d    (dv_d),
+		.dv_msyn (dv_msyn),
+		.dv_ssyn (dv_ssyn),
+		.dv_rd   (dv_rd),
+		.ub_br   (ub_br),
+		.ub_bg   (ub_bg),
+		.ub_intr (ub_intr),
+		.ub_vec  (ub_vec),
+		.ub_init (ub_init)
+	);
+
 	// ---------------------------------------------------------- memory
-	reg  [31:0] mem [0:(1<<21)-1];
+	// 32 MB, as in the full system and the reference simulator's runs
+	reg  [31:0] mem [0:(1<<23)-1];
 	reg  [31:0] rdat;
 	reg         ack;
 	reg   [3:0] cnt;
-	wire        hit = (bus_addr[31:23] == 9'd0);
 
-	assign bus_rdata = (bus_stb && ack) ? rdat : 32'd0;
-	assign bus_ack   = bus_stb && ack;
+	assign mem_rdat = (mem_stb && ack) ? rdat : 32'd0;
+	assign mem_ack  = mem_stb && ack;
 
 	// statistics for the driver
 	reg  [31:0] nread, nwrite;
@@ -142,17 +276,20 @@ module tb_cpu #(
 	end
 
 	always @(posedge clk) begin
-		if (!bus_stb) begin
+		if (!mem_stb) begin
 			ack <= 1'b0;
 			cnt <= 0;
-		end else if (hit && !ack) begin
+		end else if (!ack) begin
 			cnt <= cnt + 1'b1;
 			if (cnt == MEMLAT - 1) begin
-				if (bus_write) begin
-					mem[bus_addr[22:2]] <= bus_wdata;
+				if (mem_we) begin
+					if (mem_sel[0]) mem[mem_adr[24:2]][7:0]   <= mem_wdat[7:0];
+					if (mem_sel[1]) mem[mem_adr[24:2]][15:8]  <= mem_wdat[15:8];
+					if (mem_sel[2]) mem[mem_adr[24:2]][23:16] <= mem_wdat[23:16];
+					if (mem_sel[3]) mem[mem_adr[24:2]][31:24] <= mem_wdat[31:24];
 					nwrite <= nwrite + 1;
 				end else begin
-					rdat <= mem[bus_addr[22:2]];
+					rdat <= mem[mem_adr[24:2]];
 					nread <= nread + 1;
 				end
 				ack <= 1'b1;

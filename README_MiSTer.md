@@ -28,7 +28,12 @@ exerciser, all of its 98, and **EVKAE**, the privileged architecture
 exerciser, 10 of its 11; the other one needs PDP-11 compatibility mode,
 which the 8600 has and the core does not yet (see *Running the Diagnostic
 Supervisor and EVKAE*, *Running EVKAB* and *Running EVKAC*).
-OpenVMS cannot run yet: there is no disk controller.
+The 8600's **I/O side** is there too: the physical address memory map,
+SBIA 0 with its interrupts and DMA, the 8600's machine checks, an **RH780
+Massbus adapter with two RP07 disks** whose contents are disk images on the
+SD card, mounted from the OSD, and a **DW780 Unibus adapter**, with no
+devices on its Unibus yet ([docs/IO.md](docs/IO.md)). OpenVMS cannot run
+yet: nothing boots it from the disk (VMB, milestone 9).
 See *What is missing*, and [ROADMAP.md](ROADMAP.md) for the plan.
 
 ```
@@ -51,7 +56,10 @@ See *What is missing*, and [ROADMAP.md](ROADMAP.md) for the plan.
 | Floating point unit | `rtl/fpunit.v` | F, D, G and H floating point, exactly rounded ([docs/FPU.md](docs/FPU.md)) |
 | Cache | `rtl/mister/vax_cache.v` | 16 KB, M10K block RAM |
 | Memory | `rtl/mister/vax_sdram.v` | 32 MB on the MiSTer SDRAM module |
-| Bus and I/O stubs | `rtl/mister/vax_core.v` | SBI, DW780 (TR3), RH780 (TR8) registers |
+| MBox and SBIA | `rtl/mister/vax_io.v`, `vax_sbi.v` | Physical address memory map, SBIA 0, machine checks, DMA ([docs/IO.md](docs/IO.md)) |
+| Massbus | `rtl/mister/vax_mba.v`, `vax_rp07.v` | RH780 at TR 8, two RP07 disks on SD card images |
+| Unibus | `rtl/mister/vax_uba.v` | DW780 at TR 3: map, data paths, Unibus interrupts; no devices yet |
+| Bus | `rtl/mister/vax_core.v` | CPU, memory and I/O put together |
 | Power-on test | `rtl/mister/vax_selftest.v`, `vax_msg.v` | Memory test and banner |
 | Console terminal | `rtl/mister/vt_term.v`, `vt_font.v` | 80x30, VT100 subset |
 | Keyboard | `rtl/mister/vax_kbd.v` | USB keyboard, US or ES layout |
@@ -103,41 +111,55 @@ the difference between that and a real VT100 on a 25-pin plug.
 
 The CPU has a single 32-bit synchronous master port with a strobe/acknowledge
 handshake (the `STB`/`ACK` pair of a Wishbone-style bus, without the rest of
-Wishbone). Everything hangs off it in a flat decode, and the slaves' read data
-is simply OR-ed together, which is r-vax's own convention and is kept here.
+Wishbone). Behind the MMU, the core is laid out as the VAX 8600 is: the MBox
+sends every physical reference where the physical address memory map says,
+memory or the SBI adapter, and the SBI's DMA comes back the same way.
 
 ```
-cpu ── vcache ── mmu ──┬── vax_cache ── vax_sdram ── 32 MB SDRAM   (0000 0000-01FF FFFF)
-     (aligner)         │
-                       └── SBI / DW780 / RH780 register stubs       (2000 0000 and up)
+cpu ── vcache ── mmu ── vax_io (MBox) ──┬── memory: vax_cache ── vax_sdram ── 32 MB SDRAM
+     (aligner)                          │       ^ DMA
+                                        ├── SBIA 0 ── SBI ──┬── TR 8: RH780 ── Massbus ── RP07 0, 1
+                                        │                   │                  (images on the SD card)
+                                        │                   └── TR 3: DW780 ── Unibus (no devices yet)
+                                        └── nothing: non-existent memory (machine check)
 ```
 
 * **`vcache.v`** despite its name is not a cache. It is the alignment unit: the
   VAX allows a longword operand to start on any byte, so this block turns one
-  unaligned CPU access into one or two aligned longword bus cycles, and does
-  the read-modify-write for byte and word stores. Everything below it sees
-  nothing but full longword transfers.
+  unaligned CPU access into one or two aligned longword bus cycles, each with
+  the byte mask of the bytes it carries (a write writes only those, without
+  reading the longword first).
 
 * **`mmu.v`** translates virtual to physical addresses when `MAPEN` is set,
   with the VAX 8600's translation buffer (512 entries), and refuses accesses
   the page tables do not allow; the CPU then takes the fault and restarts the
   instruction. With mapping off it is a wire. See [docs/MMU.md](docs/MMU.md).
 
+* **`vax_io.v`** is the 8600's MBox: the physical address memory map (PAMM),
+  a code for each megabyte, decides whether a reference goes to the memory
+  arrays, to SBIA 0 or nowhere, and a reference that goes nowhere, or that the
+  SBIA cannot complete, is the 8600's machine check, with its frame. The SBI's
+  DMA goes through the PAMM and the cache like the CPU's references.
+
+* **`vax_sbi.v`** is SBIA 0: its registers, CPU transactions to the nexus
+  with their timeouts and errors, the interrupt summary reads that give the
+  SBI's interrupt vectors, and its DMA side.
+
+* **`vax_mba.v`** is the RH780 Massbus adapter at TR 8, interrupting on BR5
+  (SCB 160); **`vax_rp07.v`** an RP07 drive, units 0 and 1. See *Disks*
+  below.
+
 * **`vax_cache.v`** is the real cache, added by this port (see below).
 
-* **The I/O adapters are stubs.** At 2000 0000h the core answers the SBI
-  adapter configuration and silo registers, the DW780 Unibus adapter at TR 3
-  and the RH780 Massbus adapter at TR 8, with the fixed values a VAX expects to
-  read when it probes for them. There is no Unibus, no Massbus and no device
-  behind any of it. An address that matches nothing gets no acknowledge, the
-  CPU's 128-clock bus timer expires, and that becomes a machine check - halt
-  code 2 on the console, which is how you can tell "nothing is there" from
-  "something answered wrongly".
+* **`vax_uba.v`** is the DW780 Unibus adapter at TR 3, its own interrupts
+  on BR4 (SCB 10C): its registers, the CPU's references to the Unibus, the
+  map registers and the direct and buffered data paths for the DMA of
+  Unibus devices, the Unibus's interrupts through its vector registers.
+  There are no devices on its Unibus yet; the CPU test bench has a test
+  device there.
 
-* **No DMA and no interrupts from I/O.** The only other bus master is the
-  program loader and the power-on memory test, and both only run while the CPU
-  is held in reset. The interval timer (`intclk.v`) and the console receive and
-  transmit interrupts are wired through `intrpt.v` as on a real machine.
+All of it is described, with the DEC documents it follows, in
+[docs/IO.md](docs/IO.md).
 
 ## Memory: the cache and the microcode in block RAM
 
@@ -389,6 +411,7 @@ microseconds *before* that reset, and the reset wiped the start of the banner:
 | Option | Meaning |
 |---|---|
 | Load Program | Loads a `.BIN`/`.EXE` image into RAM at *Load Address*. The CPU is held in reset while loading, and that reset initializes it (see below), whatever was running |
+| RP07 Unit 0, RP07 Unit 1 | Mount a disk image (`.dsk`, `.img`) on the RP07 at Massbus unit 0 or 1 (see *Disks*) |
 | Load Address | `0x00001000` (default), `0x00000000`, `0x00000200`, `0x00010000` |
 | Start Address | *Load address*, or `0x00000200` - DEC stand-alone diagnostics load at 0 and start at 200h |
 | Autostart | After a load, types `FR<start address><CR>G` into the monitor |
@@ -400,7 +423,36 @@ microseconds *before* that reset, and the reset wiped the start of the banner:
 | Run Memory Test | Runs it again now. **This clears the first 64 KB of RAM** |
 | Ctrl+P | *Halts the CPU* (default): Ctrl+P on the keyboard, or on the MiSTer UART when *UART Console In* is on, stops the running program as a VAX 8600 console does. *Is a character*: it goes to the program like any other key |
 | Halt CPU (Ctrl+P) | Stops the running program now, like Ctrl+P |
+| Aspect Ratio | Original (4:3), Full Screen, or the two custom ratios of the MiSTer's settings |
+| Disk LED | What LED_DISK shows: *Disk activity* (default), an RP07 seeking or transferring, or its image being read or written on the SD card; *CPU running*, on while the CPU runs and off in the monitor |
 | Reset | Resets the CPU and clears the screen. RAM keeps its contents |
+
+### Disks
+
+The core has an RH780 Massbus adapter at TR 8 (2001 0000) with two RP07
+drives, units 0 and 1 (VMS calls them DBA0 and DBA1). An RP07 holds 630
+cylinders of 32 tracks of 50 sectors of 512 bytes: 1 008 000 sectors,
+516 096 000 bytes. Each drive's disk is an image file on the SD card, mounted
+with *RP07 Unit 0* / *RP07 Unit 1* in the OSD:
+
+* The image is the sectors in order, sector
+  (cylinder * 32 + track) * 50 + sector, the low byte of each 16-bit word
+  first. RP07 images made by the reference simulator are the same thing and
+  can be used as they are.
+* A new, empty disk is a file of zeros of the right size, for instance
+  `dd if=/dev/zero of=rp07.dsk bs=512 count=1008000`. A smaller file works
+  too: the sectors beyond its end read as zeros and are not written.
+* An image on a read-only file is write-locked (DS<WRL>), as the drive's
+  WRITE PROTECT switch would make it.
+* Mounting an image is the drive coming on line (attention, the pack not yet
+  acknowledged); mounting another one, or none, takes it off line first. A
+  drive with no image is there (registers, DPR) but off line.
+* Software waits for the RP07 as for a real one: 3633 rpm, 330 us a sector,
+  5 to 46 ms a seek. If the SD card is slower than the platter, a sector
+  waits for its data.
+
+Nothing boots from the disks yet (VMB, ROADMAP milestone 9): for now they are
+for programs and diagnostics that drive the RH780 themselves.
 
 ### Loading and running a program
 
@@ -456,8 +508,10 @@ The CPU stops at the end of the current instruction, the monitor prints
 Registers and memory are untouched: `FR` shows where it stopped, and `G`
 continues from there.
 
-LED_USER blinks on console activity; LED_DISK is on while the CPU is running
-and off while it sits in the monitor.
+LED_USER blinks on console activity. LED_DISK follows the *Disk LED*
+option: disk activity (each burst lit for at least 50 ms, so a single
+sector shows), or on while the CPU is running and off while it sits in the
+monitor.
 
 ### The power-on memory test
 
@@ -909,19 +963,23 @@ with the page faults. To run it there:
 
 `software/mmutest.bin` runs the programs of `tests/mmu` on the core itself
 and checks each one against the results a VAX 8600 reference simulator gave
-for the same program, which are stored inside the file. Besides memory management they
+for the same program, or, where the simulator models the 8600 differently
+(the I/O side), the values DEC's documents give; both are stored inside the
+file. Besides memory management they
 cover CHMx, BPT, XFC, CASE, the bit branches, ACB, the 8600's internal
 registers, the reserved addressing mode fault, interrupts after byte and
 word instructions, the arithmetic traps, trace, the string, queue and
 packed decimal instructions (the decimal ones and EDITPC on a few hundred
 random operands), the octaword instructions and the floating point ones
-(some 1 600 random cases of the four formats, and their faults). (Three
-programs that end in a processor halt other than
-t16's, `t22`-`t24`, are only run in simulation.)
+(some 1 600 random cases of the four formats, and their faults), and the
+I/O side: the PAMM, SBIA 0, machine checks, the RH780 and the DW780. (The
+programs that end in a processor halt other than t16's, `t22`-`t24` and
+`t49`, those that need generated disks, `t52`-`t54`, and `t59`, which needs
+the test bench's Unibus device, are only run in simulation.)
 
 1. OSD: *Load Address* = `0x00001000`, *Start Address* = *Load address*,
    *Autostart* = Yes (the settings for `hello.bin`).
-2. *Load Program* -> `mmutest.bin`. About six seconds later the screen
+2. *Load Program* -> `mmutest.bin`. About seven seconds later the screen
    shows:
 
 ```
@@ -931,9 +989,9 @@ architecture), checked against their expected results
 t00_harness....... PASS
 t01_xlate......... PASS
    ...
-t46_fpexc......... PASS
+t58_ubainit....... PASS
 
-Passed: 43   Failed: 00
+Passed: 51   Failed: 00
 All tests passed.
 
 Last, t16_isnv: the CPU must halt here with code 00000004.
@@ -1072,8 +1130,10 @@ The plan for all of this, in order, is in [ROADMAP.md](ROADMAP.md).
   the architecture allows, and hold off interrupts until they finish: some
   tens of microseconds for EDITPC and the decimal ones, but tens of
   milliseconds for a MOVTC of 65535 bytes.
-- **Mass storage.** An MSCP/UDA50 or Massbus disk behind the MiSTer SD
-  interface (`sd_lba`/`sd_rd`) is the next large step.
+- **Booting from disk.** The RP07s are there, but nothing loads VMB, DEC's
+  primary bootstrap, from them yet (milestone 9).
+- **Unibus devices.** The DW780 is there, but nothing is on its Unibus yet
+  (a DZ11 for more terminals is the first candidate).
 - **Terminal.** No scrolling regions (`ESC [ t;b r`), no insert/delete line, no
   answerback (`ESC [ c`, `ESC [ 6 n`).
 - **Speed.** About 40 clocks per instruction is r-vax's microarchitecture, not
@@ -1090,7 +1150,8 @@ The plan for all of this, in order, is in [ROADMAP.md](ROADMAP.md).
 make -C sim                      # full system: CPU + cache + SDRAM model + terminal
 make -C sim unit                 # terminal and keyboard only
 make -C sim nocache              # same, with the cache forced to always miss
-make -C sim cputb                # CPU, aligner, MMU and plain memory, for tests/mmu
+make -C sim cputb                # CPU, aligner, MMU, I/O side and plain memory, for tests/mmu
+                                 # (with generated RP07 disks and a Unibus test device)
 make -C sim fast                 # full system, optimised harder, for long runs
 make -C sim dutb && sim/obj_du/Vdecunit 20000   # the decimal unit against a C model
 make -C sim fputb && python3 sim/fpu_tb/vaxfp.py v.txt 20000 && sim/obj_fpu/Vfpunit v.txt
@@ -1098,6 +1159,9 @@ make -C sim fputb && python3 sim/fpu_tb/vaxfp.py v.txt 20000 && sim/obj_fpu/Vfpu
 make -C sim dqma                 # full system, SDRAM byte masks on A11/A12 (128 MB modules)
 make -C sim lint                 # the whole design through Icarus Verilog as well
 python3 tests/mmu/run.py         # the tests/mmu programs, compared with the reference simulator
+python3 tests/mmu/run_sys.py tests/mmu/t53_mbard.s tests/mmu/t54_mbawr.s
+                                 # disk tests on the full system (cache, SDRAM controller)
+DISK0=rp07.dsk DISK1=pattern:ro sim/obj/Vtb_top prog.bin 0 ""   # with disk images
 NOTEST=1 UNTIL="00000004" BUDGET=600000000 TTOLOG=mmu.txt \
     sim/obj/Vtb_top software/mmutest.bin 0 ""         # the same tests on the full system
 NOTEST=1 UNTIL="End of the floating point test" BUDGET=400000000 TTOLOG=fp.txt \
@@ -1132,7 +1196,14 @@ CPU has a write / read cycle in flight, so that the load lands on one), and
 index: `!B0` is 1000, `!B1` 0; `!S1` is 200) for the loads after them.
 `PRELOAD=file@hexaddr` puts a file into memory after the memory test, as if an
 earlier program had left it there. `TTOLOG=file` writes everything the CPU
-sent to the console line into a file. A load over a running program, which
+sent to the console line into a file. `MEMDUMP=addr:count,...` prints memory
+longwords at the end. `DISK0` and `DISK1` mount images on the two RP07s, as
+the OSD does: an image file (`:ro` for read only) or `pattern`, a generated
+disk whose sectors are filled with a known pattern (`sim/hpsdisk.h`; the CPU
+bench `sim/obj_cpu/Vtb_cpu` takes the same variables, and the tests ask for
+them with `;@ disk0=`); `SDLAT` is the HPS's latency per block in clocks,
+`SDTRACE=1` prints every block request. The benches divide the disks'
+mechanical times by 16 (`TSCALE`), not their data rate. A load over a running program, which
 must start the new one cleanly (`Memory management works.`):
 
 ```
@@ -1152,8 +1223,9 @@ For finding where the core and a reference simulator part ways:
 | `PROFILE=1` | At the end, the clocks spent per opcode |
 
 `tb.cpp` plays the part of `hps_io`: it downloads through the ioctl port, sends
-PS/2 events, decodes both the internal console line and the MiSTer UART, counts
-cache hits and instructions, and writes one video frame as `frame.ppm`.
+PS/2 events, serves the disk images block by block, decodes both the internal
+console line and the MiSTer UART, counts cache hits and instructions, and
+writes one video frame as `frame.ppm`.
 `sim/sdram_model.v` models the inverted SDRAM clock, CAS latency 2, bursts of
 2 on reads and writes, and **when read data is really valid**: the word is
 presented only around the `clk` falling edge, and a register sampling on the
