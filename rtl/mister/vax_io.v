@@ -84,7 +84,9 @@ module vax_io #(
 	input      [31:0] ipr_dat,
 	output reg  [4:0] pamm_rd,
 
-	// memory port: m_adr is the array address, {slot, PA<21:0>}
+	// memory port: m_adr is the array address, {slot, PA<21:0>}; m_ack and
+	// m_rdat are the memory's registered answer, which may outlast m_stb by
+	// a clock (the strobe of the reference qualifies them here)
 	output            m_stb,
 	output            m_we,
 	output     [31:0] m_adr,
@@ -219,7 +221,13 @@ module vax_io #(
 				pamloc <= ipr_dat[29:20];
 		end
 
-	// the code is known one clock after the address (as the cache's tags)
+	// The code is known one clock after the address (as the cache's tags).
+	// Timing: the comparison of the address with the one the code was
+	// looked up for only decides whether a reference starts; it is not in
+	// the way of the address to the memory nor of the answers back to the
+	// MMU, which come from registers qualified by the reference's strobe:
+	// a master keeps its address until it is answered and drops its strobe
+	// for a clock before the next reference.
 	wire look   = stb && !walking && mb_ok && (mb_q == adr[29:20]);
 	wire is_mem = look && (code_q[4:3] == 2'b00);
 	wire is_ioa = look && (code_q == 5'h18);
@@ -243,13 +251,17 @@ module vax_io #(
 
 	assign m_stb  = c_stb;
 	assign m_we   = gnt ? dma_we : we;
-	assign m_adr  = gnt ? (d_mem ? {7'd0, dcode_q[2:0], dma_adr[21:0]} : dma_adr) :
-	                      (is_mem ? {7'd0, code_q[2:0], adr[21:0]} : adr);
+	// the array address, from the code looked up the clock before: the
+	// memory starts only when the code is the current address's (m_stb),
+	// and it waits for its address to stay the same for a clock as well
+	assign m_adr  = gnt ? {7'd0, dcode_q[2:0], dma_adr[21:0]} :
+	                      {7'd0, code_q[2:0], adr[21:0]};
 	assign m_wdat = gnt ? dma_wdat : wdat;
 	assign m_sel  = gnt ? dma_sel : sel;
 
-	wire cpu_mack = !gnt && is_mem && m_ack;
-	wire dma_mack = gnt && d_mem && m_ack;
+	// the memory's answer belongs to the reference still on the port
+	wire cpu_mack = !gnt && stb && m_ack;
+	wire dma_mack = gnt && dma_stb && m_ack;
 
 	reg  d_nxm_q;
 	initial d_nxm_q = 1'b0;
@@ -278,6 +290,7 @@ module vax_io #(
 		.clk      (clk),
 		.rst      (rst),
 		.stb      (is_ioa),
+		.cyc      (stb),
 		.we       (we),
 		.adr      (adr),
 		.wdat     (wdat),
@@ -563,7 +576,9 @@ module vax_io #(
 			io_mear   <= {2'b00, adr[29:2], 2'b00};
 		end
 
-	assign io_err = (stb & nxm_q & is_nxm) | sb_err | sb_bad;
+	// a reference to non-existent memory fails a clock after it was seen
+	// (MSTAT2 and MEAR are loaded meanwhile); the MMU keeps it until then
+	assign io_err = (stb & nxm_q) | sb_err | sb_bad;
 
 	assign rdat = (cpu_mack ? m_rdat : 32'd0) | sb_rdat;
 	assign ack  = cpu_mack | (sb_ack & ~sb_bad);

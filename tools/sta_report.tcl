@@ -4,7 +4,8 @@
 # Writes output_files/dec_vax_timing.txt with:
 #   - the worst setup and hold paths of the whole design (these are usually
 #     in the MiSTer framework's video scaler, which has its own clock),
-#   - the worst paths inside this core's clock (clk_sys, 50 MHz),
+#   - the worst paths inside this core's clock (clk_sys, 50 MHz), the
+#     three worst node by node,
 #   - the SDRAM read-data and command/address paths at EVERY operating
 #     condition Quartus has a model for (slow and fast silicon, hot and
 #     cold). The project analyses only the slow 85 C corner by default
@@ -29,8 +30,10 @@ if {[catch {
     # read as a character class)
     set sys [get_clocks -nowarn {emu|pll*divclk}]
     if {[llength $sys]} {
-        dv_report $f -setup -npaths 20 -detail summary -from_clock $sys -to_clock $sys \
+        dv_report $f -setup -npaths 40 -detail summary -from_clock $sys -to_clock $sys \
             -panel_name "dec_vax: worst setup paths inside clk_sys"
+        dv_report $f -setup -npaths 3 -detail path_only -from_clock $sys -to_clock $sys \
+            -panel_name "dec_vax: the three worst setup paths inside clk_sys, node by node"
         dv_report $f -hold -npaths 10 -detail summary -from_clock $sys -to_clock $sys \
             -panel_name "dec_vax: worst hold paths inside clk_sys"
     }

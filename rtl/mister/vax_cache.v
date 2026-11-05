@@ -30,8 +30,11 @@
 //  HPS loader has written to memory behind the cache's back.
 //
 //  Bus: the simple strobe/ack protocol of r-vax. The master holds STB_I with
-//  a stable address until ACK_O; DAT_O and ACK_O read as zero while STB_I is
-//  low because the r-vax bus ORs its slaves together.
+//  a stable address until ACK_O, and drops STB_I for at least a clock before
+//  its next reference. ACK_O and DAT_O come straight from registers: ACK_O
+//  stays up until the clock after STB_I goes away, so the MBox (vax_io.v)
+//  qualifies them with the strobe of the reference on its port. That keeps
+//  the MBox's PAMM decision, which drives STB_I, out of the answer's path.
 //
 //  Part of the MiSTer port of r-vax (VAX CPU in Verilog by Anders Magnusson).
 //  SPDX-License-Identifier: BSD-2-Clause
@@ -171,8 +174,8 @@ module vax_cache #(
 	reg  [31:0]     dout;
 	reg             ack;
 
-	assign DAT_O = (STB_I && ack) ? dout : 32'd0;
-	assign ACK_O = STB_I && ack;
+	assign DAT_O = dout;
+	assign ACK_O = ack;
 
 	// the two users of the SDRAM port never overlap: a fill is only started
 	// when the write buffer is empty, and the CPU is stalled during a fill

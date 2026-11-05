@@ -123,9 +123,10 @@ module vcache(
 			    isz == `O_WORD ? 8'b0000_0011 : 8'b0000_1111) << ioff;
 	wire [63:0]	iwdat = { 32'd0, IN_DAT_I } << { ioff, 3'b000 };
 	wire		itwo = |imask[7:4];
-	/* a crossing write within one page needs no reads first */
+	/* a crossing write within one page needs no reads first; the next
+	   longword is in the next page when this is the page's last one */
 	wire [31:0]	iadrh = { IN_ADR_I[31:2], 2'b0 } + 32'd4;
-	wire		ipage = (IN_ADR_I[31:9] != iadrh[31:9]);
+	wire		ipage = &IN_ADR_I[8:2];
 
 	/* Shift quad word left */
 	always @* begin

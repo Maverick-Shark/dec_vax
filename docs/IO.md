@@ -106,11 +106,25 @@ it when it sizes the system; processor initialization does the same here:
 | 2000 0000 - 21FF FFFF | 18: SBIA 0 |
 | everything else | 1F |
 
-The PAMM is a real RAM (two copies of 1024 x 5 bits in M10K, one read for
-every reference, one at PAMLOC for MFPR), so software can remap memory or
-take a megabyte away, as the 8600's memory diagnostics do. Its lookup runs
-in the same clock as the cache's tag lookup, so it costs no time. With the
-console's map the array address is the physical address itself.
+The PAMM is a real RAM (three copies of 1024 x 5 bits in M10K: one read
+for every CPU reference, one for every DMA reference, one at PAMLOC for
+MFPR), so software can remap memory or take a megabyte away, as the
+8600's memory diagnostics do. Its lookup runs in the same clock as the
+cache's tag lookup, so it costs no time. With the console's map the array
+address is the physical address itself.
+
+How it is wired matters for timing, since the reference from the MMU to the
+cache and the cache's answer back are the core's critical path: the code is
+looked up with the address of the clock before, and a comparison of the two
+addresses says whether it is the current one. That comparison only decides
+whether a reference starts (the cache's strobe, the SBIA's, a non-existent
+memory error a clock later); the array address the cache gets is always
+`{code<2:0>, PA<21:0>}`, and the answers (the cache's and the SBIA's
+acknowledge, read data and error) come from their registers, qualified by
+the MMU's strobe. A master keeps its address until it is answered and
+drops its strobe for at least a clock before the next reference, so an
+answer cannot belong to another reference. The price is one clock when a
+reference goes to another 4 MB array than the one before.
 
 ## SBIA 0
 

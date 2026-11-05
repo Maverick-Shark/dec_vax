@@ -98,8 +98,12 @@ module vax_sbi #(
 	input             clk,
 	input             rst,           // processor initialization
 
-	// ABus, CPU side: the references the PAMM sends to this adapter
+	// ABus, CPU side: the references the PAMM sends to this adapter (stb
+	// starts one); cyc is the MBox's reference still there, which the
+	// answers belong to (the strobe before the PAMM's decision, so that
+	// the answers do not wait for it)
 	input             stb,
+	input             cyc,
 	input             we,
 	input      [31:0] adr,
 	input      [31:0] wdat,
@@ -325,10 +329,10 @@ module vax_sbi #(
 	assign sbi_msk  = t_msk;
 	assign sbi_wdat = t_wdat;
 
-	assign rdat = (stb && q_ack) ? q : 32'd0;
-	assign ack  = stb && q_ack;
-	assign err  = stb && q_err;
-	assign bad  = stb && q_ack && q_bad;
+	assign rdat = (cyc && q_ack) ? q : 32'd0;
+	assign ack  = cyc && q_ack;
+	assign err  = cyc && q_err;
+	assign bad  = cyc && q_ack && q_bad;
 
 	// a CPU transaction failed: ERRSUM<23> locks the error state
 	task cpu_error;
@@ -565,7 +569,7 @@ module vax_sbi #(
 				end
 			end
 
-			default: if (!stb) begin           // S_DONE: until the MBox lets go
+			default: if (!cyc) begin           // S_DONE: until the MBox lets go
 				q_ack <= 1'b0;
 				q_err <= 1'b0;
 				q_bad <= 1'b0;
