@@ -49,8 +49,9 @@ static int  tto_st = -2, tto_cnt = 0, tto_bits = 0, tto_ch = 0;
 static void tto_step() {
 	const int bit = 17;                 // CLKPERBIT 16
 	int line = R->tb_cpu__DOT__tto_tx;
-	if (tto_st == -2) {                 // after reset: wait for the idle line
-		if (line) tto_st = -1;
+	if (tto_st == -2) {                 // first a character time of idle line
+		tto_cnt = line ? tto_cnt + 1 : 0;
+		if (tto_cnt >= 12 * bit) tto_st = -1;
 		return;
 	}
 	if (tto_st < 0) {                   // idle: wait for the start bit
@@ -94,7 +95,6 @@ int main(int argc, char **argv) {
 	bool bustrace = getenv("BUSTRACE") != 0;
 	bool utrace = getenv("UTRACE") != 0;
 	bool strace = getenv("STRACE") != 0;	// every state change
-	tto_on = getenv("TTO") != 0;
 
 	hps.init(HpsPorts{{&tb->sd_lba0, &tb->sd_lba1}, &tb->sd_rd, &tb->sd_wr,
 	                  &tb->sd_ack, &tb->sd_buff_addr, &tb->sd_buff_dout,
@@ -130,6 +130,9 @@ int main(int argc, char **argv) {
 	}
 
 	// start the CPU: what the console's "G" command ends up doing
+	// (the console monitor may still be sending its prompt: the decoder
+	// waits for an idle line first)
+	tto_on = getenv("TTO") != 0;
 	CPU(curpc) = start;
 	CPU(ivalid) = 0;
 	CPU(resopflt) = 0;
