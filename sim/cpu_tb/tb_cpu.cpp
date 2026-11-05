@@ -16,7 +16,9 @@
 //   CLOCKS n           clocks until the halt
 //
 // Environment: TRACE=1 prints every instruction (PC, opcode); BUSTRACE=1
-// prints every state change of the CPU, vcache and MMU with the bus signals.
+// prints every state change of the CPU, vcache and MMU with the bus signals;
+// TTO=1 prints what the program sends to the console terminal (MTPR TXDB),
+// decoded from the console line, on stderr as it comes.
 //
 // Disks: DISK0 and DISK1 give the images of the RP07 units 0 and 1, served
 // as the HPS serves them on the board (see ../hpsdisk.h: an image file or a
@@ -41,11 +43,41 @@ static uint64_t cycles = 0;
 
 static HpsDisk hps;                     // the disk images (../hpsdisk.h)
 
+// the console line (tto_tx), 8N1 at CLKPERBIT + 1 clocks a bit
+static bool tto_on = false;
+static int  tto_st = -2, tto_cnt = 0, tto_bits = 0, tto_ch = 0;
+static void tto_step() {
+	const int bit = 17;                 // CLKPERBIT 16
+	int line = R->tb_cpu__DOT__tto_tx;
+	if (tto_st == -2) {                 // after reset: wait for the idle line
+		if (line) tto_st = -1;
+		return;
+	}
+	if (tto_st < 0) {                   // idle: wait for the start bit
+		if (!line) { tto_st = 0; tto_cnt = bit / 2; tto_bits = 0; tto_ch = 0; }
+		return;
+	}
+	if (--tto_cnt > 0)
+		return;
+	tto_cnt = bit;
+	if (tto_st == 0) {                  // the middle of the start bit
+		tto_st = line ? -1 : 1;
+	} else if (tto_bits < 8) {
+		tto_ch |= line << tto_bits++;
+	} else {                            // the stop bit
+		fputc(tto_ch & 0x7F, stderr);
+		fflush(stderr);
+		tto_st = -1;
+	}
+}
+
 static void tick() {
 	hps.step(cycles);
 	tb->clk = 1; tb->eval();
 	tb->clk = 0; tb->eval();
 	cycles++;
+	if (tto_on)
+		tto_step();
 }
 
 int main(int argc, char **argv) {
@@ -62,6 +94,7 @@ int main(int argc, char **argv) {
 	bool bustrace = getenv("BUSTRACE") != 0;
 	bool utrace = getenv("UTRACE") != 0;
 	bool strace = getenv("STRACE") != 0;	// every state change
+	tto_on = getenv("TTO") != 0;
 
 	hps.init(HpsPorts{{&tb->sd_lba0, &tb->sd_lba1}, &tb->sd_rd, &tb->sd_wr,
 	                  &tb->sd_ack, &tb->sd_buff_addr, &tb->sd_buff_dout,
