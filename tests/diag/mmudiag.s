@@ -15,13 +15,22 @@
 ;   00008000  test pages   00014000  P1 page table, the last 100 P1 pages
 ;   0000E000  interrupt stack top, 0000F000 kernel stack top
 ;
-; Steps: tables written and read back; the registers; mapping on in P0,
-; then in S0 (and from there on the kernel stack); writes and reads through S0 and P0; TBCHK and TBIS; 32
-; pages written with mapping off and read back through S0, P0 and P1,
-; twice, with the TB flushed in between; a translation not valid fault and
-; an access violation (expected, with their frames printed); CHMK and a
-; reserved operand fault; the kernel stack with interrupts from the
-; interval timer, taken on the interrupt stack; then a summary.
+; Steps: 0, the memory itself with mapping off: longwords, bytes, words at
+; odd addresses and longwords across longword boundaries written to 256
+; bytes at 7000, each read back from the cache and again from the memory
+; (after reads 16 KB higher, the same cache lines, have pushed them out of
+; the cache): the byte masks of partial writes, the cache's byte lanes and
+; the SDRAM's DQM lines; then the tables written and read back; the
+; registers; mapping on in P0, then in S0 (and from there on the kernel
+; stack); writes and reads through S0 and P0; TBCHK and TBIS; 32 pages
+; written with mapping off and read back through S0, P0 and P1, twice, with
+; the TB flushed in between; a translation not valid fault and an access
+; violation (expected, with their frames printed); CHMK and a reserved
+; operand fault; the kernel stack with interrupts from the interval timer,
+; taken on the interrupt stack; 11, step 0 again through S0 with mapping
+; on; then a summary. A machine check prints its whole frame (the byte
+; count, 22 longwords, PC, PSL; MSTAT2 is the 16th longword, MEAR the
+; 20th).
 
 S0	= ^x80000000
 SPT	= ^x10000
@@ -61,6 +70,15 @@ start:	mtpr	#^x1F, #IPL
 	clrl	nerr
 	movab	s_banner, r1
 	jsb	puts
+
+; ---------------------------------------------------------------- step 0
+; the memory, mapping off (see memchk)
+	clrl	step
+	movab	s_t0, r1
+	jsb	puts
+	movl	#^x7000, r9
+	jsb	memchk
+	jsb	result
 
 ; ---------------------------------------------------------------- step 1
 ; the page tables, written and read back with mapping off
@@ -408,6 +426,16 @@ k10b:	mtpr	#0, #ICCS
 	jsb	puthex
 	jsb	result
 
+; ---------------------------------------------------------------- step 11
+; the memory checks of step 0 through S0, mapping on: the same physical
+; bytes, the byte masks through the translation buffer
+	movl	#11, step
+	movab	s_t11, r1
+	jsb	puts
+	movl	#S0+^x7000, r9
+	jsb	memchk
+	jsb	result
+
 ; ---------------------------------------------------------------- the end
 	movab	s_end, r1
 	jsb	puts
@@ -456,6 +484,170 @@ bad7:	incl	r7
 	movl	(sp)+, r1
 b7z:	rsb
 
+; memchk: the 256 bytes at r9 (64 longwords, 16 cache lines), written four
+; ways, each read back twice: from the cache (the lines are there after the
+; previous read-back, so the writes have updated them) and from the memory
+; (mcevict has replaced them). The errors are counted in r7, the first six
+; printed. Uses r0-r5, r10, r11.
+;   a  longwords                         byte k: from i*01010101 ^ A5000000
+;   b  bytes 0-255                       byte k = k ^ 5A
+;   c  words at 1, 3, ... 253 (those at 3 mod 4 cross a longword)
+;                                        bytes 1-254 = k ^ C3
+;   d  longwords at 2, 6, ... 250 (all cross a longword)
+;                                        bytes 2-253 = k ^ 3C
+memchk:	clrl	r7
+	clrl	r10			; a
+	clrl	r1
+mca1:	jsb	mcexp
+	movl	r2, (r9)[r1]
+	aobleq	#63, r1, mca1
+	movab	s_ma, r11
+	jsb	mcboth
+	movl	#1, r10			; b
+	clrl	r1
+mcb1:	xorl3	#^x5A, r1, r2
+	addl3	r9, r1, r4
+	movb	r2, (r4)
+	aobleq	#255, r1, mcb1
+	movab	s_mb, r11
+	jsb	mcboth
+	movl	#2, r10			; c
+	movl	#1, r1
+mcc1:	xorl3	#^xC3, r1, r2
+	addl3	#1, r1, r3
+	xorl2	#^xC3, r3
+	ashl	#8, r3, r3
+	bisl2	r3, r2
+	addl3	r9, r1, r4
+	movw	r2, (r4)
+	addl2	#2, r1
+	cmpl	r1, #253
+	bleq	mcc1
+	movab	s_mc, r11
+	jsb	mcboth
+	movl	#3, r10			; d
+	movl	#2, r1
+mcd1:	clrl	r2
+	movl	#3, r5
+mcd2:	ashl	#8, r2, r2		; byte r1+r5 into the low byte
+	addl3	r1, r5, r3
+	xorl2	#^x3C, r3
+	bicl2	#^xFFFFFF00, r3
+	bisl2	r3, r2
+	sobgeq	r5, mcd2
+	addl3	r9, r1, r4
+	movl	r2, (r4)
+	addl2	#4, r1
+	cmpl	r1, #250
+	bleq	mcd1
+	movab	s_md, r11
+	jsb	mcboth
+	rsb
+
+; mcboth: read back from the cache, push the lines out, read back from
+; the memory. r11: the name of the pattern.
+mcboth:	movab	s_cache, r3
+	jsb	mccheck
+	movl	#15, r5			; reads 4000 higher: the same lines
+mcv1:	ashl	#4, r5, r3
+	addl2	r9, r3
+	tstl	^x4000(r3)
+	sobgeq	r5, mcv1
+	movab	s_mem, r3
+	jsb	mccheck
+	rsb
+
+; mccheck: the 64 longwords against mcexp. r3: "cache" or "memory".
+mccheck:
+	movl	r3, where
+	clrl	r1
+mck1:	jsb	mcexp
+	movl	(r9)[r1], r0
+	cmpl	r0, r2
+	beql	mck2
+	jsb	bad0
+mck2:	aobleq	#63, r1, mck1
+	rsb
+
+; mcexp: the expected longword r1 of pattern r10 (0-3) in r2. Uses r3.
+mcexp:	tstl	r10
+	bneq	mce1
+	mull3	#^x01010101, r1, r2	; a
+	xorl2	#^xA5000000, r2
+	rsb
+mce1:	movl	mcxor[r10], r3		; b, c, d: byte 4i+j = (4i ^ x) ^ j
+	ashl	#2, r1, r2
+	xorl2	r3, r2
+	bicl2	#^xFFFFFF00, r2
+	mull2	#^x01010101, r2
+	xorl2	#^x03020100, r2
+	cmpl	r10, #2
+	blss	mce9
+	beql	mce2
+	tstl	r1			; d: bytes 0, 1 as c left them
+	bneq	mce3
+	insv	#^x5A, #0, #8, r2
+	insv	#^xC2, #8, #8, r2
+	rsb
+mce3:	cmpl	r1, #63			; bytes 254, 255 as c left them
+	bneq	mce9
+	insv	#^x3D, #16, #8, r2
+	insv	#^xA5, #24, #8, r2
+	rsb
+mce2:	tstl	r1			; c: byte 0 as b left it
+	bneq	mce4
+	insv	#^x5A, #0, #8, r2
+	rsb
+mce4:	cmpl	r1, #63			; byte 255 as b left it
+	bneq	mce9
+	insv	#^xA5, #24, #8, r2
+mce9:	rsb
+
+; bad0: a wrong longword (r1 its index, r0 found, r2 expected)
+bad0:	incl	r7
+	cmpl	r7, #6
+	bgtr	b0z
+	pushr	#^x3F			; r0 at (sp), r1 at 4(sp), r2 at 8(sp)
+	movab	s_b0, r1
+	jsb	puts
+	movl	r11, r1			; the pattern
+	jsb	puts
+	movl	where, r1		; cache or memory
+	jsb	puts
+	movab	s_b0b, r1
+	jsb	puts
+	ashl	#2, 4(sp), r0		; the address
+	addl2	r9, r0
+	jsb	puthex
+	movab	s_b7b, r1
+	jsb	puts
+	movl	(sp), r0
+	jsb	puthex
+	movab	s_b7c, r1
+	jsb	puts
+	movl	8(sp), r0
+	jsb	puthex
+	popr	#^x3F
+b0z:	rsb
+
+; mcframe: a machine check's frame, 25 longwords from frm
+mcframe:
+	pushr	#^x3F
+	movab	s_mcf, r1
+	jsb	puts
+	movl	frm, r4
+	movl	#5, r3
+mcf1:	movab	s_b0, r1
+	jsb	puts
+	movl	#5, r2
+mcf2:	movl	(r4)+, r0
+	jsb	puthex
+	jsb	space
+	sobgtr	r2, mcf2
+	sobgtr	r3, mcf1
+	popr	#^x3F
+	rsb
+
 space:	movl	#^x20, r0
 	jsb	putc
 	rsb
@@ -493,7 +685,8 @@ ph1:	rotl	#4, r2, r2
 ; dropped and the handler goes on at R8; otherwise the frame is printed and
 ; the program halts.
 	.align	4
-exc:	movl	(sp), stk		; the top of the stack, before anything
+exc:	movl	sp, frm			; the frame, before anything
+	movl	(sp), stk
 	movl	4(sp), stk+4
 	movl	8(sp), stk+8
 	movl	12(sp), stk+12
@@ -515,7 +708,10 @@ exc:	movl	(sp), stk		; the top of the stack, before anything
 	jsb	space
 	movl	stk+12, r0
 	jsb	puthex
-	cmpl	vec, expvec
+	cmpl	vec, #4			; a machine check: the whole frame
+	bneq	exc0
+	jsb	mcframe
+exc0:	cmpl	vec, expvec
 	beql	exc1
 	movab	s_unexp, r1		; not expected: stop
 	jsb	puts
@@ -549,6 +745,18 @@ hexdig:	.ascii	"0123456789ABCDEF"
 s_banner:
 	.ascii	"\r\nMemory management diagnostic (tests/diag/mmudiag.s)"
 	.asciz	"\r\n"
+s_t0:	.asciz	"0  memory, mapping off: longwords, bytes, words, unaligned:"
+s_t11:	.asciz	"11 memory through S0, mapping on:"
+s_ma:	.asciz	"longwords"
+s_mb:	.asciz	"bytes"
+s_mc:	.asciz	"words"
+s_md:	.asciz	"unaligned"
+s_cache:
+	.asciz	", cache,"
+s_mem:	.asciz	", memory,"
+s_b0:	.asciz	"\r\n   "
+s_b0b:	.asciz	" at "
+s_mcf:	.asciz	"\r\n   machine check frame (count, 22 longwords, PC, PSL):"
 s_t1:	.asciz	"1  page tables written, read back:"
 s_bad:	.asciz	"  wrong: "
 s_spt:	.asciz	"  SPT[8] SPT[40] P0PT[40] "
@@ -586,6 +794,9 @@ nexp:	.long	0
 nerr:	.long	0
 ticks:	.long	0
 stk:	.blkl	4
+frm:	.long	0
+where:	.long	0
+mcxor:	.long	0, ^x5A, ^xC3, ^x3C
 
 ; the vector stubs (generated below by the assembler's include)
 	.include "mmudiag_scb.inc"

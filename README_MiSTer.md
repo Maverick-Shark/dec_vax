@@ -1012,6 +1012,31 @@ its registers and PSL and returning. The runner itself sits at 300000, out of
 the tests' way. After changing a test, `python3 tests/mmu/mkboard.py` rebuilds
 the file (it runs the reference simulator to produce the expected values).
 
+### When `mmutest.bin` stops early: `software/mmudiag.bin`
+
+`mmudiag.bin` (`tests/diag/mmudiag.s`) takes the same steps one at a time and
+prints a line for each, so the line where the output stops, or the first
+`ERROR`, says what went wrong. Load it with the same OSD settings as
+`mmutest.bin`. Step 0 checks the memory itself with mapping off: longwords,
+bytes, words at odd addresses and longwords across longword boundaries,
+each read back from the cache and again from the SDRAM (after the cache lines
+have been replaced), which covers the byte masks of partial writes, the
+cache's byte lanes and the SDRAM's DQM lines; steps 1-10 build the page
+tables and go through translation, the TB, faults, CHMK and interrupts; step
+11 repeats step 0 through system space with mapping on. An exception a step
+does not expect prints its SCB vector and the top of the stack and stops; a
+machine check (SCB 04) prints its whole frame, where the 16th longword is
+MSTAT2 and the 20th MEAR, the physical address of the reference that failed.
+On a working core it ends with:
+
+```
+11 memory through S0, mapping on:  ok
+End of the diagnostic, steps with errors: 00000000
+Memory management works.
+00000006
+>
+```
+
 ## Testing the floating point instructions with your own random cases
 
 `software/fptest.bin` tests the 98 floating point instructions on the core:
