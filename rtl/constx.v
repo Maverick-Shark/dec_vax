@@ -91,9 +91,19 @@ module constx(
 		else if (wrtxcs)
 			inten <= iprdb[6];
 
+	/*
+	 * One marker bit goes in when a character starts and ends the
+	 * character when it comes out at the top. It is loaded, not shifted
+	 * in after what the register held: at power-up the register has no
+	 * defined value, and a stray bit in it ended the first character
+	 * early, which left another one behind to cut the next short, and so
+	 * on for ever.
+	 */
+	initial shiftreg = {NCYC{1'b0}};
 	always @(posedge clk)
 		if (shce)
-			shiftreg <= { shiftreg[NCYC-2:0], cntbit };
+			shiftreg <= cntbit ? { {NCYC-1{1'b0}}, 1'b1 } :
+			    { shiftreg[NCYC-2:0], 1'b0 };
 
 	always @(posedge clk) begin
 		shce <= 0;

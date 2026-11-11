@@ -88,6 +88,14 @@ int main(int argc, char **argv) {
 		return 2;
 	}
 	tb = new Vtb_cpu;
+	// The memory array starts cleared, as the reference simulator's. The
+	// registers start as Verilator was told: zero, or, on the bench built
+	// with --x-initial unique (make -C sim cputbx) and run with
+	// +verilator+rand+reset+2 +verilator+seed+n, random - which shows any
+	// register that processor initialization leaves undefined and the
+	// machine then depends on.
+	for (size_t i = 0; i < (size_t)1 << 23; i++)
+		R->tb_cpu__DOT__mem[i] = 0;
 	unsigned load = strtoul(argv[2], 0, 16);
 	unsigned start = strtoul(argv[3], 0, 16);
 	uint64_t maxc = argc > 4 ? strtoull(argv[4], 0, 0) : 2000000ULL;
@@ -133,6 +141,8 @@ int main(int argc, char **argv) {
 	// (the console monitor may still be sending its prompt: the decoder
 	// waits for an idle line first)
 	tto_on = getenv("TTO") != 0;
+	for (int i = 0; i < 15; i++)                // R0-R14 as the reference's
+		R->tb_cpu__DOT__cpu__DOT__general_reg[i] = 0;
 	CPU(curpc) = start;
 	CPU(ivalid) = 0;
 	CPU(resopflt) = 0;
@@ -177,6 +187,7 @@ int main(int argc, char **argv) {
 		printf("R%d %08X\n", i, R->tb_cpu__DOT__cpu__DOT__general_reg[i]);
 	printf("PSL %08X\n", CPU(psl));
 	for (int i = 5; i < argc; i++) {
+		if (argv[i][0] == '+') continue;       // a Verilator plusarg
 		unsigned a = strtoul(argv[i], 0, 16), n = 1;
 		const char *colon = strchr(argv[i], ':');
 		if (colon) n = strtoul(colon + 1, 0, 16);

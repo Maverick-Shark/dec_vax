@@ -173,10 +173,12 @@ module cpu(
 	assign CON_DAT_O = con_passthru ? CPU_DAT_I : con_dat_o_reg;
 	assign CON_ACK_O = con_passthru ? CPU_ACK_I : con_ack_o_reg;
 
-	/* different traps/faults */
-	reg	resinflt,	/* reserved instruction fault (FFFF) */
-		resadflt,	/* reserved addressing mode fault (movl r0,$3) */
-		resopflt;	/* reserved operand fault */
+	/*
+	 * Reserved operand fault. (The reserved instruction and reserved
+	 * addressing mode faults r-vax declared next to it were never driven:
+	 * the microcode takes those, entries 7 and 8.)
+	 */
+	reg	resopflt;
 
 	console console(
 		.clk(clk),
@@ -602,7 +604,7 @@ initial fpd_active = 1'b0;
 	wire isvalid, anyfault;
 	assign halted = (state == `S_HALT) || manhalt;
 	assign isvalid = (itag[31:2] == curpc[31:2]) && ivalid;
-	assign anyfault = resinflt | resadflt | resopflt | mcheck;
+	assign anyfault = resopflt | mcheck;
 
 	/*
 	 * Machine check: the MBox could not complete a reference - non-
@@ -1297,6 +1299,7 @@ initial debug = 0;
 			 * fetch after the console starts the CPU.
 			 */
 			state <= `S_HALT;
+			haltpos <= `HALT_RESET;
 			cpu_stb <= 0;
 			cpu_write <= 0;
 			cpu_pmem <= 0;

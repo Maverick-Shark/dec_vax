@@ -99,9 +99,18 @@ module consrx(
 		else if (wrrxcs)
 			inten <= wrie;
 
+	/*
+	 * The marker bit that counts the bits of a character is loaded when
+	 * the start bit is seen, not shifted in after what the register held
+	 * (see constx.v): a stray bit left in it at power-up cannot end a
+	 * character early.
+	 */
+	initial shiftreg = {NCYC{1'b0}};
+	initial busy = 1'b0;
 	always @(posedge clk)
 		if (shce)
-			shiftreg <= { shiftreg[NCYC-2:0], shin };
+			shiftreg <= shin ? { {NCYC-1{1'b0}}, 1'b1 } :
+			    { shiftreg[NCYC-2:0], 1'b0 };
 
 	always @(posedge clk) begin
 		shce <= 0;
@@ -131,6 +140,12 @@ module consrx(
 				end
 			end
 		end
+		/*
+		 * Processor initialization leaves the receiver idle: busy with
+		 * no marker on its way (a power-up state) would never end.
+		 */
+		if (rst)
+			busy <= 0;
 	end
 
 	assign ie = inten;

@@ -39,6 +39,11 @@ HALT and the dumped memory.
 Needs: the reference simulator (REFSIM environment variable; by default the
 open-simh vax8600 binary in ../open-simh/BIN) and the RTL
 bench (make -C sim cputb).
+
+Power-up state: RTLBIN=sim/obj_cpux/Vtb_cpu (make -C sim cputbx) with
+RTLARGS="+verilator+rand+reset+2 +verilator+seed+7" runs the tests with every
+register that has no initial value starting at random (reset+1: all ones)
+instead of zero; all of them must still pass.
 """
 import glob
 import os
@@ -130,6 +135,9 @@ def run_ref(binf, load, start, dumps, tmp):
 def run_rtl(binf, load, start, dumps, clocks, disks=None):
     args = [RTL, binf, '%X' % load, '%X' % start, clocks]
     args += ['%X:%X' % (a, n) for a, n in dumps]
+    # RTLARGS: more arguments for the bench, e.g. the power-up state of
+    # sim/obj_cpux/Vtb_cpu: "+verilator+rand+reset+2 +verilator+seed+7"
+    args += os.environ.get('RTLARGS', '').split()
     env = dict(os.environ)
     env.pop('DISK0', None)
     env.pop('DISK1', None)

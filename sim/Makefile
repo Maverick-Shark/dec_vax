@@ -55,7 +55,7 @@ obj_fpu/Vfpunit: ../rtl/fpunit.v fpu_tb/fpu_tb.cpp
 	  -CFLAGS "-O1 -w" -o Vfpunit
 
 clean:
-	rm -rf obj obj_unit obj_nc obj_e obj_l obj_cpu obj_fast obj_du obj_dqma obj_fpu
+	rm -rf obj obj_unit obj_nc obj_e obj_l obj_cpu obj_fast obj_du obj_dqma obj_fpu obj_cpux obj_x
 
 UNIT = $(addprefix ../rtl/mister/,vt_font.v vt_term.v vax_kbd.v) unit_top.v
 
@@ -94,6 +94,31 @@ obj_dqma/Vtb_top: $(SRC) tb.cpp
 	  $(SRC) tb.cpp -CFLAGS "-O2 -w" -o Vtb_top
 
 dqma: obj_dqma/Vtb_top
+
+# Power-up state. These builds start every register that has no initial
+# value with random contents (and the all-ones or random choice is made when
+# they run: +verilator+rand+reset+1 or +verilator+rand+reset+2 with
+# +verilator+seed+n, after the other arguments), where the builds above
+# start them at zero. Whatever processor initialization leaves undefined and
+# the machine then depends on shows up as a failing test; on the board such
+# a register is at the mercy of how Quartus implements it.
+#   RTLBIN="sim/obj_cpux/Vtb_cpu" with tests/mmu/run.py (RTLARGS for the
+#   plusargs), sim/obj_x/Vtb_top like sim/obj/Vtb_top.
+obj_cpux/Vtb_cpu: $(CPUTB) cpu_tb/tb_cpu.cpp hpsdisk.h
+	verilator --cc --exe --build -j 4 -O2 --x-initial unique --x-assign unique \
+	  -Wno-fatal -Wno-WIDTH -Wno-TIMESCALEMOD \
+	  -DMISTER -DCLKPERBIT=16 --public-flat-rw -I../rtl --top-module tb_cpu \
+	  -Mdir obj_cpux $(CPUTB) cpu_tb/tb_cpu.cpp -CFLAGS "-O1 -w" -o Vtb_cpu
+
+cputbx: obj_cpux/Vtb_cpu
+
+obj_x/Vtb_top: $(SRC) tb.cpp hpsdisk.h
+	verilator --cc --exe --build -j 4 -O2 --x-initial unique --x-assign unique \
+	  -Wno-fatal -Wno-WIDTH -Wno-TIMESCALEMOD -DMISTER -DCLKPERBIT=16 -DCACHEIDX=10 \
+	  --public-flat-rw -I../rtl --top-module tb_top -Mdir obj_x $(SRC) tb.cpp \
+	  -CFLAGS "-O1 -w" -o Vtb_top
+
+sysx: obj_x/Vtb_top
 
 # a strict second opinion on the Verilog: Icarus Verilog must compile it all
 lint:
