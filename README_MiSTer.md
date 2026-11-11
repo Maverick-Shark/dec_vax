@@ -386,15 +386,29 @@ and cuts the framework's quasi-static paths, so the core file only adds its own:
   core is now timed at the full 50 MHz.
 
 `tools/sta_report.tcl` runs after the timing analysis and writes
-`output_files/dec_vax_timing.txt`: the worst paths of the whole design, the
-worst paths inside `clk_sys`, and the SDRAM read and command paths at **every**
-operating condition Quartus has a model for. The MiSTer project analyses only
-the slow 85 C corner; the fast corners are where hold margins shrink, so they
-are worth the extra minute.
+`output_files/dec_vax_timing.txt`, the one file that says how a compile went.
+It starts with a summary - the worst setup and hold slack inside `clk_sys` at
+**every** operating condition Quartus has a model for, and `timing MET` or
+`timing NOT MET` -, the fitter's summary (how full the FPGA is), one line for
+every block RAM as it was built (size, mode, what a read gives while the
+location is written), any RAM the synthesis did not infer, and the core's
+registers the synthesis removed as stuck at a value. Then come the worst
+paths of the whole design, the worst paths inside `clk_sys` (the three worst
+node by node) and the SDRAM read and command paths at every operating
+condition.
 
-**After every compile, check that TimeQuest does not print `Critical Warning:
-Timing requirements not met`.** The worst paths of the whole design are in the
-MiSTer framework's HDMI scaler (about +0.5 ns), not in this core.
+The MiSTer template analyses only one slow corner
+(`TIMEQUEST_MULTICORNER_ANALYSIS OFF`), which keeps compiles short and is
+enough for a core with room to spare. This one fills most of the FPGA, so
+`dec_vax.qsf` turns the multi-corner analysis and the fitter's multi-corner
+optimization on: the fitter then works for the cold corner too, where this
+silicon can be the slower one, and for the fast corners, where hold margins
+shrink. It costs a few minutes of compile time.
+
+**After every compile, read the first lines of `dec_vax_timing.txt`**, or at
+least check that TimeQuest does not print `Critical Warning: Timing
+requirements not met`. (Up to milestone 7 the worst paths of the whole design
+were in the MiSTer framework's HDMI scaler, about +0.5 ns, not in this core.)
 
 ## Using it
 
@@ -421,6 +435,7 @@ microseconds *before* that reset, and the reset wiped the start of the banner:
 | Power-on Memory Test | On by default |
 | SDRAM Read Phase | *Calibrated* (default) uses what the memory test found; *Force 0..3* overrides it, for diagnosis only |
 | Run Memory Test | Runs it again now. **This clears the first 64 KB of RAM** |
+| Fault Finding | *Off* (default). *Cache off*: every read is fetched from the SDRAM, the cache's block RAMs are never used. *TB off*: the MMU's translation buffer never hits, every reference walks the page tables. *Both off*. Taken when the CPU is reset (the *Reset* entries, or a *Load Program*). The machine is several times slower and must behave the same: a program that fails with the option off and works with it on points at that block (see *When `mmutest.bin` stops early*) |
 | Ctrl+P | *Halts the CPU* (default): Ctrl+P on the keyboard, or on the MiSTer UART when *UART Console In* is on, stops the running program as a VAX 8600 console does. *Is a character*: it goes to the program like any other key |
 | Halt CPU (Ctrl+P) | Stops the running program now, like Ctrl+P |
 | Aspect Ratio | Original (4:3), Full Screen, or the two custom ratios of the MiSTer's settings |
@@ -1036,6 +1051,40 @@ Memory management works.
 00000006
 >
 ```
+
+### A core that passes in simulation and fails on the board
+
+Three things tell them apart, in this order:
+
+1. `output_files/dec_vax_timing.txt`, which every compile writes
+   (`tools/sta_report.tcl`). Its first lines give the worst setup and hold
+   slack inside the core's clock at every operating condition Quartus has a
+   model for, and say `timing MET` or `timing NOT MET`; then come the
+   fitter's summary (how full the FPGA is), every block RAM as it was built
+   (size, mode, what a read gives while the same location is written) and
+   any RAM the synthesis could not infer and built out of registers. A core
+   whose timing is not met cannot be trusted on the board, whatever the
+   simulation says; one that is nearly full is hard to fit and may not meet
+   it the next time.
+2. `mmudiag.bin` (above): where it stops.
+3. The OSD's *Fault Finding* option, with `mmutest.bin` or `mmudiag.bin`
+   loaded again after changing it (the load resets the CPU, which is when
+   the option is taken). With *Cache off* the cache's block RAMs are never
+   used: every read is a line fetched from the SDRAM. With *TB off* the
+   translation buffer's RAM is never used: every reference walks the page
+   tables. Both must give the same results as *Off*, only slower, with one
+   exception: `t01_xlate` then reports `R05 is 041F0008, expected 041F000A`,
+   because TBCHK finds nothing in a translation buffer that is off. If the
+   failure goes away with one of them, the fault is in that block or in the
+   paths around it.
+
+The simulation can also start from a different power-up state than the
+zeros a simulator gives every register: `make -C sim cputbx sysx` builds
+the two benches so that registers without an initial value start with
+random contents (run them with `+verilator+rand+reset+2 +verilator+seed+n`
+after the other arguments; `RTLARGS` passes them through
+`tests/mmu/run.py`). All tests must pass from any seed: nothing may depend
+on a register that processor initialization leaves undefined.
 
 ## Testing the floating point instructions with your own random cases
 
