@@ -53,6 +53,7 @@ module vax_system #(
 	input             selftest_en,
 	input             selftest_go,  // one clock pulse: run the test again
 	input       [2:0] rdphase_sel,  // 0 = calibrated, 1..4 = force phase 0..3
+	input       [1:0] diag,         // fault finding: <0> cache off, <1> TB off
 	input      [15:0] sdram_sz,
 
 	input      [10:0] ps2_key,
@@ -311,6 +312,7 @@ module vax_system #(
 		.tti_rx     (tti_rx),
 		.tto_tx     (tto_tx),
 		.halt_req   (halt_req),
+		.diag       (diag),
 
 		.stat_hit   (),
 		.stat_miss  (),

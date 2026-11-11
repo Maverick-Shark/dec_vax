@@ -18,7 +18,9 @@
 // Environment: TRACE=1 prints every instruction (PC, opcode); BUSTRACE=1
 // prints every state change of the CPU, vcache and MMU with the bus signals;
 // TTO=1 prints what the program sends to the console terminal (MTPR TXDB),
-// decoded from the console line, on stderr as it comes.
+// decoded from the console line, on stderr as it comes. TBOFF=1 turns the
+// MMU's translation buffer off (the OSD's fault finding option): every
+// reference walks the page tables, and only what TBCHK reports may change.
 //
 // Disks: DISK0 and DISK1 give the images of the RP07 units 0 and 1, served
 // as the HPS serves them on the board (see ../hpsdisk.h: an image file or a
@@ -108,6 +110,7 @@ int main(int argc, char **argv) {
 	                  &tb->sd_ack, &tb->sd_buff_addr, &tb->sd_buff_dout,
 	                  &tb->sd_buff_wr, {&tb->sd_buff_din0, &tb->sd_buff_din1},
 	                  &tb->img_mounted, &tb->img_readonly, &tb->img_size});
+	tb->tb_off = getenv("TBOFF") ? 1 : 0;       // taken at reset
 	tb->clk = 0; tb->rst = 1;
 	for (int i = 0; i < 10; i++) tick();
 	tb->rst = 0;

@@ -50,6 +50,10 @@ module vax_core #(
 	output            tto_tx,
 	input             halt_req,      // console halt request (Ctrl+P, OSD): one clock
 
+	// fault finding (OSD), taken at processor initialization:
+	// <0> cache off, <1> translation buffer off
+	input       [1:0] diag,
+
 	// performance counters
 	output            stat_hit,
 	output            stat_miss,
@@ -197,6 +201,7 @@ module vax_core #(
 		.in_mode    (cpu_mode),
 		.in_con     (cpu_con),
 		.in_mcheck  (mcheck),
+		.tb_off     (diag[1]),
 
 		.ipr_we     (ipr_we),
 		.ipr_adr    (ipr_adr),
@@ -224,6 +229,7 @@ module vax_core #(
 	 */
 	wire        mem_stb, mem_we, mem_ack;
 	wire [31:0] mem_adr, mem_wdat, mem_rdat;
+	wire [21:0] mem_pre;
 	wire  [3:0] mem_sel;
 
 	vax_io #(.CLK_HZ(CLK_HZ), .MEMMB(32), .TSCALE(TSCALE)) io (
@@ -246,6 +252,7 @@ module vax_core #(
 		.m_stb    (mem_stb),
 		.m_we     (mem_we),
 		.m_adr    (mem_adr),
+		.m_pre    (mem_pre),
 		.m_wdat   (mem_wdat),
 		.m_sel    (mem_sel),
 		.m_rdat   (mem_rdat),
@@ -313,6 +320,8 @@ module vax_core #(
 
 		.STB_I    (mem_stb),
 		.ADR_I    (mem_adr),
+		.PRE_I    (mem_pre),
+		.DIS_I    (diag[0]),
 		.DAT_I    (mem_wdat),
 		.SEL_I    (mem_sel),
 		.WE_I     (mem_we),

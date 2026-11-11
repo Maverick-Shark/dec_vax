@@ -24,6 +24,7 @@ module tb_cpu #(
 	input         clk,
 	input         rst,
 	output        halted,
+	input         tb_off,           // the MMU's translation buffer off (taken at reset)
 
 	// the disk images, played by the C++ driver as the HPS would
 	output [31:0] sd_lba0,
@@ -142,6 +143,7 @@ module tb_cpu #(
 		.in_mode    (cpu_mode),
 		.in_con     (cpu_con),
 		.in_mcheck  (mcheck),
+		.tb_off     (tb_off),
 		.ipr_we     (ipr_we),
 		.ipr_adr    (ipr_adr),
 		.ipr_dat    (ipr_dat),
@@ -190,6 +192,7 @@ module tb_cpu #(
 		.m_stb    (mem_stb),
 		.m_we     (mem_we),
 		.m_adr    (mem_adr),
+		.m_pre    (),
 		.m_wdat   (mem_wdat),
 		.m_sel    (mem_sel),
 		.m_rdat   (mem_rdat),

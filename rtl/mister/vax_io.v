@@ -33,6 +33,20 @@
 //  Every reference carries a byte mask (sel): a write writes only those
 //  bytes, a read to an I/O adapter asks for a word or a longword.
 //
+//  The CPU port. The MMU keeps a reference (strobe, address, data) on the
+//  port until it is acknowledged and takes its strobe away for a clock
+//  before the next one. The MBox takes the reference into a latch, and the
+//  PAMM code of its megabyte with it, so that everything behind the port -
+//  the PAMM decision, the array address, SBIA 0's decoding, the cache's
+//  comparisons - starts at a register and not at the end of the CPU's and
+//  the MMU's logic; the IPR writes come through a register as well. The
+//  cache's RAMs are read meanwhile with the address on its way (m_pre), so
+//  the latch costs no time: a cache hit is answered in the second clock as
+//  before. The answers (acknowledge, data, error) are registered; they
+//  outlast the latched strobe by a clock, so the MMU's own strobe, which has
+//  gone by then, and the latched one, which a new reference has not reached
+//  yet, qualify them.
+//
 //  DMA. SBIA 0's receiver sends the MBox the SBI's DMA one longword at a
 //  time (dma_*). The PAMM is looked up for it too: a DMA reference whose
 //  code is not a memory array is aborted (dma_nxm; the Fault Isolation
@@ -84,12 +98,15 @@ module vax_io #(
 	input      [31:0] ipr_dat,
 	output reg  [4:0] pamm_rd,
 
-	// memory port: m_adr is the array address, {slot, PA<21:0>}; m_ack and
-	// m_rdat are the memory's registered answer, which may outlast m_stb by
-	// a clock (the strobe of the reference qualifies them here)
+	// memory port: m_adr is the array address, {slot, PA<21:0>}; m_pre is
+	// m_adr<21:0> a clock before the reference is on the port (the cache
+	// reads its RAMs with it); m_ack and m_rdat are the memory's registered
+	// answer, which may outlast m_stb by a clock (the strobes of the
+	// reference qualify them here)
 	output            m_stb,
 	output            m_we,
 	output     [31:0] m_adr,
+	output     [21:0] m_pre,
 	output     [31:0] m_wdat,
 	output      [3:0] m_sel,
 	input      [31:0] m_rdat,
@@ -161,6 +178,18 @@ module vax_io #(
 			pamm3[k] = (k < MEMMB) ? k / 4 : (k >= 512 && k < 544) ? 5'h18 : 5'h1F;
 		end
 
+	// the IPR writes, through a register (the CPU has no reference on the
+	// port for several clocks after an MTPR)
+	reg         iw;
+	reg   [6:0] ia;
+	reg  [31:0] id;
+	initial iw = 1'b0;
+	always @(posedge clk) begin
+		iw <= ipr_we && !rst;
+		ia <= ipr_adr;
+		id <= ipr_dat;
+	end
+
 	reg   [9:0] pamloc;
 	reg  [10:0] walk;               // initialization: rewrite every entry
 	wire        walking = ~walk[10];
@@ -171,12 +200,12 @@ module vax_io #(
 	always @* begin
 		pw   = 1'b0;
 		pw_a = pamloc;
-		pw_d = ipr_dat[4:0];
+		pw_d = id[4:0];
 		if (walking) begin
 			pw   = 1'b1;
 			pw_a = walk[9:0];
 			pw_d = pamm_std(walk[9:0]);
-		end else if (ipr_we && ipr_adr == IPR_PAMACC)
+		end else if (iw && ia == IPR_PAMACC)
 			pw = 1'b1;
 	end
 
@@ -185,11 +214,24 @@ module vax_io #(
 	wire [31:0] dma_adr, dma_wdat;
 	wire  [3:0] dma_sel;
 
-	reg   [4:0] code_q;             // pamm[PA<29:20>], one clock later
-	reg   [9:0] mb_q;
+	// the CPU port's latch: the MMU's reference, and with it (code_q) the
+	// PAMM code of the megabyte its address is in
+	reg         stb_r, we_r;
+	reg  [31:0] adr_r, wdat_r;
+	reg   [3:0] sel_r;
+	initial stb_r = 1'b0;
+	always @(posedge clk) begin
+		stb_r  <= stb && !rst;
+		we_r   <= we;
+		adr_r  <= adr;
+		wdat_r <= wdat;
+		sel_r  <= sel;
+	end
+
+	reg   [4:0] code_q;             // pamm[PA<29:20>] of adr_r
 	reg         mb_ok;              // not written while it was read
-	reg   [4:0] dcode_q;            // the same for the DMA address
-	reg   [9:0] dmb_q;
+	reg   [4:0] dcode_q;            // the same for the DMA address, a clock
+	reg   [9:0] dmb_q;              // after it
 	reg         dmb_ok;
 	always @(posedge clk) begin
 		if (pw) begin
@@ -198,7 +240,6 @@ module vax_io #(
 			pamm3[pw_a] <= pw_d;
 		end
 		code_q  <= pamm[adr[29:20]];
-		mb_q    <= adr[29:20];
 		mb_ok   <= !(pw && pw_a == adr[29:20]);
 		dcode_q <= pamm3[dma_adr[29:20]];
 		dmb_q   <= dma_adr[29:20];
@@ -217,18 +258,16 @@ module vax_io #(
 		end else begin
 			if (walking)
 				walk <= walk + 11'd1;
-			if (ipr_we && ipr_adr == IPR_PAMLOC)
-				pamloc <= ipr_dat[29:20];
+			if (iw && ia == IPR_PAMLOC)
+				pamloc <= id[29:20];
 		end
 
-	// The code is known one clock after the address (as the cache's tags).
-	// Timing: the comparison of the address with the one the code was
-	// looked up for only decides whether a reference starts; it is not in
-	// the way of the address to the memory nor of the answers back to the
-	// MMU, which come from registers qualified by the reference's strobe:
-	// a master keeps its address until it is answered and drops its strobe
-	// for a clock before the next reference.
-	wire look   = stb && !walking && mb_ok && (mb_q == adr[29:20]);
+	// The latched reference has its code with it (the PAMM was read with
+	// the address the latch took), unless the entry was being written in
+	// that clock: then the reference waits for the next read. The DMA
+	// address comes from a register already; its code is a clock behind
+	// it, and the comparison says when the two belong together.
+	wire look   = stb_r && !walking && mb_ok;
 	wire is_mem = look && (code_q[4:3] == 2'b00);
 	wire is_ioa = look && (code_q == 5'h18);
 	wire is_nxm = look && !is_mem && !is_ioa;
@@ -250,17 +289,20 @@ module vax_io #(
 			gnt <= gnt ? (d_mem && !is_mem) : d_mem;
 
 	assign m_stb  = c_stb;
-	assign m_we   = gnt ? dma_we : we;
-	// the array address, from the code looked up the clock before: the
-	// memory starts only when the code is the current address's (m_stb),
-	// and it waits for its address to stay the same for a clock as well
+	assign m_we   = gnt ? dma_we : we_r;
+	// the array address: the slot from the PAMM, the offset PA<21:0>
 	assign m_adr  = gnt ? {7'd0, dcode_q[2:0], dma_adr[21:0]} :
-	                      {7'd0, code_q[2:0], adr[21:0]};
-	assign m_wdat = gnt ? dma_wdat : wdat;
-	assign m_sel  = gnt ? dma_sel : sel;
+	                      {7'd0, code_q[2:0], adr_r[21:0]};
+	// and the offset a clock early, straight from the MMU, for the cache
+	// to read its RAMs with (the DMA address has no earlier form: a DMA
+	// reference takes the clock more that it always took)
+	assign m_pre  = gnt ? dma_adr[21:0] : adr[21:0];
+	assign m_wdat = gnt ? dma_wdat : wdat_r;
+	assign m_sel  = gnt ? dma_sel : sel_r;
 
-	// the memory's answer belongs to the reference still on the port
-	wire cpu_mack = !gnt && stb && m_ack;
+	// the answers belong to the reference still on the port (see above)
+	wire live     = stb && stb_r;
+	wire cpu_mack = !gnt && live && m_ack;
 	wire dma_mack = gnt && dma_stb && m_ack;
 
 	reg  d_nxm_q;
@@ -290,11 +332,11 @@ module vax_io #(
 		.clk      (clk),
 		.rst      (rst),
 		.stb      (is_ioa),
-		.cyc      (stb),
-		.we       (we),
-		.adr      (adr),
-		.wdat     (wdat),
-		.sel      (sel),
+		.cyc      (stb_r),
+		.we       (we_r),
+		.adr      (adr_r),
+		.wdat     (wdat_r),
+		.sel      (sel_r),
 		.rdat     (sb_rdat),
 		.ack      (sb_ack),
 		.err      (sb_err),
@@ -567,21 +609,21 @@ module vax_io #(
 	always @(posedge clk)
 		if (is_nxm && !nxm_q) begin
 			io_mstat2 <= {11'd0, code_q, 12'd0, 4'b1000};
-			io_mear   <= {2'b00, adr[29:2], 2'b00};
+			io_mear   <= {2'b00, adr_r[29:2], 2'b00};
 		end else if (sb_err) begin
 			io_mstat2 <= {11'd0, 5'h18, 12'd0, 4'b0100};
-			io_mear   <= {2'b00, adr[29:2], 2'b00};
+			io_mear   <= {2'b00, adr_r[29:2], 2'b00};
 		end else if (sb_bad) begin
 			io_mstat2 <= {11'd0, 5'h18, 2'b01, 14'd0};
-			io_mear   <= {2'b00, adr[29:2], 2'b00};
+			io_mear   <= {2'b00, adr_r[29:2], 2'b00};
 		end
 
 	// a reference to non-existent memory fails a clock after it was seen
 	// (MSTAT2 and MEAR are loaded meanwhile); the MMU keeps it until then
-	assign io_err = (stb & nxm_q) | sb_err | sb_bad;
+	assign io_err = live & (nxm_q | sb_err | sb_bad);
 
-	assign rdat = (cpu_mack ? m_rdat : 32'd0) | sb_rdat;
-	assign ack  = cpu_mack | (sb_ack & ~sb_bad);
+	assign rdat = (cpu_mack ? m_rdat : 32'd0) | (stb ? sb_rdat : 32'd0);
+	assign ack  = cpu_mack | (stb & sb_ack & ~sb_bad);
 
 endmodule
 

@@ -109,22 +109,31 @@ it when it sizes the system; processor initialization does the same here:
 The PAMM is a real RAM (three copies of 1024 x 5 bits in M10K: one read
 for every CPU reference, one for every DMA reference, one at PAMLOC for
 MFPR), so software can remap memory or take a megabyte away, as the
-8600's memory diagnostics do. Its lookup runs in the same clock as the
-cache's tag lookup, so it costs no time. With the console's map the array
-address is the physical address itself.
+8600's memory diagnostics do. Its lookup costs no time (see below). With
+the console's map the array address is the physical address itself.
 
-How it is wired matters for timing, since the reference from the MMU to the
-cache and the cache's answer back are the core's critical path: the code is
-looked up with the address of the clock before, and a comparison of the two
-addresses says whether it is the current one. That comparison only decides
-whether a reference starts (the cache's strobe, the SBIA's, a non-existent
-memory error a clock later); the array address the cache gets is always
-`{code<2:0>, PA<21:0>}`, and the answers (the cache's and the SBIA's
-acknowledge, read data and error) come from their registers, qualified by
-the MMU's strobe. A master keeps its address until it is answered and
-drops its strobe for at least a clock before the next reference, so an
-answer cannot belong to another reference. The price is one clock when a
-reference goes to another 4 MB array than the one before.
+How the CPU port is wired matters for timing, since the reference from the
+MMU to the cache and the cache's answer back are the core's critical path.
+The MMU keeps a reference (strobe, address, write data, mask) on the port
+until it is acknowledged, and takes its strobe away for at least a clock
+before the next one. The MBox takes the reference into a latch, and reads
+the PAMM in the same clock, so the latched reference has its code with it.
+Everything behind the port - the decision between memory, SBIA 0 and
+non-existent memory, the array address `{code<2:0>, PA<21:0>}`, the
+adapter's address decoding, the cache's comparisons - starts at those
+registers, not at the end of the CPU's and the MMU's logic; the IPR writes
+(MTPR PAMLOC and PAMACC here, the memory management registers in the MMU)
+are taken through a register too. The latch costs no time: the cache reads
+its RAMs with the address that is on its way into the latch (`m_pre`), so
+the tag and the data of the line are there when the reference arrives, and
+a hit is answered in the second clock, as it was without the latch. A
+reference to another megabyte than the one before costs nothing either.
+
+The answers (the cache's and the SBIA's acknowledge, read data and error)
+come from registers and outlast the latched strobe by a clock. Two strobes
+qualify them: the MMU's own, which has gone by then, and the latched one,
+which a new reference has not reached yet; so an answer cannot be taken for
+the next reference's, even when that one follows after a single clock.
 
 ## SBIA 0
 

@@ -64,6 +64,15 @@
  * address goes straight through: PA<29:0> = VA<29:0>, no checks, no extra
  * clock.
  *
+ * The IPR writes are taken through a register, a clock after the CPU makes
+ * them (it has no reference under way for several clocks after an MTPR):
+ * the decoding of the register number, which ends in the 512 valid bits of
+ * the TB, then starts at a register and not behind the CPU's logic.
+ *
+ * tb_off (taken at reset) turns the translation buffer off, for finding a
+ * fault on a board: no lookup ever hits, so every reference walks the page
+ * tables, and TBCHK finds nothing. Everything else must behave the same.
+ *
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
@@ -93,6 +102,7 @@ module mmu(
 	input [1:0]	in_mode,	/* access mode for the protection check */
 	input		in_con,		/* console access, CPU halted: no faults */
 	input		in_mcheck,	/* bus timeout machine check: give up */
+	input		tb_off,		/* translation buffer off (diagnostic) */
 
 	/* IPR writes seen by the CPU (MTPR, console deposits) */
 	input		ipr_we,
@@ -210,6 +220,24 @@ module mmu(
 	reg [31:0]	badr, bwdat;
 	reg [31:0]	pte;
 
+	/* the IPR writes, a clock late (see above) */
+	reg		iw;
+	reg [6:0]	ia;
+	reg [31:0]	id;
+	initial iw = 1'b0;
+	always @(posedge clk) begin
+		iw <= ipr_we & ~rst;
+		ia <= ipr_adr;
+		id <= ipr_dat;
+	end
+
+	/* the translation buffer off: taken at reset, which empties it */
+	reg		notb;
+	initial notb = 1'b0;
+	always @(posedge clk)
+		if (rst)
+			notb <= tb_off;
+
 	wire		need_xlate = mapen & ~in_pmem;
 	wire		thru = (state == S_IDLE) & ~in_probe & ~need_xlate;
 
@@ -249,8 +277,8 @@ module mmu(
 	 * tb_q and tb_vq hold the entry read in the previous clock: for va in
 	 * S_LOOK (read in S_IDLE), for pte_va in S_SLOOK (read in S_SRD).
 	 */
-	wire		hit   = tb_vq && q_tag == va[30:17];
-	wire		shit  = tb_vq && q_tag == pte_va[30:17];
+	wire		hit   = tb_vq && !notb && q_tag == va[30:17];
+	wire		shit  = tb_vq && !notb && q_tag == pte_va[30:17];
 
 	/*
 	 * One update port for single valid bits: set when an entry is written
@@ -258,8 +286,8 @@ module mmu(
 	 * two never meet: TBIS is an MTPR, and the CPU cannot execute one while
 	 * it waits for the access the MMU is translating.
 	 */
-	wire		tbis  = ipr_we && ipr_adr == `IPR_TBIS;
-	wire [8:0]	tb_vi = tbis ? tbidx(ipr_dat) : tb_wa;
+	wire		tbis  = iw && ia == `IPR_TBIS;
+	wire [8:0]	tb_vi = tbis ? tbidx(id) : tb_wa;
 	wire [20:0]	vpn   = va[29:9];
 	wire [20:0]	svpn  = pte_va[29:9];
 
@@ -325,15 +353,15 @@ module mmu(
 			tb_v <= 512'd0;
 		end else begin
 			/* MM register writes and TB flushes (never during an access) */
-			if (ipr_we) begin
-				case (ipr_adr)
-				`IPR_P0BR: begin p0br <= { ipr_dat[31:2], 2'b00 }; tb_v[255:0] <= 256'd0; end
-				`IPR_P0LR: begin p0lr <= ipr_dat[21:0]; tb_v[255:0] <= 256'd0; end
-				`IPR_P1BR: begin p1br <= { ipr_dat[31:2], 2'b00 }; tb_v[255:0] <= 256'd0; end
-				`IPR_P1LR: begin p1lr <= ipr_dat[21:0]; tb_v[255:0] <= 256'd0; end
-				`IPR_SBR:  begin sbr <= { ipr_dat[31:2], 2'b00 }; tb_v <= 512'd0; end
-				`IPR_SLR:  begin slr <= ipr_dat[21:0]; tb_v <= 512'd0; end
-				`IPR_MAPEN: begin mapen <= ipr_dat[0]; tb_v <= 512'd0; end
+			if (iw) begin
+				case (ia)
+				`IPR_P0BR: begin p0br <= { id[31:2], 2'b00 }; tb_v[255:0] <= 256'd0; end
+				`IPR_P0LR: begin p0lr <= id[21:0]; tb_v[255:0] <= 256'd0; end
+				`IPR_P1BR: begin p1br <= { id[31:2], 2'b00 }; tb_v[255:0] <= 256'd0; end
+				`IPR_P1LR: begin p1lr <= id[21:0]; tb_v[255:0] <= 256'd0; end
+				`IPR_SBR:  begin sbr <= { id[31:2], 2'b00 }; tb_v <= 512'd0; end
+				`IPR_SLR:  begin slr <= id[21:0]; tb_v <= 512'd0; end
+				`IPR_MAPEN: begin mapen <= id[0]; tb_v <= 512'd0; end
 				`IPR_TBIA: tb_v <= 512'd0;
 				default: ;
 				endcase

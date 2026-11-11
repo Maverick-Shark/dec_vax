@@ -36,6 +36,19 @@
 //  qualifies them with the strobe of the reference on its port. That keeps
 //  the MBox's PAMM decision, which drives STB_I, out of the answer's path.
 //
+//  The RAMs are read a clock ahead. The MBox latches the CPU's reference
+//  before it puts it on this port, and gives the address the latch is about
+//  to take on PRE_I (its bits <21:0>: the index and the offset are all the
+//  RAMs need). When the reference arrives the tag and the data of its line
+//  are already there (fresh), so a hit is answered in the reference's first
+//  clock here; a reference whose address was not announced (DMA) waits a
+//  clock for them, as every reference did before.
+//
+//  DIS_I turns the cache off, for finding a fault on a board: taken at
+//  reset, it makes every read a miss (a line fill from the SDRAM), so the
+//  contents of the cache's RAMs are never used. The machine runs several
+//  times slower and must behave the same.
+//
 //  Part of the MiSTer port of r-vax (VAX CPU in Verilog by Anders Magnusson).
 //  SPDX-License-Identifier: BSD-2-Clause
 //============================================================================
@@ -52,6 +65,8 @@ module vax_cache #(
 	// CPU side
 	input             STB_I,
 	input      [31:0] ADR_I,
+	input      [21:0] PRE_I,        // ADR_I<21:0> a clock early (see above)
+	input             DIS_I,        // cache off (taken at reset)
 	input      [31:0] DAT_I,
 	input       [3:0] SEL_I,        // byte mask of a write
 	input             WE_I,
@@ -85,7 +100,7 @@ module vax_cache #(
 	reg [TAGB:0]      tag_q;
 	reg [7:0]         dat_q0, dat_q1, dat_q2, dat_q3;
 	wire [31:0]       dat_q = {dat_q3, dat_q2, dat_q1, dat_q0};
-	reg [AB-1:0]      la_q;
+	reg [IDXB+1:0]    ix_q;         // the index and offset they were read at
 
 	reg               tw;
 	reg [IDXB-1:0]    tw_adr;
@@ -96,31 +111,32 @@ module vax_cache #(
 	reg  [3:0]        dw_be;
 
 	wire [AB-1:0]     la    = ADR_I[AB+1:2];
-	wire [IDXB-1:0]   idx   = la[IDXB+1:2];
 	wire [TAGB-1:0]   tag   = la[AB-1:IDXB+2];
+	// the RAMs' read address: the reference on its way to the port
+	wire [IDXB+1:0]   pix   = PRE_I[IDXB+3:2];
 
 	always @(posedge clk) begin
 		if (tw) tag_ram[tw_adr] <= tw_dat;
-		tag_q <= tag_ram[idx];
-		la_q  <= la;
+		tag_q <= tag_ram[pix[IDXB+1:2]];
+		ix_q  <= pix;
 	end
 
 	// one simple dual-port RAM per byte lane
 	always @(posedge clk) begin
 		if (dw && dw_be[0]) dat_ram0[dw_adr] <= dw_dat[7:0];
-		dat_q0 <= dat_ram0[la[IDXB+1:0]];
+		dat_q0 <= dat_ram0[pix];
 	end
 	always @(posedge clk) begin
 		if (dw && dw_be[1]) dat_ram1[dw_adr] <= dw_dat[15:8];
-		dat_q1 <= dat_ram1[la[IDXB+1:0]];
+		dat_q1 <= dat_ram1[pix];
 	end
 	always @(posedge clk) begin
 		if (dw && dw_be[2]) dat_ram2[dw_adr] <= dw_dat[23:16];
-		dat_q2 <= dat_ram2[la[IDXB+1:0]];
+		dat_q2 <= dat_ram2[pix];
 	end
 	always @(posedge clk) begin
 		if (dw && dw_be[3]) dat_ram3[dw_adr] <= dw_dat[31:24];
-		dat_q3 <= dat_ram3[la[IDXB+1:0]];
+		dat_q3 <= dat_ram3[pix];
 	end
 
 	// Cyclone V M10K gives "don't care" for a mixed-port read-during-write,
@@ -137,22 +153,30 @@ module vax_cache #(
 		dw_q <= dw; dw_adr_q <= dw_adr; dw_dat_q <= dw_dat; dw_be_q <= dw_be;
 	end
 
-	wire [TAGB:0] tag_eff = (tw_q && tw_adr_q == la_q[IDXB+1:2]) ? tw_dat_q : tag_q;
-	wire          dw_byp  = dw_q && dw_adr_q == la_q[IDXB+1:0];
+	wire [TAGB:0] tag_eff = (tw_q && tw_adr_q == ix_q[IDXB+1:2]) ? tw_dat_q : tag_q;
+	wire          dw_byp  = dw_q && dw_adr_q == ix_q;
 	wire [31:0]   dat_eff = {
 		(dw_byp && dw_be_q[3]) ? dw_dat_q[31:24] : dat_q[31:24],
 		(dw_byp && dw_be_q[2]) ? dw_dat_q[23:16] : dat_q[23:16],
 		(dw_byp && dw_be_q[1]) ? dw_dat_q[15:8]  : dat_q[15:8],
 		(dw_byp && dw_be_q[0]) ? dw_dat_q[7:0]   : dat_q[7:0] };
 
-	// tag_q/dat_q belong to the current address only if it has been stable
-	wire fresh = (la_q == la);
+	// tag_q/dat_q belong to the reference on the port if they were read at
+	// its index and offset
+	wire fresh = (ix_q == la[IDXB+1:0]);
+	// DIS_I, taken at reset (the lines filled while the cache is off do not
+	// see the writes, and the reset invalidates them all): never a hit
+	reg  off;
+	initial off = 1'b0;
+	always @(posedge clk)
+		if (rst)
+			off <= DIS_I;
 `ifdef CACHE_NOHIT
 	// measurement build only: never hit, so every read becomes a line fill.
 	// Used to quantify what the cache is worth; not for synthesis.
 	wire hit   = 1'b0;
 `else
-	wire hit   = fresh && tag_eff[TAGB] && (tag_eff[TAGB-1:0] == tag);
+	wire hit   = fresh && !off && tag_eff[TAGB] && (tag_eff[TAGB-1:0] == tag);
 `endif
 
 	// ---------------------------------------------------------- write buffer

@@ -68,6 +68,7 @@ assign VIDEO_ARY = (!ar) ? 12'd3 : 12'd0;
 //  14      halt the CPU now (trigger), as Ctrl+P does
 //  15      Ctrl+P: 0 = halts the CPU, 1 = goes to the program as a character
 //  16      disk LED: 0 = disk activity, 1 = CPU running
+//  18:17   fault finding: 1 = cache off, 2 = translation buffer off, 3 = both
 //  122:121 aspect ratio
 
 `include "build_id.v"
@@ -92,6 +93,7 @@ localparam CONF_STR = {
 	"O[9],Power-on Memory Test,On,Off;",
 	"O[13:11],SDRAM Read Phase,Calibrated,Force 0,Force 1,Force 2,Force 3;",
 	"T[10],Run Memory Test;",
+	"O[18:17],Fault Finding,Off,Cache off,TB off,Both off;",
 	"-;",
 	"T[0],Reset;",
 	"R[0],Reset and close OSD;",
@@ -266,6 +268,7 @@ vax_system #(.CLK_HZ(50000000), .CPB(`CLKPERBIT), .UART_CPB(434), .CACHEIDX(`CAC
 	.selftest_en    (~status[9]),
 	.selftest_go    (st_go),
 	.rdphase_sel    (status[13:11]),
+	.diag           (status[18:17]),
 	.sdram_sz       (sdram_sz),
 
 	.ps2_key        (ps2_key),
@@ -332,7 +335,7 @@ assign LED_USER = led;
 // The disk LED: the RP07s' activity (a seek, a transfer, a sector going to
 // or from the SD card), held for 50 ms so that one sector shows; or, with
 // the OSD option, the CPU running.
-reg [21:0] dk_led_t;
+reg [21:0] dk_led_t = 22'd0;
 always @(posedge clk_sys)
 	if (disk_act)
 		dk_led_t <= 22'd2500000;

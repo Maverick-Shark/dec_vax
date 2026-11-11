@@ -11,6 +11,8 @@
 //
 // Environment:
 //   NOTEST      power-on memory test off       PHASE=n   force read phase n-1
+//   DIAG=n      the OSD's fault finding option: 1 cache off, 2 translation
+//               buffer off, 3 both
 //   START200    start address 0x200            NOAUTO    no autostart
 //   NOHPSRST    do not imitate the HPS holding the core in reset after it
 //               sends the SDRAM size (MiSTer Main does: size, then status[0]
@@ -374,6 +376,7 @@ int main(int argc, char **argv) {
 	prof_on = getenv("PROFILE") ? 1 : 0;
 	tb->selftest_go = 0; tb->uart_rxd = 1;
 	tb->rdphase_sel = getenv("PHASE") ? atoi(getenv("PHASE")) : 0;
+	tb->diag = getenv("DIAG") ? atoi(getenv("DIAG")) & 3 : 0;
 	tb->sdram_sz = 0;                       // the HPS reports it later
 	hps.init(HpsPorts{{&tb->dk_lba0, &tb->dk_lba1}, &tb->dk_rd, &tb->dk_wr,
 	                  &tb->dk_ack, &tb->dk_buff_addr, &tb->dk_buff_dout,
