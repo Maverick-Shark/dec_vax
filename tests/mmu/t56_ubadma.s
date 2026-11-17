@@ -193,6 +193,7 @@ c01:	movb	r1, (r2)+
 	movl	@#MEMC+8, (r11)+	; EEEEEEEE
 	movl	@#DPR+8, (r11)+		; A0010182: byte 0, one longword on
 	movl	#^x80000000, @#DPR+8	; purge
+	tstl	@#DPR+8			; (BSY until the purge is done, see t57)
 	movl	@#MEMC+8, (r11)+	; EEEEEED7
 	movl	@#DPR+8, (r11)+		; 00000182
 

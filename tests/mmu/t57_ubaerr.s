@@ -19,6 +19,12 @@
 ;     to the CPU as read data substitute - a machine check, ABus bad data;
 ;   - USEFIE: the adapter's request for these errors.
 ;
+; Memory that a purge writes is read after a read of the DPR, as software
+; does: the adapter answers it with BSY until the purge is done (TD figure
+; 3-35, AIP). The CPU's own memory references do not wait for the adapter
+; (on the 8600 they do not even cross the SBI), so without that read the
+; result would depend on how fast the purge's write reaches memory.
+;
 ; Expected values: tests/mmu/gen/mk_t57.py.
 ;@ noref
 ;@ rtl=18000:FFFF0000,18004:00000201,18008:00000001,1800C:00000000,18010:00000201,18014:00000002
@@ -163,6 +169,7 @@ d01:	sobgtr	r1, d01
 	clrl	@#DCR
 	movl	#^x40000000, @#DPR+16
 	movl	#^x80000000, @#DPR+16	; purge: written now
+	tstl	@#DPR+16		; (BSY until the purge is done)
 	movl	@#MEMD, (r11)+		; 07070707
 	movl	@#MEMD+4, (r11)+	; 07070707
 	movl	@#UASR, (r11)+		; 0
@@ -181,6 +188,7 @@ d01:	sobgtr	r1, d01
 	clrl	@#DCR
 	movl	#^x40000000, @#DPR+16
 	movl	#^x80000000, @#DPR+16
+	tstl	@#DPR+16		; (BSY until the purge is done)
 	movl	@#MEMD+8, (r11)+	; 01010101
 	movl	@#MEMD+12, (r11)+	; 03000101
 ; a read: the word from the buffer with PB, read data substitute
