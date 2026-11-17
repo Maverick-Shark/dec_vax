@@ -212,12 +212,16 @@ proc dv_pat {name} {
 }
 
 # The data inputs of the core's block RAMs in the timing netlist. A data
-# input is a register inside the RAM block (...|ram_block1aN~porta_datain_regI,
-# bit N+I of the RAM's word). The translation buffer's RAM is checked input
-# by input: bit k must come from mmu:mmu|tb_wd[k], and all 40 bits of tb_wd
-# must be in the netlist. For the other RAMs only the number of inputs with
-# no path from a register is given (an input the Verilog ties to a constant
-# has none, so that is not wrong in itself). Returns the text, and for the
+# input is a register inside a RAM block (...|ram_block1aN~porta_datain_regI).
+# The translation buffer's RAM is checked input by input: each of its 40 data
+# inputs must come from one bit of mmu:mmu|tb_wd, and each bit of tb_wd must
+# drive exactly one of them. Which input holds which bit is the fitter's
+# choice: it packs the 40 one-bit columns of the RAM into two 20-bit M10K
+# blocks, named after the lowest bit each holds, and orders the columns as
+# routing suits it (the read data comes out of the same column, so the order
+# does not matter). For the other RAMs only the number of inputs with no
+# path from a register is given (an input the Verilog ties to a constant has
+# none, so that is not wrong in itself). Returns the text, and for the
 # translation buffer "ok", "bad" or "unknown" with the list of what is wrong.
 proc dv_ramins {} {
     set txt [list]
@@ -254,13 +258,7 @@ proc dv_ramins {} {
             }
             if {[string match "*vax_core:core|mmu:mmu|*" $name]} {
                 incr tbn
-                # which bit of the word the input is (ram_block1aN, register
-                # I: bit N+I), if the name says it
-                set bit -1
-                if {[regexp {ram_block[0-9]*a([0-9]+)~port[ab]_datain_reg([0-9]+)$} $name -> n i]} {
-                    set bit [expr {$n + $i}]
-                }
-                # and which bit of tb_wd drives it
+                # the bit of tb_wd that drives this input: one, and only one
                 set srcs [list]
                 set k -1
                 set one 1
@@ -274,14 +272,16 @@ proc dv_ramins {} {
                         set one 0
                     }
                 }
-                set ok [expr {$one && $k >= 0 && ($bit < 0 || $bit == $k)}]
-                if {$ok} { lappend tbk $k }
                 if {![llength $srcs]} { set srcs [list "NOTHING"] }
-                set mark [expr {$ok ? "" : "   <<< WRONG"}]
-                set key [expr {$bit >= 0 ? $bit : ($k >= 0 ? $k : 99)}]
-                lappend tbl [list $key [format "      bit %2s  %-30s <- %s%s" \
-                    [expr {$bit >= 0 ? $bit : "?"}] $pin [join $srcs ", "] $mark]]
-                if {!$ok} { lappend bad "translation buffer RAM, input $pin: from [join $srcs {, }]" }
+                if {$one && $k >= 0} {
+                    lappend drv($k) $pin
+                    lappend tbl [list $k [format "      tb_wd\[%d\]%s -> %s" $k \
+                        [string repeat " " [expr {2 - [string length $k]}]] $pin]]
+                } else {
+                    lappend tbl [list 99 [format "      %s -> %s   <<< WRONG" \
+                        [join $srcs ", "] $pin]]
+                    lappend bad "translation buffer RAM, input $pin: from [join $srcs {, }]"
+                }
             }
         }
         if {$ntot == 0} {
@@ -300,16 +300,23 @@ proc dv_ramins {} {
             lappend txt "  other than the translation buffer's that is all this says)"
             if {$tbn != 40} {
                 lappend bad "translation buffer RAM: $tbn data inputs in the netlist, not 40"
-            } elseif {![llength $bad]} {
-                # each bit of tb_wd drives exactly one input
-                set ks [lsort -integer -unique $tbk]
-                if {[llength $ks] != 40 || [lindex $ks 0] != 0 || [lindex $ks end] != 39} {
-                    lappend bad "translation buffer RAM: the inputs are driven by tb_wd bits [join $ks ,], not 0-39 once each"
+            }
+            # each bit of tb_wd drives exactly one input
+            set nodrv [list]
+            for {set i 0} {$i < 40} {incr i} {
+                if {![info exists drv($i)]} {
+                    lappend nodrv $i
+                } elseif {[llength $drv($i)] > 1} {
+                    lappend bad "translation buffer RAM: tb_wd\[$i\] drives [llength $drv($i)] inputs: [join $drv($i) {, }]"
                 }
             }
+            if {[llength $nodrv]} {
+                lappend bad "translation buffer RAM: no input from tb_wd bit(s) [join $nodrv ,]"
+            }
             if {[info exists tbl]} {
-                lappend txt "  the translation buffer's RAM, input by input: bit k must come from"
-                lappend txt "  tb_wd\[k\] (the word is tag<13:0>, pfn<20:0>, prot<3:0>, m):"
+                lappend txt "  the translation buffer's RAM: each bit of tb_wd (tag<13:0>, pfn<20:0>,"
+                lappend txt "  prot<3:0>, m) must drive exactly one data input; which one is the"
+                lappend txt "  fitter's choice:"
                 foreach l [lsort -integer -index 0 $tbl] { lappend txt [lindex $l 1] }
             }
             set state [expr {[llength $bad] ? "bad" : "ok"}]
@@ -409,7 +416,7 @@ if {[catch {
     set rin  [dv_ramins]
     set tbst [lindex $rin 1]
     if {$tbst eq "ok"} {
-        puts $o "Netlist, translation buffer RAM: every data input from its bit of tb_wd."
+        puts $o "Netlist, translation buffer RAM: each bit of tb_wd drives one data input."
     } elseif {$tbst eq "bad"} {
         puts $o "Netlist, translation buffer RAM: WRONG. The bitstream does not do what the"
         puts $o "Verilog says, whatever the simulation and the timing say:"

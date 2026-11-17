@@ -418,7 +418,7 @@ A good compile starts like this (the slack figures vary):
 ```
 clk_sys: timing MET at every operating condition.
 
-Netlist, translation buffer RAM: every data input from its bit of tb_wd.
+Netlist, translation buffer RAM: each bit of tb_wd drives one data input.
 Netlist, registers removed for lost fan-out: only the expected ones.
 ```
 
