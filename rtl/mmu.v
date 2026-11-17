@@ -20,7 +20,7 @@
  * VA<30:17>. An entry holds the PFN, the protection code and the modify bit
  * of a valid PTE (the TB never holds invalid PTEs). Valid bits are kept in
  * flip-flops so that TBIA and the process-space flush take one clock; the
- * rest is one M10K block RAM (512 x 40). The valid bit of an entry is read
+ * rest is a block RAM (512 x 40, two M10K). The valid bit of an entry is read
  * in the same clock as the RAM word, and set in the same clock as the RAM
  * word is written, so the flip-flops need one 512-way read multiplexer and
  * one decoder.
@@ -137,26 +137,120 @@ module mmu(
 
 	/* ------------------------------------------------ translation buffer */
 	/*
-	 * no_rw_check: an entry is written in the clock after S_SPTE, S_PTE or
-	 * S_PTEW, and nothing uses tb_q until the next lookup, so the value
-	 * read while the same entry is being written never matters; Quartus
-	 * need not add bypass logic for it.
+	 * The RAM: 512 words of 40 bits, tag<13:0>, pfn<20:0>, prot<3:0>, m.
+	 * A word is written in the clock after tb_we is set (from tb_wa and
+	 * tb_wd) and the word at tb_ra is read into tb_q in every clock.
+	 *
+	 * For Quartus it is an altsyncram instance with every port connected
+	 * (files.qip defines TB_ALTSYNCRAM), not a memory left to inference.
+	 * Up to M8 it was an inferred memory (ramstyle "M10K, no_rw_check"),
+	 * and in the M8 compiles Quartus 17.1 built it with bit 13 of the write
+	 * data - PFN<8> - connected to nothing: the "Registers Removed During
+	 * Synthesis" table of the map report lists tb_wd[13] with "Lost
+	 * fanout". On the board every entry then had PFN<8> set, so the first
+	 * reference to a page (the page table walk) went to the right place
+	 * and every later one (the TB hit) 128 KB higher, while the simulation,
+	 * which reads this file and not Quartus's netlist, passed everything.
+	 * Why the bit was dropped is not known (the same lines had worked on
+	 * the board since M5); so the registers of the write port are also
+	 * marked "preserve", and tools/sta_report.tcl looks in the netlist of
+	 * every compile for the source of each data input of this RAM and for
+	 * any register of the core removed for having no fan-out.
+	 *
+	 * A read in the clock in which the same word is written gives the old
+	 * contents (OLD_DATA, as the cache's RAMs). Nothing uses that word: an
+	 * entry is written in the clock after S_SPTE, S_PTE or S_PTEW, and tb_q
+	 * is not looked at until the next lookup.
+	 *
+	 * Simulators take the memory below instead, which is the same RAM; so
+	 * that the instance is simulated too, "make -C sim cputbf" builds the
+	 * CPU bench with TB_ALTSYNCRAM and a model of the megafunction
+	 * (sim/altsyncram_model.v), and the tests must pass on both.
 	 */
-	(* ramstyle = "M10K, no_rw_check" *)
-	reg [39:0]	tb_ram [0:511];	/* tag<13:0>, pfn<20:0>, prot<3:0>, m */
-	reg [39:0]	tb_q;
+	(* preserve *) reg		tb_we;
+	(* preserve *) reg [8:0]	tb_wa;
+	(* preserve *) reg [39:0]	tb_wd;
+	reg [8:0]	tb_ra;		/* read address (combinational) */
+	wire [39:0]	tb_q;
 	reg [511:0]	tb_v;
 	reg		tb_vq;		/* valid bit of the entry in tb_q */
-	reg [8:0]	tb_ra;		/* read address (combinational) */
-	reg		tb_we;
-	reg [8:0]	tb_wa;
-	reg [39:0]	tb_wd;
+
+`ifdef TBFAULT
+	/*
+	 * Simulation only (make -C sim cputbf): +TBFAULT=100+k makes bit k of
+	 * the word written stuck at 1, +TBFAULT=200+k at 0: the faults that
+	 * tests/diag/mmudiag.s must find and name on a board.
+	 */
+	integer		tbf;
+	initial if (!$value$plusargs("TBFAULT=%d", tbf)) tbf = 0;
+	wire [39:0]	tb_wdx =
+		(tbf >= 100 && tbf < 140) ? (tb_wd | (40'd1 << (tbf - 100))) :
+		(tbf >= 200 && tbf < 240) ? (tb_wd & ~(40'd1 << (tbf - 200))) :
+		tb_wd;
+`else
+	wire [39:0]	tb_wdx = tb_wd;
+`endif
+
+`ifdef TB_ALTSYNCRAM
+	altsyncram #(
+		.operation_mode	("DUAL_PORT"),
+		.width_a	(40),
+		.widthad_a	(9),
+		.numwords_a	(512),
+		.width_b	(40),
+		.widthad_b	(9),
+		.numwords_b	(512),
+		.address_aclr_b	("NONE"),
+		.address_reg_b	("CLOCK0"),
+		.outdata_aclr_b	("NONE"),
+		.outdata_reg_b	("UNREGISTERED"),
+		.clock_enable_input_a	("BYPASS"),
+		.clock_enable_input_b	("BYPASS"),
+		.clock_enable_output_b	("BYPASS"),
+		.read_during_write_mode_mixed_ports	("OLD_DATA"),
+		.power_up_uninitialized	("FALSE"),
+		.ram_block_type	("M10K"),
+		.width_byteena_a	(1),
+		.intended_device_family	("Cyclone V"),
+		.lpm_type	("altsyncram")
+	) tb_mem (
+		.clock0		(clk),
+		.wren_a		(tb_we),
+		.address_a	(tb_wa),
+		.data_a		(tb_wdx),
+		.address_b	(tb_ra),
+		.q_b		(tb_q),
+		.aclr0		(1'b0),
+		.aclr1		(1'b0),
+		.addressstall_a	(1'b0),
+		.addressstall_b	(1'b0),
+		.byteena_a	(1'b1),
+		.byteena_b	(1'b1),
+		.clock1		(1'b1),
+		.clocken0	(1'b1),
+		.clocken1	(1'b1),
+		.clocken2	(1'b1),
+		.clocken3	(1'b1),
+		.data_b		({40{1'b1}}),
+		.eccstatus	(),
+		.q_a		(),
+		.rden_a		(1'b1),
+		.rden_b		(1'b1),
+		.wren_b		(1'b0)
+	);
+`else
+	/* simulators, and any other synthesis: the same RAM as a memory */
+	(* ramstyle = "M10K" *)
+	reg [39:0]	tb_ram [0:511];
+	reg [39:0]	tb_qr;
 
 	always @(posedge clk) begin
 		if (tb_we)
-			tb_ram[tb_wa] <= tb_wd;
-		tb_q <= tb_ram[tb_ra];
+			tb_ram[tb_wa] <= tb_wdx;
+		tb_qr <= tb_ram[tb_ra];
 	end
+	assign tb_q = tb_qr;
+`endif
 
 	wire [13:0]	q_tag  = tb_q[39:26];
 	wire [20:0]	q_pfn  = tb_q[25:5];

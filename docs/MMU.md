@@ -70,7 +70,11 @@ half and a process half.
 | 4:1 | Protection code |
 | 0 | M |
 
-The entries are one 512 x 40 M10K RAM (two blocks). The valid bits are 512
+The entries are one 512 x 40 M10K RAM (two blocks), an explicit `altsyncram`
+instance for Quartus: as an inferred memory, the milestone 8 compiles left
+one of its data inputs unconnected (see `rtl/mmu.v` and the README_MiSTer
+section *A core that passes in simulation and fails on the board*). The
+simulators take the same RAM as a Verilog memory. The valid bits are 512
 flip-flops, so that every flush takes a single clock:
 
 | Event | Effect |

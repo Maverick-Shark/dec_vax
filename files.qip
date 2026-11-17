@@ -2,6 +2,8 @@
 set_global_assignment -name VERILOG_MACRO "MISTER=1"
 set_global_assignment -name VERILOG_MACRO "CLKPERBIT=16"
 set_global_assignment -name VERILOG_MACRO "CACHEIDX=10"
+# the translation buffer's RAM as an altsyncram instance (rtl/mmu.v)
+set_global_assignment -name VERILOG_MACRO "TB_ALTSYNCRAM=1"
 set_global_assignment -name SEARCH_PATH rtl
 
 # MiSTer glue

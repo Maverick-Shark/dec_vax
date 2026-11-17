@@ -55,7 +55,7 @@ obj_fpu/Vfpunit: ../rtl/fpunit.v fpu_tb/fpu_tb.cpp
 	  -CFLAGS "-O1 -w" -o Vfpunit
 
 clean:
-	rm -rf obj obj_unit obj_nc obj_e obj_l obj_cpu obj_fast obj_du obj_dqma obj_fpu obj_cpux obj_x
+	rm -rf obj obj_unit obj_nc obj_e obj_l obj_cpu obj_fast obj_du obj_dqma obj_fpu obj_cpux obj_x obj_cpuf
 
 UNIT = $(addprefix ../rtl/mister/,vt_font.v vt_term.v vax_kbd.v) unit_top.v
 
@@ -111,6 +111,22 @@ obj_cpux/Vtb_cpu: $(CPUTB) cpu_tb/tb_cpu.cpp hpsdisk.h
 	  -Mdir obj_cpux $(CPUTB) cpu_tb/tb_cpu.cpp -CFLAGS "-O1 -w" -o Vtb_cpu
 
 cputbx: obj_cpux/Vtb_cpu
+
+# The CPU bench with the translation buffer's RAM as Quartus builds it: the
+# altsyncram instance of rtl/mmu.v (TB_ALTSYNCRAM, which files.qip defines
+# for Quartus) on a model of the megafunction, altsyncram_model.v. The tests
+# must pass here as on obj_cpu (RTLBIN="sim/obj_cpuf/Vtb_cpu" with
+# tests/mmu/run.py). It also takes a fault in that RAM: +TBFAULT=100+k
+# (bit k of the word written stuck at 1) or +TBFAULT=200+k (stuck at 0),
+# after the other arguments; tests/diag/tbfault.py runs mmudiag.bin with
+# every fault and checks what the diagnostic says.
+obj_cpuf/Vtb_cpu: $(CPUTB) altsyncram_model.v cpu_tb/tb_cpu.cpp hpsdisk.h
+	verilator --cc --exe --build -j 4 -O2 -Wno-fatal -Wno-WIDTH -Wno-TIMESCALEMOD \
+	  -DMISTER -DCLKPERBIT=16 -DTBFAULT -DTB_ALTSYNCRAM --public-flat-rw -I../rtl \
+	  --top-module tb_cpu -Mdir obj_cpuf $(CPUTB) altsyncram_model.v \
+	  cpu_tb/tb_cpu.cpp -CFLAGS "-O1 -w" -o Vtb_cpu
+
+cputbf: obj_cpuf/Vtb_cpu
 
 obj_x/Vtb_top: $(SRC) tb.cpp hpsdisk.h
 	verilator --cc --exe --build -j 4 -O2 --x-initial unique --x-assign unique \
