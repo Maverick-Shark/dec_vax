@@ -295,6 +295,18 @@ All of it in [docs/IO.md](docs/IO.md).
 tests check DEC's values), and an image written by the core reads back the
 same on a reference simulator and the other way round.
 
+Found on the board after M8: the M8 bitstreams failed `mmutest.bin` from
+its first test with memory management on, and EVKAE from `START/TEST:4`
+(halt code 4), while every simulation passed. Quartus 17.1 had built the
+translation buffer's RAM with one data input (PFN bit 8) connected to
+nothing; the map report listed the register that should have fed it as
+removed for "lost fanout", and the same fault in the simulation gives the
+board's results. The RAM is now an explicit `altsyncram` instance, every
+compile checks the netlist for this kind of difference
+(`output_files/dec_vax_timing.txt`), and `mmudiag.bin` names a stuck PFN
+bit on the board (step T). To be confirmed on the board with the next
+build.
+
 ### M9 - Boot like an 8600 (M)
 
 - VMB.EXE, DEC's primary bootstrap, loaded at `0x200` with R0 = device type,

@@ -389,13 +389,17 @@ and cuts the framework's quasi-static paths, so the core file only adds its own:
 `output_files/dec_vax_timing.txt`, the one file that says how a compile went.
 It starts with a summary - the worst setup and hold slack inside `clk_sys` at
 **every** operating condition Quartus has a model for, and `timing MET` or
-`timing NOT MET` -, the fitter's summary (how full the FPGA is), one line for
-every block RAM as it was built (size, mode, what a read gives while the
-location is written), any RAM the synthesis did not infer, and the core's
-registers the synthesis removed as stuck at a value. Then come the worst
-paths of the whole design, the worst paths inside `clk_sys` (the three worst
-node by node) and the SDRAM read and command paths at every operating
-condition.
+`timing NOT MET`, then two checks of the netlist against the Verilog (see
+*A core that passes in simulation and fails on the board*): that every data
+input of the translation buffer's RAM comes from its bit of the write data,
+and that the registers of the core the synthesis removed for having no
+fan-out are only the expected ones. Then the fitter's summary (how full the
+FPGA is), one line for every block RAM as it was built (size, mode, what a
+read gives while the location is written), any RAM the synthesis did not
+infer, and the core's registers the synthesis removed as stuck at a value.
+Then come the worst paths of the whole design, the worst paths inside
+`clk_sys` (the three worst node by node) and the SDRAM read and command
+paths at every operating condition.
 
 The MiSTer template analyses only one slow corner
 (`TIMEQUEST_MULTICORNER_ANALYSIS OFF`), which keeps compiles short and is
@@ -409,6 +413,14 @@ shrink. It costs a few minutes of compile time.
 least check that TimeQuest does not print `Critical Warning: Timing
 requirements not met`. (Up to milestone 7 the worst paths of the whole design
 were in the MiSTer framework's HDMI scaler, about +0.5 ns, not in this core.)
+A good compile starts like this (the slack figures vary):
+
+```
+clk_sys: timing MET at every operating condition.
+
+Netlist, translation buffer RAM: every data input from its bit of tb_wd.
+Netlist, registers removed for lost fan-out: only the expected ones.
+```
 
 ## Using it
 
@@ -1042,6 +1054,28 @@ tables and go through translation, the TB, faults, CHMK and interrupts; step
 does not expect prints its SCB vector and the top of the stack and stops; a
 machine check (SCB 04) prints its whole frame, where the 16th longword is
 MSTAT2 and the 20th MEAR, the physical address of the reference that failed.
+
+Step `T`, between 2 and 3, tests the page frame number bits of the
+translation buffer's RAM, in a way that still works when one of them is
+stuck - a fault under which nothing else that runs with mapping on gets far,
+this program included. A page of code is run with mapping on at its own
+address; the same code, with another number in it, sits in each of the 16
+pages that one wrong PFN bit can lead to, so the number it comes back with
+names the bit. It is done in pages `5555` and `AAAA`, so each bit is tried
+as a 0 and as a 1:
+
+```
+T  TB RAM, the PFN bits of an entry:  code at 00AAAA00 ok  code at 01555400 ok  ok
+```
+
+With a fault it says which bit and how, for instance `code at 00AAAA00 PFN
+bit 00000008 STUCK AT 1`, and stops there. (PFN bits 16-20 stuck at 1 take
+the fetch, and then the machine check frame, beyond the 32 MB: the processor
+halts in this step with code `00000005`.) The other bits of an entry - tag,
+protection, modify - are not this step's; some of them show in steps 3 and
+6. `python3 tests/diag/tbfault.py` runs the diagnostic in simulation with
+each of the 40 bits of the RAM stuck at 1 and at 0 in turn.
+
 On a working core it ends with:
 
 ```
@@ -1054,18 +1088,43 @@ Memory management works.
 
 ### A core that passes in simulation and fails on the board
 
-Three things tell them apart, in this order:
+The simulation runs the Verilog; the board runs what Quartus made of it.
+The milestone 8 builds were such a case: everything passed in simulation,
+and on the board `mmutest.bin` failed its first test with memory management
+on (`t01_xlate` halted with code 6, PC `80001135`), and EVKAE
+(`START/TEST:4`, tests 4 to 11) halted with code 4. The timing was met with
+3 ns to spare. The cause was in the
+synthesis report: one line in `output_files/dec_vax.map.rpt`, *Registers
+Removed During Synthesis*, `mmu:mmu|tb_wd[13] ; Lost fanout`. That register
+is bit 13 of the word written into the translation buffer's RAM, PFN bit 8;
+Quartus 17.1 had left that data input of the RAM with no source, so every
+entry read back with PFN bit 8 set. The first reference to a page (a page
+table walk) went to the right place and every later one, a TB hit, 128 KB
+higher. The same fault injected in the simulation (`make -C sim cputbf`,
+`+TBFAULT=113`) gives exactly the board's results: `t01_xlate` halts with
+code 6 at the same PC, and EVKAE halts with code 4 in tests 7 to 11, the
+ones with memory management on. Why Quartus did it is not
+known (the same Verilog had worked on the board since milestone 5); the RAM
+is now an explicit `altsyncram` instance instead of an inferred memory, its
+write registers are marked `preserve`, and every compile checks the netlist
+for it.
+
+Three things tell such a failure apart, in this order:
 
 1. `output_files/dec_vax_timing.txt`, which every compile writes
    (`tools/sta_report.tcl`). Its first lines give the worst setup and hold
    slack inside the core's clock at every operating condition Quartus has a
-   model for, and say `timing MET` or `timing NOT MET`; then come the
-   fitter's summary (how full the FPGA is), every block RAM as it was built
-   (size, mode, what a read gives while the same location is written) and
-   any RAM the synthesis could not infer and built out of registers. A core
-   whose timing is not met cannot be trusted on the board, whatever the
-   simulation says; one that is nearly full is hard to fit and may not meet
-   it the next time.
+   model for, and say `timing MET` or `timing NOT MET`; then whether every
+   data input of the translation buffer's RAM comes from the register the
+   Verilog says, and whether the synthesis removed any register of the core
+   for having no fan-out that is not on the list of the expected ones (a
+   bit nothing reads, such as SBR<31:30>). Then come the fitter's summary
+   (how full the FPGA is), every block RAM as it was built (size, mode,
+   what a read gives while the same location is written) and any RAM the
+   synthesis could not infer and built out of registers. A core whose
+   timing is not met, or whose netlist check finds a difference, cannot be
+   trusted on the board, whatever the simulation says; one that is nearly
+   full is hard to fit and may not meet its timing the next time.
 2. `mmudiag.bin` (above): where it stops.
 3. The OSD's *Fault Finding* option, with `mmutest.bin` or `mmudiag.bin`
    loaded again after changing it (the load resets the CPU, which is when
@@ -1073,10 +1132,11 @@ Three things tell them apart, in this order:
    used: every read is a line fetched from the SDRAM. With *TB off* the
    translation buffer's RAM is never used: every reference walks the page
    tables. Both must give the same results as *Off*, only slower, with one
-   exception: `t01_xlate` then reports `R05 is 041F0008, expected 041F000A`,
-   because TBCHK finds nothing in a translation buffer that is off. If the
-   failure goes away with one of them, the fault is in that block or in the
-   paths around it.
+   exception, TBCHK, which finds nothing in a translation buffer that is
+   off: `t01_xlate` then reports `R05 is 041F0008, expected 041F000A`, and
+   step 6 of `mmudiag.bin` says `00000008 00000008  ERROR` (and so the
+   summary 1 step with errors). If the failure goes away with one of them,
+   the fault is in that block or in the paths around it.
 
 The simulation can also start from a different power-up state than the
 zeros a simulator gives every register: `make -C sim cputbx sysx` builds

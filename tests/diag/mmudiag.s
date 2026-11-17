@@ -31,6 +31,30 @@
 ; on; then a summary. A machine check prints its whole frame (the byte
 ; count, 22 longwords, PC, PSL; MSTAT2 is the 16th longword, MEAR the
 ; 20th).
+;
+; Step T, between 2 and 3, is for the translation buffer's RAM. If a PFN
+; bit of its entries is stuck, the first reference to a page (the page
+; table walk) goes to the right page and every later one (the TB hit) to
+; another: nothing that runs with mapping on survives that, this program
+; included. So it is looked for first, in a way that does survive it. A
+; page of code is run with mapping on at its own address (P0, VA = PA).
+; The same code, with another number in it, is put in every page that one
+; wrong PFN bit can lead to (the page number with bit k inverted, k = 0 to
+; 15). Whichever page the TB sends the fetches to, the code there loads its
+; number, turns mapping off - which brings the PC back to the first page -
+; and returns; the number names the bit. Twice, in pages 5555 and AAAA
+; (physical 00AAAA00 and 01555400), so that each bit is tried as a 0 and as
+; a 1. With a bit found, the diagnostic stops there. (PFN<20:16> stuck at 1
+; send the second fetch to memory that does not exist, a machine check, and
+; the machine check frame there too: the processor halts in this step with
+; code 5, a double error.) The other bits of an entry are not this step's:
+; a stuck tag bit shows in step 6 when the addresses used have it the other
+; way, some stuck protection bits stop step 3 (a halt, or an access
+; violation), and the rest change nothing this program can see.
+; tests/diag/tbfault.py runs the program with each bit stuck in turn.
+; The P0 page table entry of the code page is at 10000 + 4 * page
+; (P0BR = S0+10000), up to 3FFFF: for this step the system page table maps
+; S0 pages 0-1FF (SLR 200), and step 2's registers are put back after it.
 
 S0	= ^x80000000
 SPT	= ^x10000
@@ -40,6 +64,10 @@ PTE_V	= ^x80000000
 PR_NA	= 0
 PR_KW	= ^x10000000
 PR_UW	= ^x20000000
+PR_URSW	= ^x60000000
+TBK1	= ^x5555		; step T: the two code pages (page numbers)
+TBK2	= ^xAAAA
+TBP0BR	= ^x10000		; and P0BR there (minus S0): see the top
 KSP	= 0
 ISP	= 4
 P0BR	= 8
@@ -185,6 +213,35 @@ r2e:	jsb	puthex
 	incl	r7
 r2f:	jsb	puthex
 	jsb	result
+
+; ---------------------------------------------------------------- step T
+; the PFN bits of the translation buffer's RAM (see the top)
+	movl	#12, step
+	movab	s_tt, r1
+	jsb	puts
+	movl	#SPT+^x400, r0		; S0 pages 100-1FF as well, for the
+	movl	#PTE_V+PR_KW+^x100, r1	; page table entries of this step
+fillt:	movl	r1, (r0)+
+	incl	r1
+	cmpl	r0, #SPT+^x800
+	blss	fillt
+	mtpr	#^x200, #SLR
+	clrl	r7
+	movl	#TBK1, r6
+	jsb	tbrun
+	movl	#TBK2, r6
+	jsb	tbrun
+	mtpr	#^x100, #SLR		; step 2's registers again
+	mtpr	#S0+P0PT, #P0BR
+	mtpr	#^x100, #P0LR
+	mtpr	#0, #TBIA
+	jsb	result
+	tstl	r7
+	beql	tbok
+	movab	s_ttx, r1
+	jsb	puts
+	brw	theend
+tbok:
 
 ; ---------------------------------------------------------------- step 3
 ; mapping on: the code goes on at 0000xxxx, now P0 space
@@ -437,7 +494,7 @@ k10b:	mtpr	#0, #ICCS
 	jsb	result
 
 ; ---------------------------------------------------------------- the end
-	movab	s_end, r1
+theend:	movab	s_end, r1
 	jsb	puts
 	movl	nerr, r0
 	jsb	puthex
@@ -448,6 +505,89 @@ k10b:	mtpr	#0, #ICCS
 	movab	s_allok, r1
 	jsb	puts
 done1:	halt
+
+; ---------------------------------------------------------------- step T
+; tbrun: the page whose number is in r6 and the 16 pages one PFN bit away
+; from it get the code at tbk, each with its number (0 for the page itself,
+; 100 + k for the one with bit k inverted). The code is run in page r6 with
+; mapping on, at its own address in P0; the number it comes back with says
+; where the TB sent the fetches. r7 counts the errors. Mapping is off here;
+; P0BR and P0LR are left as the run needed them.
+tbrun:	clrl	r8
+tbr1:	movl	r6, r9
+	cmpl	r8, #16
+	beql	tbr2
+	ashl	r8, #1, r0
+	xorl2	r0, r9
+tbr2:	ashl	#9, r9, r9
+	movc3	#tbk_end-tbk, tbk, (r9)
+	clrl	r0
+	cmpl	r8, #16
+	beql	tbr3
+	addl3	#^x100, r8, r0
+tbr3:	movl	r0, tbk_num-tbk(r9)
+	aobleq	#16, r8, tbr1
+	ashl	#2, r6, r0		; the page's P0 page table entry, at
+	addl2	#TBP0BR, r0		; P0BR + 4 * page
+	bisl3	#PTE_V+PR_URSW, r6, (r0)
+	mtpr	#S0+TBP0BR, #P0BR
+	addl3	#1, r6, r0
+	mtpr	r0, #P0LR
+	mtpr	#0, #TBIA
+	mnegl	#1, r0
+	ashl	#9, r6, r1
+	jmp	(r1)			; mapping on, the number, mapping off
+tbk_ret:
+	movl	r0, r5
+	mtpr	#0, #TBIA
+	movab	s_tta, r1
+	jsb	puts
+	ashl	#9, r6, r0
+	jsb	puthex
+	tstl	r5
+	bneq	tbr5
+	movab	s_ttok, r1
+	jsb	puts
+	rsb
+tbr5:	incl	r7
+	subl3	#^x100, r5, r4		; the bit, if it is one
+	cmpl	r4, #15
+	bgtru	tbr8
+	movab	s_ttb, r1
+	jsb	puts
+	movl	r4, r0
+	jsb	puthex
+	movab	s_tt1, r1		; the page has a 0 in that bit and the
+	bbc	r4, r6, tbr6		; TB gave a 1, or the other way round
+	movab	s_tt0, r1
+tbr6:	jsb	puts
+	rsb
+tbr8:	movab	s_ttu, r1
+	jsb	puts
+	movl	r5, r0
+	jsb	puthex
+	rsb
+
+; The page of code. NOPs around the two MTPRs: where exactly the fetches
+; change from physical to translated and back does not matter, the bytes
+; are the same in every copy; only the number differs.
+	.align	4
+tbk:	mtpr	#1, #MAPEN
+	nop
+	.byte	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
+	.byte	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
+	.byte	^xD0, ^x8F		; movl #number, r0
+tbk_num:
+	.long	0
+	.byte	^x50
+	nop
+	.byte	1, 1, 1, 1, 1, 1, 1, 1
+	mtpr	#0, #MAPEN
+	nop
+	.byte	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
+	.byte	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
+	jmp	@#tbk_ret
+tbk_end:
 
 ; ---------------------------------------------------------------- helpers
 ; result: "  ok" if r7 is 0, else "  ERROR"; counts the errors
@@ -716,7 +856,13 @@ exc0:	cmpl	vec, expvec
 	movab	s_unexp, r1		; not expected: stop
 	jsb	puts
 	movl	step, r0
-	jsb	puthex
+	cmpl	r0, #12			; step T
+	bneq	exc01
+	movl	#^x54, r0
+	jsb	putc
+	brb	exc02
+exc01:	jsb	puthex
+exc02:
 	movab	s_crlf, r1
 	jsb	puts
 	halt
@@ -761,6 +907,15 @@ s_t1:	.asciz	"1  page tables written, read back:"
 s_bad:	.asciz	"  wrong: "
 s_spt:	.asciz	"  SPT[8] SPT[40] P0PT[40] "
 s_t2:	.asciz	"2  SBR SLR P0BR P0LR P1BR P1LR: "
+s_tt:	.asciz	"T  TB RAM, the PFN bits of an entry:"
+s_tta:	.asciz	"  code at "
+s_ttok:	.asciz	" ok"
+s_ttb:	.asciz	" PFN bit "
+s_tt1:	.asciz	" STUCK AT 1"
+s_tt0:	.asciz	" STUCK AT 0"
+s_ttu:	.asciz	" came back with "
+s_ttx:	.ascii	"   The translation buffer's RAM is faulty. With mapping on nothing\r\n"
+	.asciz	"   runs right, so the diagnostic stops here.\r\n"
 s_t3:	.asciz	"3  MAPEN on, in P0: MAPEN "
 s_p0ok:	.asciz	"  ok\r\n"
 s_t4:	.asciz	"4  JMP to S0: PC "
