@@ -52,6 +52,7 @@ __pycache__/
 # folders tools/vaxdisk.py extracts them into, the supervisor images)
 docs/*.pdf
 software/evkaa.exe
+software/vmb.exe
 software/*.dsk
 software/*/
 software/*_ds.bin

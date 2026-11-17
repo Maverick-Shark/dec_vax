@@ -314,12 +314,13 @@ pass on the DE10-Nano.
 
 - VMB.EXE, DEC's primary bootstrap, loaded at `0x200` with R0 = device type,
   R1 = adapter TR, R2 and R3 = unit, R5 = boot flags, as the 8600 console does.
-  A *Boot* entry in the OSD (or a `B` command in the monitor) sets them for the
-  RP07. VMS media carry their own VMB.EXE. The console's side is in
-  *OpenVMS Systems Operations Guide: VAX 8600 Systems* (EK-V8600-OG,
-  chapter 3): the boot command procedures on the console RL02 (DB0BOO.COM
-  and the others for an RP07: device code DB), what they deposit in R0-R5
-  and `LOAD/START:@ VMB`.
+  The console's side is in *OpenVMS Systems Operations Guide: VAX 8600
+  Systems* (EK-V8600-OG, chapter 3): the boot command procedures on the
+  console RL02 (DB0BOO.COM and the others for an RP07: device code DB), what
+  they deposit in R0-R5 and `LOAD/START:@ VMB`. Done: the OSD's *Boot
+  (VMB.EXE)* entry loads VMB from the SD card at 200 and deposits them
+  (*Boot Device*, *Boot Flags*, *VMB Memory Test*); VMB runs on the RTL as on
+  the reference simulator (README_MiSTer.md, *Booting from a disk: VMB*).
 - The 8600/8650 Diagnostic Supervisor (EDSAA) from `VAX_MINIMUM_DIAGS.dsk`,
   with EVKAB (basic instructions), EVKAC (floating point), EVKAD
   (compatibility mode, once it exists) and EVKAE (privileged architecture).

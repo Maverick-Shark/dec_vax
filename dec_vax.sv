@@ -69,6 +69,10 @@ assign VIDEO_ARY = (!ar) ? 12'd3 : 12'd0;
 //  15      Ctrl+P: 0 = halts the CPU, 1 = goes to the program as a character
 //  16      disk LED: 0 = disk activity, 1 = CPU running
 //  18:17   fault finding: 1 = cache off, 2 = translation buffer off, 3 = both
+//  19      boot device: 0 = DBA0, 1 = DBA1 (RP07 unit 0, 1)
+//  21:20   boot flags (R5): 0 = 0, 1 = 10 (diagnostic supervisor),
+//          2 = 1 (conversational), 3 = 8 (boot block)
+//  22      VMB memory test: 0 = on, 1 = off (R5<7>)
 //  122:121 aspect ratio
 
 `include "build_id.v"
@@ -78,6 +82,10 @@ localparam CONF_STR = {
 	"F1,BINEXE,Load Program;",
 	"S0,DSKIMG,RP07 Unit 0;",
 	"S1,DSKIMG,RP07 Unit 1;",
+	"F2,EXE,Boot (VMB.EXE);",
+	"O[19],Boot Device,DBA0,DBA1;",
+	"O[21:20],Boot Flags,0 VMS,10 Diagnostics,1 Conversational,8 Boot block;",
+	"O[22],VMB Memory Test,On,Off;",
 	"O[2:1],Load Address,0x00001000,0x00000000,0x00000200,0x00010000;",
 	"O[3],Start Address,Load address,0x00000200;",
 	"O[4],Autostart,Yes,No;",
@@ -260,6 +268,10 @@ vax_system #(.CLK_HZ(50000000), .CPB(`CLKPERBIT), .UART_CPB(434), .CACHEIDX(`CAC
 	.load_base      (status[2:1]),
 	.start_200      (status[3]),
 	.autostart      (~status[4]),
+	.boot_unit      (status[19]),
+	.boot_r5        ({24'd0, status[22], 2'b00,
+	                  status[21:20] == 2'd1, status[21:20] == 2'd3,
+	                  2'b00, status[21:20] == 2'd2}),
 	.color          (status[6:5]),
 	.kbd_es         (status[7]),
 	.uart_console   (status[8]),

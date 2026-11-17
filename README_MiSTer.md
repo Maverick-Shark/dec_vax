@@ -440,9 +440,13 @@ microseconds *before* that reset, and the reset wiped the start of the banner:
 |---|---|
 | Load Program | Loads a `.BIN`/`.EXE` image into RAM at *Load Address*. The CPU is held in reset while loading, and that reset initializes it (see below), whatever was running |
 | RP07 Unit 0, RP07 Unit 1 | Mount a disk image (`.dsk`, `.img`) on the RP07 at Massbus unit 0 or 1 (see *Disks*) |
+| Boot (VMB.EXE) | Boots a disk as the 8600 console does: loads DEC's primary bootstrap, `VMB.EXE`, at 200h and starts it with the boot device in R0-R5 (see *Booting from a disk: VMB*) |
+| Boot Device | The RP07 *Boot* starts from: DBA0 (unit 0, default) or DBA1 |
+| Boot Flags | R5 for VMB: `0` VMS (default), `10` the Diagnostic Supervisor, `1` conversational (VMS's `SYSBOOT>`), `8` the disk's boot block |
+| VMB Memory Test | *On* (default): VMB tests the memory first, as on an 8600. *Off* sets R5<7> and skips it |
 | Load Address | `0x00001000` (default), `0x00000000`, `0x00000200`, `0x00010000` |
 | Start Address | *Load address*, or `0x00000200` - DEC stand-alone diagnostics load at 0 and start at 200h |
-| Autostart | After a load, types `FR<start address><CR>G` into the monitor |
+| Autostart | After a load, types `FR<start address><CR>G` into the monitor (*Boot* always starts, whatever this says) |
 | Text Color | Green / Amber / White phosphor |
 | Keyboard | US or ES (Spanish) layout |
 | UART Console In | Also accept keystrokes from `/dev/ttyS1`. Output always goes there |
@@ -480,8 +484,71 @@ with *RP07 Unit 0* / *RP07 Unit 1* in the OSD:
   5 to 46 ms a seek. If the SD card is slower than the platter, a sector
   waits for its data.
 
-Nothing boots from the disks yet (VMB, ROADMAP milestone 9): for now they are
-for programs and diagnostics that drive the RH780 themselves.
+### Booting from a disk: VMB
+
+A VAX 8600 boots a disk with DEC's primary bootstrap, VMB.EXE: the console
+loads it into memory and starts it with the boot device in the registers.
+The 8600's console reads VMB from its own RL02; here it comes from the SD
+card. *Boot (VMB.EXE)* in the OSD loads the file at 200h and types into the
+monitor what the 8600 console's boot command procedures deposit for a
+Massbus disk (*VAX 8600 Systems Operations Guide*, EK-V8600-OG, chapter 3):
+R0 = 0, the device type; R1 = 8, the RH780's TR (SBIA 0 in <7:4>); R2 and
+R3 = the drive's unit (*Boot Device*); R4 = 0; R5 = the boot flags (*Boot
+Flags*, plus R5<7> when *VMB Memory Test* is off); SP = 200; then the PC
+and `G`:
+
+```
+>0R00000000 00000000
+>1R00000000 00000008
+>2R00000000 00000000
+>3R00000000 00000000
+>4R00000000 00000000
+>5R00000000 00000090
+>ER00000000 00000200
+>FR00000000 00000200
+>G
+```
+
+VMB.EXE is DEC software and does not come with the core. It is on VMS
+distribution and console media, and the reference simulator comes with a
+copy (`vmb.exe`); put it anywhere on the SD card and select it with *Boot*.
+A disk with nothing VMB can boot gives `%BOOT-F-Unable to locate BOOT file`
+and halt code 6.
+
+The boot flags: `0` boots VMS (`[SYS0.SYSEXE]SYSBOOT.EXE`), `10` the
+Diagnostic Supervisor (`[SYSMAINT]DIAGBOOT.EXE`), `1` VMS conversationally
+(the `SYSBOOT>` prompt), `8` the disk's boot block, logical block 0, which
+is how other systems' bootstraps are started. With *VMB Memory Test* on,
+VMB first tests all 32 MB, as on an 8600, which takes a while at the core's
+speed; off skips it.
+
+**The Diagnostic Supervisor from a disk.** `VAX_MINIMUM_DIAGS.dsk` is a
+Files-11 volume with the 8600 Diagnostic Supervisor and its exercisers.
+Mount it as it is on *RP07 Unit 0* (a file smaller than an RP07 is fine),
+set *Boot Flags* `10 Diagnostics` (*Boot Device* `DBA0`) and select
+`vmb.exe` with *Boot*. VMB loads the supervisor's bootstrap, which loads the
+supervisor; then the supervisor can load its programs from the same disk.
+This is how the reference simulator boots that disk, with these commands
+(it takes the reference simulator some 55 million instructions to get to
+the `DS>` prompt, so allow a minute or more on the core):
+
+```
+DIAGNOSTIC SUPERVISOR.  ZZ-EDSAA-10.10-312  17-NOV-1987 16:55:30
+DS> ATTACH KA86 ABUS KA0 yes yes 0 0
+DS> ATTACH RH780 ABUS RH0 8 5
+DS> ATTACH RP07 RH0 DRA0
+DS> SET LOAD DRA0:[SYSMAINT]
+DS> SELECT KA0
+DS> LOAD EVKAE
+DS> START/TEST:1:2
+```
+
+(The supervisor calls the RP07 `DRA0`, VMS calls it `DBA0`.) That replaces
+the memory images of *Running the Diagnostic Supervisor and EVKAE*: the
+exercisers are loaded from the disk, as on an 8600. On the core it is the
+first board test of milestone 9. The simulation has run VMB on the RTL
+from the OSD entry with an empty disk (the same message as the reference
+simulator), not yet the whole supervisor boot, which is too long for it.
 
 ### Loading and running a program
 

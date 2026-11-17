@@ -4,7 +4,9 @@
 //    vax_core     r-vax CPU + M10K cache + 32 MB SDRAM + SBI stubs
 //    vax_selftest power-on SDRAM test and banner (owns memory, CPU in reset)
 //    loader       HPS file download (OSD "Load Program") into SDRAM
-//    autostart    types FR<addr><CR>G into the console monitor after a load
+//    autostart    types FR<addr><CR>G into the console monitor after a load;
+//                 after a boot (OSD "Boot", VMB.EXE loaded at 200) it
+//                 deposits the registers the 8600 console gives VMB first
 //    vax_kbd      USB keyboard -> ASCII -> console receive line (TTI)
 //    vt_term      console transmit line (TTO) -> on-screen terminal
 //    UART bridge  the same console on the MiSTer UART at 115200 baud
@@ -45,6 +47,8 @@ module vax_system #(
 	input       [1:0] load_base,    // 0: 0x1000, 1: 0x0, 2: 0x200, 3: 0x10000
 	input             start_200,    // start at 0x200 instead of the load address
 	input             autostart,
+	input             boot_unit,    // OSD Boot: RP07 unit (DBA0, DBA1)
+	input      [31:0] boot_r5,      // OSD Boot: VMB's boot flags (R5)
 	input       [1:0] color,
 	input             kbd_es,
 	input             uart_console,
@@ -109,7 +113,11 @@ module vax_system #(
 	reg  halt_req;      // Ctrl+P / OSD halt, one clock (see the console input)
 
 	// ------------------------------------------------------------ loader
-	wire        ldr_go = ioctl_download && (ioctl_index[5:0] == 6'd1);
+	// ioctl_index 1: OSD Load Program, at the OSD's load address;
+	// ioctl_index 2: OSD Boot - VMB.EXE, at 200 as the 8600 console loads it
+	// (EK-V8600-OG chapter 3), then started as the console starts it.
+	wire        ldr_boot = (ioctl_index[5:0] == 6'd2);
+	wire        ldr_go = ioctl_download && (ioctl_index[5:0] == 6'd1 || ldr_boot);
 	reg         ldr_stb, ldr_busy;
 	reg  [22:0] ldr_adr;
 	reg   [3:0] ldr_sel;
@@ -117,7 +125,9 @@ module vax_system #(
 	reg  [24:0] base;
 
 	always @* begin
-		case (load_base)
+		if (ldr_boot)
+			base = 25'h0000200;
+		else case (load_base)
 		2'd0: base = 25'h0001000;
 		2'd1: base = 25'h0000000;
 		2'd2: base = 25'h0000200;
@@ -457,21 +467,32 @@ module vax_system #(
 	);
 
 	// autostart: after a download, type "FR" <8 hex digits> CR "G" into the
-	// console monitor, which deposits the PC and starts the program
+	// console monitor, which deposits the PC and starts the program.
+	//
+	// After a boot (ioctl_index 2) it gives VMB what the 8600 console's boot
+	// command procedures give it for a Massbus disk (EK-V8600-OG chapter 3,
+	// DBnBOO.COM): R0 = 0, the device type; R1 = 8, the TR of the RH780,
+	// SBIA 0 in <7:4>; R2 = R3 = the drive's unit; R4 = 0; R5 = the boot
+	// flags; SP = 200; then PC = 200 and "G", as "nR" <8 digits> CR deposits.
 	localparam [31:0] AS_DELAY = CLK_HZ / 20;     // 50 ms before the first key
 	localparam [31:0] AS_GAP   = CLK_HZ / 2000;   // 0.5 ms between keys
 
 	reg        as_run;
-	reg  [3:0] as_idx;
+	reg        as_boot;          // the download was a boot
+	reg  [2:0] as_dep;           // the deposit being typed
+	reg  [3:0] as_pos;           // its character: register, R, 8 digits, CR
 	reg [31:0] as_tmr;
 	reg        as_valid;
 	reg  [7:0] as_data;
 	reg        ldr_go_d;
+	reg        ldr_boot_q;       // ldr_boot of the download that ran
 
 	initial begin
 		as_run = 1'b0;
+		as_boot = 1'b0;
 		as_valid = 1'b0;
 		ldr_go_d = 1'b0;
+		ldr_boot_q = 1'b0;
 	end
 
 	function [7:0] hexd;
@@ -481,34 +502,60 @@ module vax_system #(
 
 	wire [31:0] start_addr = start_200 ? 32'h00000200 : {7'd0, base};
 
+	// the deposits: a boot types all eight, a program load only the last
+	reg  [3:0] dep_reg;
+	reg [31:0] dep_val;
+	always @* begin
+		case (as_dep)
+		3'd0: begin dep_reg = 4'h0; dep_val = 32'd0; end
+		3'd1: begin dep_reg = 4'h1; dep_val = 32'd8; end
+		3'd2: begin dep_reg = 4'h2; dep_val = {31'd0, boot_unit}; end
+		3'd3: begin dep_reg = 4'h3; dep_val = {31'd0, boot_unit}; end
+		3'd4: begin dep_reg = 4'h4; dep_val = 32'd0; end
+		3'd5: begin dep_reg = 4'h5; dep_val = boot_r5; end
+		3'd6: begin dep_reg = 4'hE; dep_val = 32'h00000200; end
+		default: begin dep_reg = 4'hF; dep_val = as_boot ? 32'h00000200 : start_addr; end
+		endcase
+	end
+
 	always @(posedge clk) begin
 		ldr_go_d <= ldr_go;
+		if (ldr_go)
+			ldr_boot_q <= ldr_boot;
 		as_valid <= 1'b0;
 		if (rst_mem || rst_sys) begin
 			as_run <= 1'b0;
 		end else if (ldr_go_d && !ldr_go) begin  // download finished
-			as_run <= autostart;
-			as_idx <= 4'd0;
-			as_tmr <= AS_DELAY;
+			as_run  <= autostart | ldr_boot_q;   // a boot always starts
+			as_boot <= ldr_boot_q;
+			as_dep  <= ldr_boot_q ? 3'd0 : 3'd7;
+			as_pos  <= 4'd0;
+			as_tmr  <= AS_DELAY;
 		end else if (as_run && !rst_cpu) begin
 			if (as_tmr != 32'd0)
 				as_tmr <= as_tmr - 32'd1;
 			else begin
 				as_valid <= 1'b1;
 				as_tmr   <= AS_GAP;
-				as_idx   <= as_idx + 4'd1;
-				case (as_idx)
-				4'd0:  as_data <= "F";
+				as_pos   <= as_pos + 4'd1;
+				case (as_pos)
+				4'd0:  as_data <= hexd(dep_reg);
 				4'd1:  as_data <= "R";
-				4'd2:  as_data <= hexd(start_addr[31:28]);
-				4'd3:  as_data <= hexd(start_addr[27:24]);
-				4'd4:  as_data <= hexd(start_addr[23:20]);
-				4'd5:  as_data <= hexd(start_addr[19:16]);
-				4'd6:  as_data <= hexd(start_addr[15:12]);
-				4'd7:  as_data <= hexd(start_addr[11:8]);
-				4'd8:  as_data <= hexd(start_addr[7:4]);
-				4'd9:  as_data <= hexd(start_addr[3:0]);
-				4'd10: as_data <= 8'h0D;
+				4'd2:  as_data <= hexd(dep_val[31:28]);
+				4'd3:  as_data <= hexd(dep_val[27:24]);
+				4'd4:  as_data <= hexd(dep_val[23:20]);
+				4'd5:  as_data <= hexd(dep_val[19:16]);
+				4'd6:  as_data <= hexd(dep_val[15:12]);
+				4'd7:  as_data <= hexd(dep_val[11:8]);
+				4'd8:  as_data <= hexd(dep_val[7:4]);
+				4'd9:  as_data <= hexd(dep_val[3:0]);
+				4'd10: begin
+					as_data <= 8'h0D;
+					if (as_dep != 3'd7) begin   // the next deposit
+						as_dep <= as_dep + 3'd1;
+						as_pos <= 4'd0;
+					end
+				end
 				default: begin
 					as_data <= "G";
 					as_run  <= 1'b0;

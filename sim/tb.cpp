@@ -14,6 +14,9 @@
 //   DIAG=n      the OSD's fault finding option: 1 cache off, 2 translation
 //               buffer off, 3 both
 //   START200    start address 0x200            NOAUTO    no autostart
+//   BOOT        the program is loaded as the OSD's Boot entry loads VMB.EXE
+//               (at 200) and started as the 8600 console starts it (R0-R5,
+//               SP; BOOTUNIT=n the RP07 unit, BOOTR5=x the boot flags, hex)
 //   NOHPSRST    do not imitate the HPS holding the core in reset after it
 //               sends the SDRAM size (MiSTer Main does: size, then status[0]
 //               for the whole time it loads the saved settings)
@@ -324,7 +327,9 @@ static void grab_frame(const char *fn) {
 }
 
 static void download(const std::vector<unsigned char> &data) {
-	tb->ioctl_index = 1;
+	// BOOT: the OSD's Boot entry (index 2: loaded at 200, started as the
+	// 8600 console starts VMB); BOOTUNIT and BOOTR5 are its options
+	tb->ioctl_index = getenv("BOOT") ? 2 : 1;
 	tb->ioctl_download = 1;
 	run(10);
 	for (size_t i = 0; i < data.size(); i++) {
@@ -372,6 +377,8 @@ int main(int argc, char **argv) {
 	tb->load_base = base; tb->autostart = getenv("NOAUTO") ? 0 : 1; tb->color = 0; tb->kbd_es = 0;
 	tb->ps2_key = 0; tb->ioctl_download = 0; tb->ioctl_wr = 0;
 	tb->start_200 = getenv("START200") ? 1 : 0;
+	tb->boot_unit = getenv("BOOTUNIT") ? atoi(getenv("BOOTUNIT")) & 1 : 0;
+	tb->boot_r5 = getenv("BOOTR5") ? strtoul(getenv("BOOTR5"), 0, 16) : 0;
 	tb->selftest_en = getenv("NOTEST") ? 0 : 1;
 	prof_on = getenv("PROFILE") ? 1 : 0;
 	tb->selftest_go = 0; tb->uart_rxd = 1;
@@ -471,7 +478,7 @@ int main(int argc, char **argv) {
 
 	// ---- verify memory through the SDRAM model
 	static const unsigned bases[4] = {0x1000, 0x0, 0x200, 0x10000};
-	unsigned b0 = bases[base & 3];
+	unsigned b0 = getenv("BOOT") ? 0x200 : bases[base & 3];
 	int bad = 0;
 	for (size_t i = 0; i < data.size(); i++) {
 		unsigned a = b0 + i;
