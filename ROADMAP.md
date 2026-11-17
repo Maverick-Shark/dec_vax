@@ -64,14 +64,16 @@ OpenVMS VAX 7.3, the last VAX release, still supports the 8600.
   SBIA 0 with interrupts and DMA, the 8600's machine checks, an RH780
   Massbus adapter with two RP07 disks on SD card images, and a DW780
   Unibus adapter, with no devices on its Unibus yet
-  ([docs/IO.md](docs/IO.md)).
+  ([docs/IO.md](docs/IO.md)). Its tests in `mmutest.bin` pass on the
+  board (the disk transfers of t52-t54 need generated disks and run in
+  simulation only).
 - 60 directed and random tests (`tests/mmu`) give the same results as the
   reference simulator, or the values DEC's documents give where the
   simulator models the 8600 differently; `software/mmutest.bin` runs them on
-  the core. **EVKAE**, DEC's
+  the core, in simulation and on the board. **EVKAE**, DEC's
   privileged architecture exerciser, passes 10 of its 11 tests under the 8600
-  Diagnostic Supervisor (loaded as a memory image taken from a simulator); the
-  eleventh needs compatibility mode. **EVKAB**, the basic instruction
+  Diagnostic Supervisor (loaded as a memory image taken from a simulator), in
+  simulation and on the board; the eleventh needs compatibility mode. **EVKAB**, the basic instruction
   exerciser, passes all of its 161 tests under it (README_MiSTer.md).
 - 16 KB cache in M10K, SDRAM controller with read-phase calibration, power-on
   memory test, on-screen VT terminal with USB keyboard, MiSTer UART, program
@@ -304,8 +306,9 @@ removed for "lost fanout", and the same fault in the simulation gives the
 board's results. The RAM is now an explicit `altsyncram` instance, every
 compile checks the netlist for this kind of difference
 (`output_files/dec_vax_timing.txt`), and `mmudiag.bin` names a stuck PFN
-bit on the board (step T). To be confirmed on the board with the next
-build.
+bit on the board (step T). Confirmed on the board with the build of 17
+November 2026: `mmudiag.bin`, `mmutest.bin` and EVKAE (tests 1-2 and 4-11)
+pass on the DE10-Nano.
 
 ### M9 - Boot like an 8600 (M)
 
@@ -365,10 +368,10 @@ multi-user.
 |---|---|---|
 | EVKAA V8.0 | basic instructions | passes now |
 | `tests/mmu` (47 programs) | memory management, faults and restart, FPD, PROBE, LDPCTX/SVPCTX, REI, CHMx, BPT, XFC, halt codes, IPRs, reserved addressing modes, CASE, BBx, ACB, arithmetic traps, trace, the string, queue and decimal instructions, the octaword and floating point instructions (random operands), compared with the reference simulator | pass now |
-| `software/mmutest.bin` | the same programs on the core itself, self-checking | passes on the full-system model; the MMU ones on the board |
+| `software/mmutest.bin` | the same programs on the core itself, self-checking | passes on the full-system model and on the board |
 | EVKAB (Basic Instructions Exerciser) | every integer, branch, bit field, queue, character string and decimal instruction, with every addressing mode, page faults on the operands, timer interrupts and trace | all 161 tests pass under the Diagnostic Supervisor image |
 | EVKAC (Floating Point Instructions Exerciser) | every floating point instruction of the four formats, with every addressing mode, page faults on the operands and timer interrupts | all 98 tests pass under the Diagnostic Supervisor image, with the QUICK flag and without it (page faults on the operands) |
-| EVKAE (Privileged Architecture Exerciser) | interrupts, exceptions, REI, CHMx, IPRs, interval timer, memory management, kernel stack not valid, PROBE, LDPCTX/SVPCTX - DEC's own test of the MMU work | 10 of 11 tests pass under the Diagnostic Supervisor image; test 3 needs compatibility mode (M11) |
+| EVKAE (Privileged Architecture Exerciser) | interrupts, exceptions, REI, CHMx, IPRs, interval timer, memory management, kernel stack not valid, PROBE, LDPCTX/SVPCTX - DEC's own test of the MMU work | 10 of 11 tests pass under the Diagnostic Supervisor image, in simulation and on the board; test 3 needs compatibility mode (M11) |
 | Own C and assembler tests | each new instruction and exception, traced against the reference simulator | from M3 |
 | SVK | MMU, SCB, interval timer and console interrupts, software interrupts, SVPCTX/LDPCTX | M5 |
 | Random-operand comparison with the reference simulator | decimal, string, floating point (done) | M6, M7 |

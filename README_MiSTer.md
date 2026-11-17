@@ -27,7 +27,9 @@ exerciser, passes all of its 161 tests, **EVKAC**, the floating point
 exerciser, all of its 98, and **EVKAE**, the privileged architecture
 exerciser, 10 of its 11; the other one needs PDP-11 compatibility mode,
 which the 8600 has and the core does not yet (see *Running the Diagnostic
-Supervisor and EVKAE*, *Running EVKAB* and *Running EVKAC*).
+Supervisor and EVKAE*, *Running EVKAB* and *Running EVKAC*). On the board,
+the build of 17 November 2026 passes `mmudiag.bin`, `mmutest.bin` (the 51
+tests) and those ten EVKAE tests.
 The 8600's **I/O side** is there too: the physical address memory map,
 SBIA 0 with its interrupts and DMA, the 8600's machine checks, an **RH780
 Massbus adapter with two RP07 disks** whose contents are disk images on the
@@ -1107,7 +1109,8 @@ ones with memory management on. Why Quartus did it is not
 known (the same Verilog had worked on the board since milestone 5); the RAM
 is now an explicit `altsyncram` instance instead of an inferred memory, its
 write registers are marked `preserve`, and every compile checks the netlist
-for it.
+for it. The first build with it (17 November 2026) passes `mmudiag.bin`,
+`mmutest.bin` and EVKAE on the board.
 
 Three things tell such a failure apart, in this order:
 
