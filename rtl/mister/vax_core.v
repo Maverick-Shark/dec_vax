@@ -49,6 +49,7 @@ module vax_core #(
 	input             tti_rx,
 	output            tto_tx,
 	input             halt_req,      // console halt request (Ctrl+P, OSD): one clock
+	input             con_boot,      // the console begins a bootstrap: one clock
 
 	// fault finding (OSD), taken at processor initialization:
 	// <0> cache off, <1> translation buffer off
@@ -137,6 +138,7 @@ module vax_core #(
 		.tto_tx     (tto_tx),
 		.tti_rx     (tti_rx),
 		.halt_req   (halt_req),
+		.con_boot   (con_boot),
 		.cpu_halted (cpu_halted),
 		.cpu_mcheck (mcheck),
 

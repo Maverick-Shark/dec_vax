@@ -26,7 +26,10 @@
 `timescale 1ns / 1ps
 `default_nettype none
 /*
- *
+ * The console terminal's transmitter: a byte written (wrtxdb) goes out on
+ * tto_tx, 8N1, one bit every CLKPERBIT clocks; rdy while it can take the
+ * next. TXCS, its interrupt enable and the interrupt are the 8600
+ * console's, in cons86.v.
  */
 `ifndef CLKPERBIT
 `ifdef VERILATOR
@@ -38,17 +41,12 @@
 
 module constx(
 	input		clk,
-	input		rst,		/* processor initialization: IE cleared */
+	input		rst,		/* processor initialization */
 
 	input [7:0]	iprdb,
-	input		wrtxcs,
 	input		wrtxdb,
 
-	input		intack,
-	output reg	intreq,
-
 	output		rdy,
-	output		ie,
 
 	output		tto_tx
 );
@@ -58,38 +56,20 @@ module constx(
 	reg [8:0] txdb;
 
 	reg [NCYC-1:0] shiftreg;
-	reg shce, inten, cntbit, xmit_rdy, last_ie_rdy;
+	reg shce, cntbit, xmit_rdy;
 
 `ifdef notdef
 	always @(posedge clk)
-		if (wrtxcs | wrtxdb)
+		if (wrtxdb)
 		$fdisplay(32'h80000002,
-		    "txcs %x txdb %x txd %x txdb %x clkcnt %x ready %d tto_tx %d",
-		    wrtxcs, wrtxdb, iprdb, txdb, clkcnt, xmit_rdy, tto_tx);
+		    "txdb %x txd %x txdb %x clkcnt %x ready %d tto_tx %d",
+		    wrtxdb, iprdb, txdb, clkcnt, xmit_rdy, tto_tx);
 `endif
 
 
 	initial clkcnt = 32768-`CLKPERBIT;
 	initial txdb = 9'h1ff;
 	initial xmit_rdy = 1;
-
-	always @(posedge clk) begin
-		if (rst)
-			intreq <= 0;
-		else if (rdy & ie & last_ie_rdy == 0)
-			intreq <= 1;
-		else if (intack)
-			intreq <= 0;
-		last_ie_rdy <= ie & rdy;
-	end
-
-
-	// int enable/disab only bit that can be changed
-	always @(posedge clk)
-		if (rst)
-			inten <= 0;
-		else if (wrtxcs)
-			inten <= iprdb[6];
 
 	/*
 	 * One marker bit goes in when a character starts and ends the
@@ -135,7 +115,6 @@ module constx(
 	end
 
 	assign rdy = xmit_rdy;
-	assign ie = inten;
 	assign tto_tx = txdb[0];
 
 endmodule

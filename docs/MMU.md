@@ -274,17 +274,21 @@ EVKAE, because the tests and any operating system need them:
   (registers above 4F do not exist). MTPR accepts the architectural ones (SISR among them, bits 15:1),
   ICCS, NICR, TODR, RXCS, TXCS, TXDB, PME (bit 0), and of the 8600's own
   ACCS (no floating point accelerator: ignored, reads as 0), PAMACC
-  (ignored), PAMLOC, CSWP (bits 3:0), MDCTL (bits 14:13, 11:8, 3:0), MERG and
-  CRBT (ignored) and EHSR (bit 5). MFPR reads the same set less the
-  write-only ones (SIRR, TBIA, TBIS, TBCHK, TXDB, CRBT) plus ICR, RXDB and
-  SID. Anything else - the 780's and 750's registers among them - is a
+  (ignored), PAMLOC, CSWP (bits 3:0), MDCTL (bits 14:13, 11:8, 3:0), MERG,
+  CRBT (the console reboots and says so through the logical console,
+  `rtl/cons86.v`) and EHSR (bit 5). The console registers RXCS, RXDB, TXCS
+  and TXDB have the 8600's format: four lines, their ID codes, the transmit
+  enable mask (`rtl/cons86.v`, README_MiSTer.md *Which console is this?*).
+  MFPR reads the same set less the write-only ones (SIRR, TBIA, TBIS,
+  TBCHK, TXDB, CRBT) plus ICR, RXDB and SID. Anything else - the 780's and 750's registers among them - is a
   reserved operand. The console storage registers STXCS and STXDB are not
   there yet. MTPR to SIRR with level 0 requests nothing.
 * **Processor initialization** - the reset at power-up, with the OSD *Reset*
   and with every *Load Program* - sets what the SRM's chapter *System
   Bootstrapping and Console* lists: PSL `041F0000`, ASTLVL 4, SISR 0, MAPEN 0
   (and the TB invalidated), PME 0, ICCS\<6\> and \<0\> clear (the interval
-  clock stops, with no request pending), RXCS 0 and TXCS\<IE\> clear. No
+  clock stops, with no request pending), RXCS 0 and TXCS\<IE\> clear (the
+  console terminal stays the line enabled, TXCS\<16\>). No
   instruction, interrupt or memory reference is left in progress, and the
   console monitor starts afresh. ASTLVL, SISR, MAPEN and PME are read from
   registers that the reset clears, not from the IPR RAM, which it cannot.

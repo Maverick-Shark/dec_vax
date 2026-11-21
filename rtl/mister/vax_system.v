@@ -111,6 +111,7 @@ module vax_system #(
 	wire mem_ready;
 	wire cpu_halted;
 	reg  halt_req;      // Ctrl+P / OSD halt, one clock (see the console input)
+	reg  con_boot;      // a boot begins: the console's COLD flag, one clock
 
 	// ------------------------------------------------------------ loader
 	// ioctl_index 1: OSD Load Program, at the OSD's load address;
@@ -322,6 +323,7 @@ module vax_system #(
 		.tti_rx     (tti_rx),
 		.tto_tx     (tto_tx),
 		.halt_req   (halt_req),
+		.con_boot   (con_boot),
 		.diag       (diag),
 
 		.stat_hit   (),
@@ -517,6 +519,14 @@ module vax_system #(
 		default: begin dep_reg = 4'hF; dep_val = as_boot ? 32'h00000200 : start_addr; end
 		endcase
 	end
+
+	// The console sets its COLD flag when it begins a bootstrap (VAX
+	// 8600/8650 Console Software Specification, the BOOT command): the CPU
+	// reads it through the logical console and clears it once booted
+	// (rtl/cons86.v).
+	initial con_boot = 1'b0;
+	always @(posedge clk)
+		con_boot <= ldr_go_d && !ldr_go && ldr_boot_q;
 
 	always @(posedge clk) begin
 		ldr_go_d <= ldr_go;

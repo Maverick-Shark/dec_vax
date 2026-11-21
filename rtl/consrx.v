@@ -43,18 +43,18 @@
 `endif
 `endif
 
+/*
+ * The console terminal's receiver: a character on tti_rx (8N1, CLKPERBIT
+ * clocks a bit) sets rdy with the byte in rxdb until rdrxdb takes it. RXCS,
+ * RXDB, the interrupt enable and the interrupt are the 8600 console's, in
+ * cons86.v.
+ */
 module consrx(
 	input		clk,
-	input		rst,		/* processor initialization: RXCS = 0 */
+	input		rst,		/* processor initialization: no character */
 
-	input		wrie,
-	input		wrrxcs,
 	input		rdrxdb,
 
-	input		intack,
-	output reg	intreq,
-
-	output		ie,
 	output		rdy,
 	output [7:0]	rxdb,
 
@@ -65,8 +65,8 @@ module consrx(
 	reg [8:0]	rxraw;
 	reg [15:0]	clkcnt;
 	reg [NCYC-1:0] shiftreg;
-	reg shin, shce, last_ie_rdy;
-	reg busy, inten, done, clear;
+	reg shin, shce;
+	reg busy, done, clear;
 
 	assign rxdb = rxraw[7:0];
 
@@ -79,25 +79,8 @@ module consrx(
 	
 	initial clkcnt = 32768-`CLKPERBIT;
 
-	always @(posedge clk) begin
-		if (rst)
-			intreq <= 0;
-		else if (rdy & ie & last_ie_rdy == 0) begin
-			intreq <= 1;
-		end else if (intack) begin
-			intreq <= 0;
-		end
-		last_ie_rdy <= ie & rdy;
-	end
-
 	always @(posedge clk)
 		clear <= rdrxdb & done;
-
-	always @(posedge clk)
-		if (rst)
-			inten <= 0;
-		else if (wrrxcs)
-			inten <= wrie;
 
 	/*
 	 * The marker bit that counts the bits of a character is loaded when
@@ -148,7 +131,6 @@ module consrx(
 			busy <= 0;
 	end
 
-	assign ie = inten;
 	assign rdy = done;
 
 endmodule

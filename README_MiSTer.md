@@ -61,6 +61,7 @@ See *What is missing*, and [ROADMAP.md](ROADMAP.md) for the plan.
 | MBox and SBIA | `rtl/mister/vax_io.v`, `vax_sbi.v` | Physical address memory map, SBIA 0, machine checks, DMA ([docs/IO.md](docs/IO.md)) |
 | Massbus | `rtl/mister/vax_mba.v`, `vax_rp07.v` | RH780 at TR 8, two RP07 disks on SD card images |
 | Unibus | `rtl/mister/vax_uba.v` | DW780 at TR 3: map, data paths, Unibus interrupts; no devices yet |
+| Console registers | `rtl/cons86.v` | The 8600's RXCS, RXDB, TXCS, TXDB: four lines, the logical console |
 | Bus | `rtl/mister/vax_core.v` | CPU, memory and I/O put together |
 | Power-on test | `rtl/mister/vax_selftest.v`, `vax_msg.v` | Memory test and banner |
 | Console terminal | `rtl/mister/vt_term.v`, `vt_font.v` | 80x30, VT100 subset |
@@ -73,12 +74,27 @@ See *What is missing*, and [ROADMAP.md](ROADMAP.md) for the plan.
 Two different things are both called "the console" on a VAX, and the core has
 both.
 
-**The console serial line.** On a real VAX-11/780 the operator's terminal hangs
-off the console subsystem and the CPU reaches it through four internal
-processor registers: `RXCS` (20h), `RXDB` (21h), `TXCS` (22h) and `TXDB` (23h),
-with SCB vectors F8h and FCh. r-vax implements exactly that in `consrx.v` and
-`constx.v`, as a real 8N1 serial line inside the FPGA. Software that runs on
-the core - including EVKAA - talks to this and nothing else.
+**The console serial line.** On a real VAX the operator's terminal hangs off
+the console subsystem and the CPU reaches it through four internal processor
+registers: `RXCS` (20h), `RXDB` (21h), `TXCS` (22h) and `TXDB` (23h), with SCB
+vectors F8h and FCh. r-vax implements the VAX-11/780's form of them in
+`consrx.v` and `constx.v`, as a real 8N1 serial line inside the FPGA. Software
+that runs on the core - including EVKAA - talks to this and nothing else.
+
+The 8600's console puts four lines behind the same registers (*VAX Hardware
+Handbook*, volume 1, 1986, chapter 10): the console terminal, the remote
+services port, the environmental monitoring module (EMM) and the *logical
+console*. `TXCS<19:16>` enables lines (written with `TXCS<15>` set),
+`TXCS<11:8>` names the line that is ready for the next byte, and every byte in
+`RXDB` comes with its line's number in `RXDB<11:8>`. `rtl/cons86.v` builds
+that around r-vax's serial line, which is the console terminal; the remote
+port has no modem and there is no EMM (both take bytes and drop them), and
+the logical console answers what the CPU asks the console program: the
+microcode version, the COLD and WARM flags, the snapshot files, a reboot
+(the CPU halts; boot it again from the OSD). Programs that never touch the
+mask, like VMB, see the console terminal alone, as on the 8600. DEC's
+bootstrap for the Diagnostic Supervisor, DIAGBOOT, asks for the microcode
+version before anything else, and waits for the answer for ever.
 
 In this port the line runs at one bit per 17 clocks, about 2.9 Mbaud. It never
 leaves the FPGA, so the usual 9600 or 115200 baud would only make the screen
@@ -526,11 +542,15 @@ speed; off skips it.
 Files-11 volume with the 8600 Diagnostic Supervisor and its exercisers.
 Mount it as it is on *RP07 Unit 0* (a file smaller than an RP07 is fine),
 set *Boot Flags* `10 Diagnostics` (*Boot Device* `DBA0`) and select
-`vmb.exe` with *Boot*. VMB loads the supervisor's bootstrap, which loads the
-supervisor; then the supervisor can load its programs from the same disk.
-This is how the reference simulator boots that disk, with these commands
-(it takes the reference simulator some 55 million instructions to get to
-the `DS>` prompt, so allow a minute or more on the core):
+`vmb.exe` with *Boot*. VMB loads the supervisor's bootstrap, DIAGBOOT,
+which asks the console for the microcode version through the logical
+console (*Which console is this?*) and loads the supervisor; then the
+supervisor can load its programs from the same disk. The `DS>` prompt comes
+some 5 seconds after the `G`. Most of that is the supervisor asking the
+terminal what it is (`ESC Z`, `ESC [ c`, Ctrl+E) and waiting 1.05 s for each
+answer, which the on-screen terminal does not give (nor does the reference
+simulator's console); the three sequences draw nothing. Then, as on the
+reference simulator:
 
 ```
 DIAGNOSTIC SUPERVISOR.  ZZ-EDSAA-10.10-312  17-NOV-1987 16:55:30
@@ -545,10 +565,25 @@ DS> START/TEST:1:2
 
 (The supervisor calls the RP07 `DRA0`, VMS calls it `DBA0`.) That replaces
 the memory images of *Running the Diagnostic Supervisor and EVKAE*: the
-exercisers are loaded from the disk, as on an 8600. On the core it is the
-first board test of milestone 9. The simulation has run VMB on the RTL
-from the OSD entry with an empty disk (the same message as the reference
-simulator), not yet the whole supervisor boot, which is too long for it.
+exercisers are loaded from the disk, as on an 8600.
+
+The first board test of this stopped after the `G`, with nothing more on the
+screen: DIAGBOOT sets TXCS to the logical console alone and waits for
+`TXCS<11:8>` to say that line is ready, and the core's console registers
+were still the 780's, which have no lines; VMB prints nothing when all goes
+well. With the 8600's registers (`rtl/cons86.v`) the simulation boots the
+supervisor from the disk to `DS>` on the RTL: VMB reads the same blocks of
+the disk as on the reference simulator, DIAGBOOT gets its answer, and
+`DS>` comes 264 million clocks (5.3 s) after VMB starts. The next command
+that reads the disk, `LOAD EVKAE`, then said `%RMS-F-RER, file read error`:
+when the supervisor starts it checks the RH780 in maintenance mode (CR = C,
+interrupt enable too) and leaves that mode by writing CR = 1, INIT; the
+core's RH780 kept maintenance mode through the INIT, and with the Massbus
+detached every drive register read came back from the adapter, not from
+the RP07 (`docs/IO.md`, the RH780's CR). Now INIT writes CR's other bits
+too, and the session above, from the OSD's *Boot* to EVKAE's tests 1 and
+2 loaded from the disk, runs in the full-system simulation as on the
+reference simulator.
 
 ### Loading and running a program
 
@@ -683,7 +718,7 @@ reserved operand flag, the low byte is why the CPU stopped. Where the VAX
 | `0000000A` | CHMx executed on the interrupt stack |
 | `0000000B` | CHMx through an SCB vector whose bits 1:0 are not 0 |
 | `0000000F` | CPU reached an undefined state (a bug) |
-| `00000011` | Halted from the console: Ctrl+P or the OSD *Halt CPU* |
+| `00000011` | Halted from the console: Ctrl+P or the OSD *Halt CPU*, or the program asked the logical console to reboot the CPU (an operating system that wants to start again): boot it again from the OSD |
 | `000001xx` | The same, plus a reserved operand fault |
 
 An opcode the CPU does not implement is not a halt any more: as on a VAX, it
@@ -852,9 +887,11 @@ run the memory test from the OSD, or deposit `FE00P` = `0`, and reload.
 ## Running the Diagnostic Supervisor and EVKAE
 
 EVKAE, the VAX Privileged Architecture Exerciser, runs under the VAX 8600
-Diagnostic Supervisor (ZZ-EDSAA), which a real 8600 boots from a disk. The
-core has no disk yet, so `tests/evkae/mkdsimage.py` does the booting in a
-VAX 8600 simulator on the PC: it boots the supervisor from
+Diagnostic Supervisor (ZZ-EDSAA), which a real 8600 boots from a disk, and
+the core can now too (*Booting from a disk: VMB*; so far in simulation, the
+board is next). Before it could,
+`tests/evkae/mkdsimage.py` did the booting in a VAX 8600 simulator on the
+PC, and its memory images still work: it boots the supervisor from
 `VAX_MINIMUM_DIAGS.dsk`, attaches the CPU, loads EVKAE and stops at the
 `DS>` prompt. Then it saves that machine as a memory image - physical memory
 up to the end of what the supervisor uses (C3200h), followed by a little
@@ -1068,7 +1105,8 @@ word instructions, the arithmetic traps, trace, the string, queue and
 packed decimal instructions (the decimal ones and EDITPC on a few hundred
 random operands), the octaword instructions and the floating point ones
 (some 1 600 random cases of the four formats, and their faults), and the
-I/O side: the PAMM, SBIA 0, machine checks, the RH780 and the DW780. (The
+I/O side: the PAMM, SBIA 0, machine checks, the RH780 and the DW780, and
+the 8600's console registers with the logical console (`t60`). (The
 programs that end in a processor halt other than t16's, `t22`-`t24` and
 `t49`, those that need generated disks, `t52`-`t54`, and `t59`, which needs
 the test bench's Unibus device, are only run in simulation.)
@@ -1086,8 +1124,9 @@ t00_harness....... PASS
 t01_xlate......... PASS
    ...
 t58_ubainit....... PASS
+t60_cons86........ PASS
 
-Passed: 51   Failed: 00
+Passed: 52   Failed: 00
 All tests passed.
 
 Last, t16_isnv: the CPU must halt here with code 00000004.
@@ -1324,8 +1363,8 @@ The plan for all of this, in order, is in [ROADMAP.md](ROADMAP.md).
 
 - **PDP-11 compatibility mode**, which the 8600 has (EVKAE test 3 and EVKAD
   use it).
-- **The rest of the privileged architecture**: the 8600's console storage
-  registers (STXCS, STXDB) and the contents of its machine check frame.
+- **The rest of the privileged architecture**: the contents of the 8600's
+  machine check frame.
   Everything else is in, described in [docs/MMU.md](docs/MMU.md) and
   [docs/CIS.md](docs/CIS.md).
 - **PSL\<FPD\> for MOVTC, EDITPC and the decimal instructions.** MOVC3,
@@ -1334,8 +1373,12 @@ The plan for all of this, in order, is in [ROADMAP.md](ROADMAP.md).
   the architecture allows, and hold off interrupts until they finish: some
   tens of microseconds for EDITPC and the decimal ones, but tens of
   milliseconds for a MOVTC of 65535 bytes.
-- **Booting from disk.** The RP07s are there, but nothing loads VMB, DEC's
-  primary bootstrap, from them yet (milestone 9).
+- **VMS.** VMB boots the Diagnostic Supervisor from an RP07 (*Booting
+  from a disk: VMB*); VMS itself is milestone 10.
+- **The 8600 console's other lines.** No remote services port (modem), no
+  environmental monitoring module, no console command strings (the logical
+  console's request 20, which diagnostics such as EDKAX use); no console
+  storage (STXCS, STXDB).
 - **Unibus devices.** The DW780 is there, but nothing is on its Unibus yet
   (a DZ11 for more terminals is the first candidate).
 - **Terminal.** No scrolling regions (`ESC [ t;b r`), no insert/delete line, no
@@ -1371,6 +1414,13 @@ NOTEST=1 UNTIL="00000004" BUDGET=600000000 TTOLOG=mmu.txt \
 NOTEST=1 UNTIL="End of the floating point test" BUDGET=400000000 TTOLOG=fp.txt \
     sim/obj_fast/Vtb_top software/fptest.bin 0 ""    # the floating point test (some minutes)
 tests/evkae/run_sim.sh 1:2 4:11  # EVKAE under the Diagnostic Supervisor (sim/obj_fast)
+cp software/VAX_MINIMUM_DIAGS.dsk ds.dsk
+BOOT=1 BOOTR5=90 NOTEST=1 DISK0=ds.dsk UNTIL="DS> " BUDGET=900000000 TTOLOG=ds.txt \
+SESSION="ATTACH KA86 ABUS KA0 yes yes 0 0~|@DS> |ATTACH RH780 ABUS RH0 8 5~|@DS> |\
+ATTACH RP07 RH0 DRA0~|@DS> |SET LOAD DRA0:[SYSMAINT]~|@DS> |SELECT KA0~|@DS> |\
+LOAD EVKAE~|@DS> |START/TEST:1:2~|@End of run|@DS> " \
+    sim/obj_fast/Vtb_top software/vmb.exe 1 ""      # the OSD's Boot: VMB, DIAGBOOT, the
+                                 # supervisor from the RP07, EVKAE loaded from it (25 min)
 IMAGE=software/evkab_ds.bin TRACE=1 tests/evkae/run_sim.sh 134:144   # EVKAB's string tests
 IMAGE=software/evkac_ds.bin TRACE=1 QUICK=1 BUDGET=2000000000 \
     tests/evkae/run_sim.sh 1:98  # EVKAC, floating point (QUICK: about an hour)
@@ -1392,7 +1442,8 @@ then the core is held in reset for 40 ms (`HPSRST=n` to change it, `NOHPSRST`
 to skip it) before the power-on test may start. `MEMFILL=0x...` or
 `MEMFILL=rand` fills the SDRAM model before power-up, like a real module's
 leftover contents. In key strings `~` is Enter, `^C` is Ctrl+C and `{` is the
-cursor-up key; in `SESSION`, `@text` waits for text to appear, `!R` is an OSD
+cursor-up key; in `SESSION`, `@text` waits for text to appear (after the
+text typed last began, and after the text the last `@` found), `!R` is an OSD
 reset, `!Wn` waits n clocks, `!Lfile` loads another program over whatever is
 running, as *Load Program* does (`!L+wfile` / `!L+rfile` first wait until the
 CPU has a write / read cycle in flight, so that the load lands on one), and

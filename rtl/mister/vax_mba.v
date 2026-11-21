@@ -26,7 +26,8 @@
 //            <22> adapter power up (write 1 to clear), <7:0> adapter
 //            code 20
 //    04 CR   <3> maintenance mode, <2> interrupt enable, <1> abort data
-//            transfer, <0> initialize (reads 0)
+//            transfer, <0> initialize (reads 0); a write with <0> set
+//            initializes the adapter and writes <3> as well
 //    08 SR   <31> DT busy (read only), <30> no response confirmation,
 //            <19> program error, <18> non-existent drive, <16> attention,
 //            <13> DT complete, <12> DT aborted, <11> data late, <10>/<09>
@@ -398,8 +399,16 @@ module vax_mba #(
 						3'd0: if (sbi_wdat[22]) csr_pu <= 1'b0;
 						3'd1: begin
 							if (sbi_wdat[0]) begin
-								// INIT (TD 3.2, 3.6.2)
+								// INIT (TD 3.2, 3.6.2). CR's other bits are
+								// read/write (TD figure 3-2) and are written
+								// too: INIT clears IE and ABORT, maintenance
+								// mode takes the bit written - the 8600
+								// Diagnostic Supervisor leaves it with
+								// CR = 1 after checking the adapter with MM
+								// and IE set (no transfer is left to forbid
+								// MM, TD table 3-5)
 								csr_pu <= 1'b0; csr_pd <= 1'b0;
+								cr_mm <= sbi_wdat[3];
 								cr_ie <= 1'b0; cr_abort <= 1'b0;
 								sr_dtbusy <= 1'b0; sr_nrconf <= 1'b0;
 								sr_pge <= 1'b0; sr_ned <= 1'b0;

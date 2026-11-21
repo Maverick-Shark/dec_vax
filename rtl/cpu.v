@@ -136,6 +136,7 @@ module cpu(
 	output		tto_tx,
 	input		tti_rx,
 	input		halt_req,	/* console halt request (Ctrl+P, OSD) */
+	input		con_boot,	/* the console begins a bootstrap (cons86.v) */
 	output		cpu_halted,
 	output		cpu_mcheck,
 
@@ -319,9 +320,7 @@ module cpu(
 	initial pamloc = 10'd0;
 	wire [31:0]	icr, ipr_val_tmp, todr;
 	wire		iccs_err, iccs_int, iccs_ie, iccs_run;
-	wire		txcs_rdy, txcs_ie;
-	wire		rxcs_rdy, rxcs_ie;
-	wire [7:0]	rxdb;
+	wire [31:0]	con_txcs, con_rxcs, con_rxdb;	/* cons86.v */
 
 	assign ipr_val_tmp = ipr_reg[ipr_regaddr[5:0]];
 
@@ -335,10 +334,9 @@ module cpu(
 		`IPR_ICCS: ipr_val =
 		    { iccs_err, 23'b0, iccs_int, iccs_ie, 5'b0, iccs_run };
 		`IPR_TODR: ipr_val = todr;
-		`IPR_TXCS: ipr_val = { 24'h0, txcs_rdy, txcs_ie, 6'b0 };
-//		`IPR_TXCS: ipr_val = { 24'h000100, txcs_rdy, txcs_ie, 6'b0 };
-		`IPR_RXCS: ipr_val = { 24'b0, rxcs_rdy, rxcs_ie, 6'b0 };
-		`IPR_RXDB: ipr_val = { 24'b0, rxdb };
+		`IPR_TXCS: ipr_val = con_txcs;
+		`IPR_RXCS: ipr_val = con_rxcs;
+		`IPR_RXDB: ipr_val = con_rxdb;
 		`IPR_PAMACC: ipr_val = { 2'b0, pamloc, 15'b0, PAMM_I };
 		`IPR_PAMLOC: ipr_val = { 2'b0, pamloc, 20'b0 };
 		`IPR_CSWP: ipr_val = { 28'b0, cswp };
@@ -591,15 +589,17 @@ initial fpd_active = 1'b0;
 	reg [15:0] mchk_cnt;
 
 	/*
-	 * Console halt request (Ctrl+P or the OSD): taken at the next
-	 * instruction boundary, halt code 11. Ignored while already halted.
+	 * Console halt request (Ctrl+P or the OSD), or the logical console's
+	 * CPU reboot request (cons86.v): taken at the next instruction
+	 * boundary, halt code 11. Ignored while already halted.
 	 */
 	reg halt_pend;
+	wire con_reboot;
 	initial halt_pend = 1'b0;
 	always @(posedge clk)
 		if (rst || halted)
 			halt_pend <= 1'b0;
-		else if (halt_req)
+		else if (halt_req || con_reboot)
 			halt_pend <= 1'b1;
 	wire isvalid, anyfault;
 	assign halted = (state == `S_HALT) || manhalt;
@@ -1156,56 +1156,40 @@ initial debug = 0;
 	);
 
 	/*
-	 * Write to console
+	 * The console registers RXCS, RXDB, TXCS and TXDB, the VAX 8600's
+	 * (cons86.v): the console terminal's serial line (tto_tx, tti_rx), and
+	 * the logical console. While halted the console monitor uses them as
+	 * the terminal's line alone. RXDB is read when MFPR's microcode step
+	 * takes the register (left operand ipr_val), or by the monitor.
 	 */
-	wire wrtxcs, wrtxdb;
-	reg tx_intack;
-	assign wrtxdb = (ipr_write || state == `WRITEIPR) &&
-	    (ipr_regaddr == `IPR_TXDB);	// WO
-	assign wrtxcs = (ipr_write || state == `WRITEIPR) &&
-	    (ipr_regaddr == `IPR_TXCS); // RW
+	reg tx_intack, rx_intack;
+	wire con_rxdb_rd = halted ?
+	    ipr_greg_read && CON_ADR_I[6:0] == `IPR_RXDB :
+	    state == `PREEXEC && s_left == 4'b1010 && ipr_regaddr == `IPR_RXDB;
 
-	constx constx(
+	cons86 cons86(
 		.clk(clk),
 		.rst(rst),
+		.con(halted),
 
-		.iprdb(ipr_regwdata[7:0]),
-		.wrtxcs(wrtxcs),
-		.wrtxdb(wrtxdb),
+		.adr(ipr_regaddr),
+		.wdata(ipr_regwdata),
+		.we(ipr_write || state == `WRITEIPR),
+		.rxdb_rd(con_rxdb_rd),
 
-		.intack(tx_intack),
-		.intreq(tx_intreq),
+		.rxcs(con_rxcs),
+		.rxdb(con_rxdb),
+		.txcs(con_txcs),
 
-		.rdy(txcs_rdy),
-		.ie(txcs_ie),
+		.tx_intack(tx_intack),
+		.rx_intack(rx_intack),
+		.tx_intreq(tx_intreq),
+		.rx_intreq(rx_intreq),
 
-		.tto_tx(tto_tx)
-	);
+		.boot(con_boot),
+		.reboot(con_reboot),
 
-	/*
-	 * Read from console.
-	 */
-	wire wrrxcs, rdrxdb;
-	reg rx_intack;
-	assign wrrxcs = (ipr_write || state == `WRITEIPR) &&
-	    (ipr_regaddr == `IPR_RXCS); // RW
-	assign rdrxdb = !(ipr_write || state == `WRITEIPR) &&
-	    (ipr_regaddr == `IPR_RXDB); // RO
-	consrx consrx(
-		.clk(clk),
-		.rst(rst),
-
-		.wrie(ipr_regwdata[6]),	// write interrupt enable
-		.wrrxcs(wrrxcs),
-		.rdrxdb(rdrxdb),
-
-		.intack(rx_intack),
-		.intreq(rx_intreq),
-
-		.ie(rxcs_ie),		// read interrupt enable
-		.rdy(rxcs_rdy),		// read ready
-		.rxdb(rxdb),		// read data
-
+		.tto_tx(tto_tx),
 		.tti_rx(tti_rx)
 	);
 

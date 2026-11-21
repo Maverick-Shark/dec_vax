@@ -18,7 +18,9 @@
 // Environment: TRACE=1 prints every instruction (PC, opcode); BUSTRACE=1
 // prints every state change of the CPU, vcache and MMU with the bus signals;
 // TTO=1 prints what the program sends to the console terminal (MTPR TXDB),
-// decoded from the console line, on stderr as it comes. TBOFF=1 turns the
+// decoded from the console line, on stderr as it comes (TTOLOG=1 also as
+// "C clock hex" lines on stdout). PCSAMPLE=n prints "P clock pc psl" every
+// n clocks (long runs: where the program spends its time). TBOFF=1 turns the
 // MMU's translation buffer off (the OSD's fault finding option): every
 // reference walks the page tables, and only what TBCHK reports may change.
 //
@@ -47,6 +49,7 @@ static HpsDisk hps;                     // the disk images (../hpsdisk.h)
 
 // the console line (tto_tx), 8N1 at CLKPERBIT + 1 clocks a bit
 static bool tto_on = false;
+static bool tto_log = false;            // TTOLOG=1: also "C clock hex" on stdout
 static int  tto_st = -2, tto_cnt = 0, tto_bits = 0, tto_ch = 0;
 static void tto_step() {
 	const int bit = 17;                 // CLKPERBIT 16
@@ -70,6 +73,10 @@ static void tto_step() {
 	} else {                            // the stop bit
 		fputc(tto_ch & 0x7F, stderr);
 		fflush(stderr);
+		if (tto_log) {
+			printf("C %llu %02X\n", (unsigned long long)cycles, tto_ch & 0x7F);
+			fflush(stdout);
+		}
 		tto_st = -1;
 	}
 }
@@ -144,6 +151,9 @@ int main(int argc, char **argv) {
 	// (the console monitor may still be sending its prompt: the decoder
 	// waits for an idle line first)
 	tto_on = getenv("TTO") != 0;
+	tto_log = tto_on && getenv("TTOLOG") != 0;
+	// PCSAMPLE=n: "P clock pc psl" every n clocks, for long runs
+	uint64_t pcsample = getenv("PCSAMPLE") ? strtoull(getenv("PCSAMPLE"), 0, 0) : 0;
 	for (int i = 0; i < 15; i++)                // R0-R14 as the reference's
 		R->tb_cpu__DOT__cpu__DOT__general_reg[i] = 0;
 	CPU(curpc) = start;
@@ -181,6 +191,10 @@ int main(int argc, char **argv) {
 			mst_d = mst; vst_d = vst; mc_d = mc;
 		}
 		st_d = st;
+		if (pcsample && (cycles - t0) % pcsample == 0) {
+			printf("P %llu %08X %08X\n", (unsigned long long)(cycles - t0), CPU(curpc), CPU(psl));
+			fflush(stdout);
+		}
 		if (st == 0) break;                    // S_HALT
 	}
 	bool timeout = CPU(state) != 0;

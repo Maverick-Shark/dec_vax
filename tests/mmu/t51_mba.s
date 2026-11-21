@@ -14,7 +14,9 @@
 ;     register 8, map select 11, SBI address <10>) no response, an SBI
 ;     timeout - machine checks either way on the 8600 (SBIER<08>, <12>);
 ;   - the adapter's interrupt (BR5 for the first RH780: IPL 15, SCB 160),
-;     with IE, while software has not cleared NED; INIT and UNJAM.
+;     with IE, while software has not cleared NED; INIT and UNJAM;
+;   - INIT leaves maintenance mode when the bit is written 0 with it (the
+;     8600 Diagnostic Supervisor's check of the adapter).
 ;
 ; Machine checks log the byte count, EBCS, MSTAT1, MSTAT2, MEAR and PC -
 ; R7, then EHSR is cleared and the program goes on at R8. DS is compared
@@ -36,7 +38,7 @@
 ;@ rtl=18120:B8000000,18124:00180004,18128:20010C00,1812C:00000000,18130:00001000,18134:00000058
 ;@ rtl=18138:0020C004,1813C:B4000000,18140:00180004,18144:20011000,18148:00000000,1814C:00001000
 ;@ rtl=18150:000000A1,18154:00000160,18158:04150000,1815C:00040000,18160:000000A2,18164:00000000
-;@ rtl=18168:00000002,1816C:00000000,18170:00000000
+;@ rtl=18168:00000002,1816C:00000000,18170:0000000C,18174:00000000,18178:00002022,1817C:00000000
 ;@ mask=18064:FFFFEFBF,18090:FFFFEFBF,180A4:FFFFEFBF
 ;@ clocks=4000000
 LOG	= ^x18000
@@ -229,6 +231,15 @@ n05:	movl	@#SBIER, (r11)+		; 00001000
 	movl	@#CR, (r11)+		; 00000002
 	movl	#1, @#UNJAM
 	movl	@#CR, (r11)+		; 0
+; maintenance mode left by INIT, as the 8600 Diagnostic Supervisor checks
+; the adapter: INIT, MM and IE, simulate ATTN, INIT (CR = 1)
+	movl	#1, @#CR
+	movl	#^xC, @#CR
+	movl	@#CR, (r11)+		; 0000000C
+	bisl2	#^x1000000, @#DR
+	movl	#1, @#CR		; INIT writes MM too: 0
+	movl	@#CR, (r11)+		; 0
+	movl	@#DRV0+^x18, (r11)+	; the drive answers again: DT 00002022
 	movl	r9, (r11)+		; nothing unexpected
 	halt
 

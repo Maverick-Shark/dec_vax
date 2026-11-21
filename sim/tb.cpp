@@ -26,7 +26,8 @@
 //               which is what a real module holds at power-up
 //   UNTIL/UNTIL2/BUDGET/HALT/BANNER/FAULT/SESSION  see below
 //   SESSION     tokens separated by '|': text is typed, "@text" waits for
-//               text to appear on the console (BUDGET clocks at most),
+//               text to appear on the console (BUDGET clocks at most) after
+//               the last text typed began, and after the last text found,
 //               "!R" is an OSD reset, "!Wn" runs n clocks, "!Lfile" loads
 //               another program (OSD Load Program, whatever is running;
 //               "!L+wfile" / "!L+rfile" first wait until the CPU has a
@@ -38,6 +39,8 @@
 //               test, as if a previous program had left it there
 //   MEMDUMP=a:n,... at the end, print n longwords of memory from hex a
 //               (as "M addr value" lines, like the CPU bench)
+//   MBATRACE=1  the RH780's register accesses, interrupt request and DMA
+//               references (from clock MBATRACE_FROM on)
 //   DISK0/DISK1 the images of RP07 units 0 and 1 (an image file or a
 //               generated disk, see hpsdisk.h; SDLAT, SDTRACE too), mounted
 //               after the SDRAM is ready, before the HPS's reset
@@ -187,17 +190,42 @@ static void tick() {
 			       R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__psl);
 		d_intr = di;
 	}
-	// RXTRACE: log the console receiver as the CPU sees it
+	// MBATRACE: the RH780's side of the SBI (register reads and writes with
+	// their data, error confirmations, its interrupt request line, and its
+	// DMA references), from clock MBATRACE_FROM on
+	static int mbatrace = getenv("MBATRACE") ? 1 : 0;
+	static uint64_t mbafrom = getenv("MBATRACE_FROM") ?
+	    strtoull(getenv("MBATRACE_FROM"), 0, 0) : 0;
+	if (mbatrace && cycles >= mbafrom) {
+#define MBA(x) R->tb_top__DOT__sys__DOT__core__DOT__io__DOT__mba0__DOT__##x
+		static int d_req = 0, d_dm = 0;
+		if (MBA(nx_ack) || MBA(nx_err))
+			printf("[%llu] MBA %s fn %X adr %08X msk %X w %08X r %08X\n",
+			       (unsigned long long)cycles, MBA(nx_err) ? "ERR" : "ack",
+			       MBA(sbi_fn), MBA(sbi_adr) << 2, MBA(sbi_msk), MBA(sbi_wdat),
+			       MBA(nx_rdat));
+		if (MBA(req) != d_req)
+			printf("[%llu] MBA req %d\n", (unsigned long long)cycles, MBA(req));
+		if (MBA(dm_req) && !d_dm)
+			printf("[%llu] MBA dma fn %X adr %08X\n", (unsigned long long)cycles,
+			       MBA(dm_fn), MBA(dm_adr) << 2);
+		d_req = MBA(req);
+		d_dm = MBA(dm_req);
+#undef MBA
+	}
+	// RXTRACE: log the console receiver as the CPU sees it (RXCS, RXDB:
+	// rtl/cons86.v)
 	static int rxtrace = getenv("RXTRACE") ? 1 : 0;
 	if (rxtrace) {
 		static int d_done = 0, d_irq = 0, d_ie = 0;
-		int done = R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__consrx__DOT__done;
-		int irq  = R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__consrx__DOT__intreq;
-		int ie   = R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__consrx__DOT__inten;
+		int done = R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__cons86__DOT__rx_done;
+		int irq  = R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__cons86__DOT__rx_intreq;
+		int ie   = R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__cons86__DOT__rx_ie;
 		if (done != d_done || irq != d_irq || ie != d_ie)
-			printf("\n[%llu] RX done %d->%d irq %d->%d ie %d->%d char %02X ipr_addr %02X ipl %02X pc %08X halted %d\n",
+			printf("\n[%llu] RX done %d->%d irq %d->%d ie %d->%d line %X char %02X ipr_addr %02X ipl %02X pc %08X halted %d\n",
 			       (unsigned long long)cycles, d_done, done, d_irq, irq, d_ie, ie,
-			       R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__consrx__DOT__rxraw & 0xFF,
+			       R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__cons86__DOT__rx_id,
+			       R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__cons86__DOT__rx_data,
 			       R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__ipr_addr,
 			       (R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__psl >> 16) & 0x1F,
 			       R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__oldpc, h);
@@ -245,6 +273,10 @@ static int scancode(char c, int *shift) {
 	case ';': return 0x4C;
 	case ':': *shift = 1; return 0x4C;
 	case '_': *shift = 1; return 0x4E;
+	case '[': return 0x54;
+	case ']': return 0x5B;
+	case '<': *shift = 1; return 0x41;
+	case '>': *shift = 1; return 0x49;
 	}
 	return -1;
 }
@@ -345,10 +377,12 @@ static void download(const std::vector<unsigned char> &data) {
 	printf("\n[%llu] downloaded %zu bytes\n", (unsigned long long)cycles, data.size());
 }
 
-static bool wait_done(uint64_t budget, const char *pat) {
+static bool wait_done(uint64_t budget, const char *pat, size_t from = std::string::npos) {
 	uint64_t limit = cycles + budget;
-	// stop on the pattern, or (with HALT set) when the CPU halts again
-	size_t from = tto_log.size();
+	// stop on the pattern, or (with HALT set) when the CPU halts again; the
+	// pattern is looked for in what is printed from now on, or from "from"
+	if (from == std::string::npos)
+		from = tto_log.size();
 	uint64_t limit0 = cycles;
 	(void)limit0;
 	bool usehalt = getenv("HALT") != 0;
@@ -526,11 +560,18 @@ int main(int argc, char **argv) {
 		char *sc = strdup(getenv("SESSION"));
 		const char *bud2 = getenv("BUDGET");
 		uint64_t sbudget = bud2 ? strtoull(bud2, 0, 0) : 40000000ULL;
+		// "@text" looks for text printed after the last text typed began
+		// (a prompt that comes back at once is not missed) and after the
+		// last text it found
+		size_t mark = tto_log.size();
 		for (char *tok = strtok(sc, "|"); tok; tok = strtok(0, "|")) {
 			if (tok[0] == '@') {
-				bool ok = wait_done(sbudget, tok + 1);
+				bool ok = wait_done(sbudget, tok + 1, mark);
 				printf("\n[%llu] --- waiting for \"%s\": %s\n",
 				       (unsigned long long)cycles, tok + 1, ok ? "seen" : "NOT seen");
+				size_t at = tto_log.find(tok + 1, mark);
+				if (at != std::string::npos)
+					mark = at + strlen(tok + 1);
 				continue;
 			}
 			if (!strcmp(tok, "!R")) {               // OSD Reset
@@ -580,6 +621,7 @@ int main(int argc, char **argv) {
 				continue;
 			}
 			printf("\n[%llu] --- typing: %s\n", (unsigned long long)cycles, tok);
+			mark = tto_log.size();
 			type(tok);
 			run(2000000);
 		}

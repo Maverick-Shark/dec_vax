@@ -51,6 +51,9 @@ L.put(0x00001000)
 L.put(0xA1, 0x160, 0x04150000, 0x00040000, 0xA2)
 # INIT clears IE; ABORT; UNJAM clears it
 L.put(0, 2, 0)
+# maintenance mode and IE (CR = C); INIT with CR<3> 0 clears MM (CR's bits
+# are read/write, figure 3-2); the drive answers again: DT
+L.put(0xC, 0, 0x2022)
 L.put(0)                                    # R9: nothing unexpected
 
 if __name__ == '__main__':

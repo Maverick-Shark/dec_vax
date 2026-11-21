@@ -137,7 +137,7 @@ cross-compiler gives the same trace on the core and on the simulator.
 | Instructions | All 304 opcodes in hardware, plus PDP-11 compatibility mode. | All 304 opcodes ([docs/FPU.md](docs/FPU.md) for the floating point and octaword ones). Missing: PDP-11 compatibility mode. |
 | Exceptions and privileged architecture | Every SCB vector with its parameters; four access modes with five stack pointers; CHMx; REI with all its checks; ASTs (ASTLVL); software interrupts; LDPCTX/SVPCTX; privileged-instruction checks; arithmetic traps; trace; 8600 machine-check frame; kernel stack not valid; the 8600's halt codes. | Done: SCB dispatch for the interval timer, console and software interrupts; CHMK, CHME, CHMS, CHMU; BPT, XFC; reserved instruction, reserved operand and reserved addressing mode faults; machine check and the memory management faults; kernel stack not valid; interrupt stack not valid; REI with all its checks; AST delivery; LDPCTX/SVPCTX; MTPR/MFPR privileged and checked; trace; the arithmetic traps (integer overflow, integer and decimal divide by zero, decimal overflow, subscript range); the 8600's halt codes (4, 6, 7, 8, A, B, 11). the floating faults (overflow, divide by zero, underflow; types 8, 9, A). Missing: PDP-11 compatibility mode, the 8600 machine-check frame's contents. |
 | Memory management | P0, P1 and S0 regions, page tables, translation buffer, protection, modify bit, access-violation and translation-not-valid faults, restartable instructions. | Done, in simulation ([docs/MMU.md](docs/MMU.md)). |
-| 8600 registers | SID with type 4; IPRs ACCS, PAMACC, PAMLOC, CSWP, MDECC, MENA, MDCTL, MCCTL, MERG, CRBT, DFI, EHSR, STXCS, STXDB, ESPA, ESPD; console registers with the 8600's ID codes (console terminal, remote services, environmental monitor, logical console). | SID returns `040704D2`: type 4 (8600), ECO level 7, serial number 1234. ACCS (no accelerator), PAMACC, PAMLOC, CSWP, MDCTL, MERG, CRBT, EHSR and PME are there; MDECC, MENA, MCCTL, DFI, ESPA and ESPD are not yet (reserved operands, as the 780's and 750's registers are). Missing: STXCS and STXDB (console storage); console registers in the basic 780 format. |
+| 8600 registers | SID with type 4; IPRs ACCS, PAMACC, PAMLOC, CSWP, MDECC, MENA, MDCTL, MCCTL, MERG, CRBT, DFI, EHSR, STXCS, STXDB, ESPA, ESPD; console registers with the 8600's ID codes (console terminal, remote services, environmental monitor, logical console). | SID returns `040704D2`: type 4 (8600), ECO level 7, serial number 1234. ACCS (no accelerator), PAMACC, PAMLOC, CSWP, MDCTL, MERG, CRBT, EHSR and PME are there; MDECC, MENA, MCCTL, DFI, ESPA and ESPD are not yet (reserved operands, as the 780's and 750's registers are). The console registers have the 8600's lines and ID codes, with the logical console's requests (`rtl/cons86.v`); no remote services port, no EMM. Missing: STXCS and STXDB (console storage). |
 | I/O | SBIA with SBI fault and error registers; memory controllers; DW780 Unibus adapter (map registers, interrupt vectors); RH780 Massbus adapter (map registers); disks behind them; interrupts at IPL 20-23; DMA. | Done ([docs/IO.md](docs/IO.md)): the PAMM (the 8600's memory arrays hang off the MBox, not the SBI), SBIA 0 with its registers, errors, interrupts and DMA side, the RH780 at TR 8 with two RP07 disks on SD card images, the DW780 at TR 3 with its map, data paths and interrupts. Missing: Unibus devices. |
 | Boot | The console loads VMB.EXE at `0x200` with R0-R5 describing the boot device. | Programs are loaded from the OSD and started by the monitor. |
 
@@ -324,10 +324,20 @@ pass on the DE10-Nano.
 - The 8600/8650 Diagnostic Supervisor (EDSAA) from `VAX_MINIMUM_DIAGS.dsk`,
   with EVKAB (basic instructions), EVKAC (floating point), EVKAD
   (compatibility mode, once it exists) and EVKAE (privileged architecture).
-  On the core it goes on the Massbus disk. Until then,
-  `tests/evkae/mkdsimage.py` brings the supervisor over as a memory image
-  taken from a simulator at its `DS>` prompt, with any of the four
-  exercisers loaded; that is how EVKAB and EVKAE run now.
+  On the core it goes on the Massbus disk. The first board test stopped
+  after VMB: the supervisor's bootstrap, DIAGBOOT, asks the console for the
+  microcode version through the logical console, and the console registers
+  were still the 780's. Done: the 8600's console registers, with the
+  console terminal, remote services, EMM and logical console lines and the
+  logical console's requests (*VAX Hardware Handbook* 1986, chapter 10;
+  `rtl/cons86.v`, `tests/mmu/t60_cons86.s`); the supervisor boots from the
+  disk to `DS>` on the RTL in simulation, 5.3 s after VMB starts, and loads
+  EVKAE from it once the RH780 leaves maintenance mode on an INIT written
+  with CR<3> clear, as the supervisor leaves it after checking the adapter
+  (`tests/mmu/t51_mba.s`). Until it
+  does on the board too, `tests/evkae/mkdsimage.py` brings the supervisor
+  over as a memory image taken from a simulator at its `DS>` prompt, with
+  any of the four exercisers loaded; that is how EVKAB and EVKAE ran.
 - NetBSD/vax: its kernel supports the 8600 (`options VAX8600`, two SBIs on the
   ABus, Massbus disks). A complete, free OS as the rehearsal before VMS.
 
