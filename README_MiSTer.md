@@ -583,7 +583,7 @@ detached every drive register read came back from the adapter, not from
 the RP07 (`docs/IO.md`, the RH780's CR). Now INIT writes CR's other bits
 too, and the session above, from the OSD's *Boot* to EVKAE's tests 1 and
 2 loaded from the disk, runs in the full-system simulation as on the
-reference simulator.
+reference simulator, and on the board (the build of 21 November 2026).
 
 ### Loading and running a program
 
@@ -888,17 +888,36 @@ run the memory test from the OSD, or deposit `FE00P` = `0`, and reload.
 
 EVKAE, the VAX Privileged Architecture Exerciser, runs under the VAX 8600
 Diagnostic Supervisor (ZZ-EDSAA), which a real 8600 boots from a disk, and
-the core can now too (*Booting from a disk: VMB*; so far in simulation, the
-board is next). Before it could,
+so does the core now (*Booting from a disk: VMB*). At `DS>`, tell the
+supervisor once what it runs on and where its programs are:
+
+```
+DS> ATTACH KA86 ABUS KA0 yes yes 0 0
+DS> ATTACH RH780 ABUS RH0 8 5
+DS> ATTACH RP07 RH0 DRA0
+DS> SET LOAD DRA0:[SYSMAINT]
+DS> SELECT KA0
+```
+
+Then `LOAD EVKAE` (or `LOAD EVKAB`, `LOAD EVKAC`; EVKAD needs
+compatibility mode) brings an exerciser from the disk, replacing the one
+loaded before, and `START` runs it, as below. A program loaded on the core
+is byte for byte what the reference simulator loads from the same disk, and
+in the full-system simulation, booted and loaded from the disk, EVKAE's
+tests 1-2 and 4-11, EVKAB's 161 and EVKAC's 98 (these two with `SET FLAGS
+QUICK`) all end in `0 errors detected`, as from the images below.
+
+**From a memory image.** Before the core could boot from a disk,
 `tests/evkae/mkdsimage.py` did the booting in a VAX 8600 simulator on the
-PC, and its memory images still work: it boots the supervisor from
-`VAX_MINIMUM_DIAGS.dsk`, attaches the CPU, loads EVKAE and stops at the
-`DS>` prompt. Then it saves that machine as a memory image - physical memory
-up to the end of what the supervisor uses (C3200h), followed by a little
-code that puts back the internal registers the supervisor had set (SCBB,
-PCBB, the five stack pointers, the interval timer, the console) and returns
-to it with `REI`. At its prompt the supervisor runs with memory management
-off and polls the console, so nothing else of that machine is needed.
+PC, and its memory images still work, without the boot: it boots the
+supervisor from `VAX_MINIMUM_DIAGS.dsk`, attaches the CPU, loads EVKAE and
+stops at the `DS>` prompt. Then it saves that machine as a memory image -
+physical memory up to the end of what the supervisor uses (C3200h),
+followed by a little code that puts back the internal registers the
+supervisor had set (SCBB, PCBB, the five stack pointers, the interval
+timer, the console) and returns to it with `REI`. At its prompt the
+supervisor runs with memory management off and polls the console, so
+nothing else of that machine is needed.
 
 ```
 python3 tests/evkae/mkdsimage.py      # -> software/evkae_ds.bin (800 400 bytes)
@@ -912,12 +931,13 @@ EVKAD needs compatibility mode, which the core does not have yet. The image is
 DEC software in another form, so `.gitignore` keeps it out of the
 repository, like the disk.
 
-On the core:
+On the core, with an image:
 
 1. OSD: *Load Address* = `0x00000000`, *Start Address* = `0x00000200`,
    *Autostart* = Yes (the settings for EVKAA).
 2. *Load Program* -> `evkae_ds.bin`. A banner says what is loaded, then
-   `DS>`.
+   `DS>`: the image's supervisor has its CPU attached and EVKAE loaded
+   already (no disk needed).
 3. Type a command of the supervisor:
 
 | Command | Runs |
@@ -976,7 +996,9 @@ instruction, for the integer, logical, branch, bit field, queue, character
 string and packed decimal instructions. Each one is tried with every
 addressing mode for its operands, with operands that end on the last byte
 of a page, and - for the long ones - with the interval timer interrupting
-them and with trace (PSL\<T\>) on. Its image is made like EVKAE's:
+them and with trace (PSL\<T\>) on. From the disk it is `LOAD EVKAB` at the
+supervisor's prompt (*Running the Diagnostic Supervisor and EVKAE*); its
+image is made like EVKAE's:
 
 ```
 python3 tests/evkae/mkdsimage.py -p EVKAB     # -> software/evkab_ds.bin (800 400 bytes)
@@ -1044,7 +1066,8 @@ EVKAC, the VAX Floating Point Instructions Exerciser (ZZ-EVKAC, revision
 per instruction: 98 tests, from MOVF (1) to ACBH (98). Like EVKAB it tries
 each with every addressing mode for its operands and, unless the QUICK
 flag is set, again with the operands placed across page boundaries so that
-they page fault, and with the interval timer interrupting. Its image:
+they page fault, and with the interval timer interrupting. From the disk
+it is `LOAD EVKAC` at the supervisor's prompt; its image:
 
 ```
 python3 tests/evkae/mkdsimage.py -p EVKAC     # -> software/evkac_ds.bin (800 400 bytes)
@@ -1448,7 +1471,8 @@ reset, `!Wn` waits n clocks, `!Lfile` loads another program over whatever is
 running, as *Load Program* does (`!L+wfile` / `!L+rfile` first wait until the
 CPU has a write / read cycle in flight, so that the load lands on one), and
 `!Bn` / `!Sn` set *Load Address* and *Start Address* (n is the OSD option's
-index: `!B0` is 1000, `!B1` 0; `!S1` is 200) for the loads after them.
+index: `!B0` is 1000, `!B1` 0; `!S1` is 200) for the loads after them, and
+`!Dfile@addr:n` writes n longwords of memory from addr (hex) into a file.
 `PRELOAD=file@hexaddr` puts a file into memory after the memory test, as if an
 earlier program had left it there. `TTOLOG=file` writes everything the CPU
 sent to the console line into a file. `MEMDUMP=addr:count,...` prints memory

@@ -334,10 +334,13 @@ pass on the DE10-Nano.
   disk to `DS>` on the RTL in simulation, 5.3 s after VMB starts, and loads
   EVKAE from it once the RH780 leaves maintenance mode on an INIT written
   with CR<3> clear, as the supervisor leaves it after checking the adapter
-  (`tests/mmu/t51_mba.s`). Until it
-  does on the board too, `tests/evkae/mkdsimage.py` brings the supervisor
-  over as a memory image taken from a simulator at its `DS>` prompt, with
-  any of the four exercisers loaded; that is how EVKAB and EVKAE ran.
+  (`tests/mmu/t51_mba.s`). Confirmed on the board with the build of 21
+  November 2026: the supervisor boots from the RP07 and loads EVKAE from
+  it. In the full-system simulation EVKAB, EVKAC and EVKAE loaded from the
+  disk pass as their images do (EVKAE but test 3). Before that, `tests/evkae/mkdsimage.py` brought the supervisor over
+  as a memory image taken from a simulator at its `DS>` prompt, with any of
+  the four exercisers loaded; that is how EVKAB, EVKAC and EVKAE ran, and
+  the images still work.
 - NetBSD/vax: its kernel supports the 8600 (`options VAX8600`, two SBIs on the
   ABus, Massbus disks). A complete, free OS as the rehearsal before VMS.
 
@@ -380,13 +383,13 @@ multi-user.
 | EVKAA V8.0 | basic instructions | passes now |
 | `tests/mmu` (47 programs) | memory management, faults and restart, FPD, PROBE, LDPCTX/SVPCTX, REI, CHMx, BPT, XFC, halt codes, IPRs, reserved addressing modes, CASE, BBx, ACB, arithmetic traps, trace, the string, queue and decimal instructions, the octaword and floating point instructions (random operands), compared with the reference simulator | pass now |
 | `software/mmutest.bin` | the same programs on the core itself, self-checking | passes on the full-system model and on the board |
-| EVKAB (Basic Instructions Exerciser) | every integer, branch, bit field, queue, character string and decimal instruction, with every addressing mode, page faults on the operands, timer interrupts and trace | all 161 tests pass under the Diagnostic Supervisor image |
-| EVKAC (Floating Point Instructions Exerciser) | every floating point instruction of the four formats, with every addressing mode, page faults on the operands and timer interrupts | all 98 tests pass under the Diagnostic Supervisor image, with the QUICK flag and without it (page faults on the operands) |
-| EVKAE (Privileged Architecture Exerciser) | interrupts, exceptions, REI, CHMx, IPRs, interval timer, memory management, kernel stack not valid, PROBE, LDPCTX/SVPCTX - DEC's own test of the MMU work | 10 of 11 tests pass under the Diagnostic Supervisor image, in simulation and on the board; test 3 needs compatibility mode (M11) |
+| EVKAB (Basic Instructions Exerciser) | every integer, branch, bit field, queue, character string and decimal instruction, with every addressing mode, page faults on the operands, timer interrupts and trace | all 161 tests pass under the Diagnostic Supervisor image, and loaded from the RP07 (QUICK, in simulation) |
+| EVKAC (Floating Point Instructions Exerciser) | every floating point instruction of the four formats, with every addressing mode, page faults on the operands and timer interrupts | all 98 tests pass under the Diagnostic Supervisor image, with the QUICK flag and without it (page faults on the operands), and loaded from the RP07 (QUICK, in simulation) |
+| EVKAE (Privileged Architecture Exerciser) | interrupts, exceptions, REI, CHMx, IPRs, interval timer, memory management, kernel stack not valid, PROBE, LDPCTX/SVPCTX - DEC's own test of the MMU work | 10 of 11 tests pass under the Diagnostic Supervisor image, in simulation and on the board, and loaded from the RP07 (in simulation; on the board tests 1-2); test 3 needs compatibility mode (M11) |
 | Own C and assembler tests | each new instruction and exception, traced against the reference simulator | from M3 |
 | SVK | MMU, SCB, interval timer and console interrupts, software interrupts, SVPCTX/LDPCTX | M5 |
 | Random-operand comparison with the reference simulator | decimal, string, floating point (done) | M6, M7 |
-| EDSAA + EVKAB, EVKAC, EVKAD, EVKAE | DEC's own exercisers under the 8600 Diagnostic Supervisor | M9 |
+| EDSAA + EVKAB, EVKAC, EVKAD, EVKAE | DEC's own exercisers under the 8600 Diagnostic Supervisor, booted from the RP07 | M9: the supervisor boots from the RP07 (simulation and board) and loads EVKAB, EVKAC and EVKAE from it, which pass; EVKAD needs compatibility mode (M11) |
 | NetBSD/vax | a complete OS | M9 |
 | OpenVMS VAX 7.3 | the goal | M10 |
 

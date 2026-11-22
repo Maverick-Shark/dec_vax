@@ -32,7 +32,8 @@
 //               another program (OSD Load Program, whatever is running;
 //               "!L+wfile" / "!L+rfile" first wait until the CPU has a
 //               write / read cycle in flight, so the load lands on one),
-//               "!Bn" sets the OSD Load Address (0 = 1000, 1 = 0, 2 = 200,
+//               "!Dfile@a:n" writes n longwords of memory from a (hex) into
+//               a file, "!Bn" sets the OSD Load Address (0 = 1000, 1 = 0, 2 = 200,
 //               3 = 10000), "!S0" / "!S1" the Start Address (load address
 //               or 200) for the loads after it
 //   PRELOAD=f@a put file f into memory at hex address a after the memory
@@ -582,6 +583,25 @@ int main(int argc, char **argv) {
 			}
 			if (tok[0] == '!' && tok[1] == 'W') {   // !Wn: just run n clocks
 				run(strtoull(tok + 2, 0, 0));
+				continue;
+			}
+			if (tok[0] == '!' && tok[1] == 'D') {   // !Dfile@addr:count (hex):
+				// memory, count longwords from addr, into a file
+				char *at = strrchr(tok, '@');
+				if (!at) continue;
+				*at = 0;
+				unsigned a = strtoul(at + 1, 0, 16), n = 1;
+				if (const char *c = strchr(at + 1, ':')) n = strtoul(c + 1, 0, 16);
+				FILE *df = fopen(tok + 2, "wb");
+				if (!df) { perror(tok + 2); continue; }
+				for (unsigned k = 0; k < n; k++, a += 4) {
+					unsigned lo = R->tb_top__DOT__sdram__DOT__mem[(a >> 1) & 0xFFFFFF];
+					unsigned hi = R->tb_top__DOT__sdram__DOT__mem[((a >> 1) + 1) & 0xFFFFFF];
+					unsigned v = (hi << 16) | lo;
+					fwrite(&v, 4, 1, df);
+				}
+				fclose(df);
+				printf("\n[%llu] --- memory written to %s\n", (unsigned long long)cycles, tok + 2);
 				continue;
 			}
 			if (tok[0] == '!' && tok[1] == 'B') {   // !Bn: OSD Load Address n
