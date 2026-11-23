@@ -381,6 +381,67 @@ FDF7	CVTHD
 	plus 0 0	goto resadflt	# entry 8: reserved addressing mode (PC at the opcode)
 	plus 0 0	goto arithtrap	# entry 9: arithmetic trap (after the instruction)
 	plus 0 0	goto tracef	# entry 10: trace fault (before the instruction)
+	plus 0 0	goto cmflt	# entry 11: compatibility mode exception
+	plus 0 0			# entries 12-15: unused
+	plus 0 0
+	plus 0 0
+	plus 0 0
+#
+# PDP-11 compatibility mode (VAX Architecture Reference Manual, chapter 9).
+# The hardware (cpu.v, cmdecode.v) has fetched and decoded the instruction
+# and evaluated its operand specifiers, and comes here: cm_table + the
+# instruction's routine number (cmdecode.v, CMC_*), with
+#	arg1	operand A: the source, read
+#	arg2	operand B: its value (read, modify) or address (JMP, JSR)
+#	argp0	operand B's location, for wback
+#	arg3	the register field R, arg4 R OR 1
+# Operands are sign extended from their size (a byte, a word). The machine
+# is a 16-bit one here: crv reads a register's low word, registers are
+# written as words, cpuaddr is a 16-bit address, and a word reference to an
+# odd address is the odd address abort. Memory references must give their
+# size (word). Steps marked cmsz set the flags at the operand size; the
+# condition codes are set at the end from the flags saved, as cmdecode.v
+# says for the instruction (N, Z; V cleared, saved or N XOR C; C cleared,
+# saved or set).
+#
+cm_table:
+	plus 0 0	goto cm_rti	# 0 RTI, RTT
+	and F F		crn goto cm_jmp	# 1 JMP
+	and 6 6		crn goto cm_rts	# 2 RTS
+	and F cmir	arg1 goto cm_cc	# 3 CLC ... SCC, NOP
+	and arg2 FFFF	arg2 goto cm_swab	# 4 SWAB
+	and F F		crn goto cm_br	# 5 BR, Bxx
+	and 6 6		crn goto cm_jsr	# 6 JSR
+	plus 0 0	argd0 savnz cmsz wback eoi	# 7 CLR(B)
+	xor arg2 FFFF	argd0 savnz cmsz wback eoi	# 8 COM(B)
+	plus arg2 1	argd0 savnz savv cmsz wback eoi	# 9 INC(B)
+	minus arg2 1	argd0 savnz savv cmsz wback eoi	# 10 DEC(B)
+	minus 0 arg2	argd0 savnz savv savc cmsz wback eoi	# 11 NEG(B)
+	and psl 1	arg3 goto cm_adc	# 12 ADC(B)
+	and psl 1	arg3 goto cm_sbc	# 13 SBC(B)
+	plus arg2 0	savnz cmsz eoi	# 14 TST(B)
+	and arg2 1	arg3 goto cm_ror	# 15 ROR
+	and arg2 8000	arg3 goto cm_rol	# 16 ROL
+	and arg2 1	arg3 goto cm_asr	# 17 ASR
+	and arg2 8000	arg3 goto cm_asl	# 18 ASL
+	and arg2 1	arg3 goto cm_rorb	# 19 RORB
+	and arg2 80	arg3 goto cm_rolb	# 20 ROLB
+	and arg2 1	arg3 goto cm_asrb	# 21 ASRB
+	and arg2 80	arg3 goto cm_aslb	# 22 ASLB
+	plus arg1 0	argd0 savnz cmsz wback eoi	# 23 MOV(B), MFPx, MTPx
+	and psl 8	arg3 goto cm_sxt	# 24 SXT
+	minus arg1 arg2	savnz savv savc cmsz eoi	# 25 CMP(B)
+	and arg1 arg2	savnz cmsz eoi	# 26 BIT(B)
+	bic arg1 arg2	argd0 savnz cmsz wback eoi	# 27 BIC(B)
+	bis arg1 arg2	argd0 savnz cmsz wback eoi	# 28 BIS(B)
+	plus arg1 arg2	argd0 savnz savv savc use16 wback eoi	# 29 ADD
+	minus arg2 arg1	argd0 savnz savv savc use16 wback eoi	# 30 SUB
+	mul arg3 arg1	argd0 savnz goto cm_mul	# 31 MUL
+	plus 0 cmr	crn goto cm_div	# 32 DIV
+	and arg1 3F	arg1 goto cm_ash	# 33 ASH
+	and arg1 3F	arg1 goto cm_ashc	# 34 ASHC
+	xor arg3 arg2	argd0 savnz use16 wback eoi	# 35 XOR
+	plus 0 cmr	crn goto cm_sob	# 36 SOB
 #
 # Interrupt.  Interrupt level tells which vector to use, is in savpsw.
 #
@@ -512,6 +573,19 @@ tracef:
 	and 0 0		argp1
 	and 20 20	argd0
 	and 28 28	argd1 goto scb_common
+#
+# Compatibility mode exception (SCB 30; ARM 9, "Compatibility mode exceptions
+# and interrupts", and table 5.2): a fault - reserved instruction (0), BPT
+# (1), IOT (2), EMT (3), TRAP (4), illegal instruction (5) - or the odd
+# address abort (6). The hardware has put the registers, PC and PSL back to
+# the start of the instruction; the type code, in IPR_CMCODE (77), is pushed
+# after the PSL and the PC, like an arithmetic exception's.
+cmflt:
+	and 77 77	crn
+	plus civ 0	argp0		# the type code
+	and 20 20	argd0		# an exception
+	and 30 30	argd1
+	and 4 4		argp1 goto scb_common	# push the code: arith_1
 #
 # Memory management fault (SRM 4.9): access-control violation (SCB 20) or
 # translation not valid (SCB 24). The hardware has already put the PC, the
@@ -1567,10 +1641,19 @@ rei:
 # one, else reserved operand fault (the hardware undoes the pops):
 	shr arg2 10	arg3			# new PSL<31:16>
 	and arg2 FF00	nzcond goto rei_bad	# MBZ <15:8>
-	and arg3 B020	nzcond goto rei_bad	# CM (not implemented), MBZ <29:28>, <21>
+	and arg3 3020	nzcond goto rei_bad	# MBZ <29:28>, <21>
 	and arg3 1F	argd1			# new IPL
 	shr arg3 8	arg4
 	and arg4 3	arg4			# new CUR_MOD
+# into compatibility mode (ARM 9, "Entering and leaving compatibility mode"):
+# FPD, IS, DV, FU, IV must be clear and CUR_MOD user (so PRV_MOD user and
+# IPL 0, checked below); the PC is 16 bits, its upper half ignored
+	and arg3 8000	zcond goto rei_c1
+	and arg2 E0	nzcond goto rei_bad	# DV, FU, IV
+	and arg3 C00	nzcond goto rei_bad	# FPD, IS
+	minus arg4 3	nzcond goto rei_bad	# not user mode
+	and arg1 FFFF	arg1
+rei_c1:
 	and arg3 400	zcond goto rei_c2
 	and argd1 argd1	zcond goto rei_bad	# IS with IPL 0
 rei_c2:
@@ -1615,7 +1698,26 @@ rei_c7:
 	and 15 15	crn
 	bis civ 4	crw wipr		# request the IPL 2 interrupt
 rei_2:
-	plus 0 0	eoi
+# into compatibility mode: the upper halves of R0-R6 are ignored there (ARM
+# 9, "Native mode and compatibility mode registers"); they are cleared now,
+# so the registers hold their PDP-11 values only (an exception leaves them
+# so, which the ARM allows)
+	plus arg2 0	nncond goto rei_3
+	and 0 0		crn
+	and crv FFFF	crw wreg
+	and 1 1		crn
+	and crv FFFF	crw wreg
+	and 2 2		crn
+	and crv FFFF	crw wreg
+	and 3 3		crn
+	and crv FFFF	crw wreg
+	and 4 4		crn
+	and crv FFFF	crw wreg
+	and 5 5		crn
+	and crv FFFF	crw wreg
+	and 6 6		crn
+	and crv FFFF	crw wreg
+rei_3:	plus 0 0	eoi
 rei_bad:
 	plus 0 0	resopflt eoi
 #
@@ -4261,6 +4363,185 @@ acb_wx:	and 58 58	crn			# D G H: the index by fp_wr
 	plus 0 0	goto fp_wr
 acb_b:	plus arg4 0	argd1
 	plus arg2 0	nzcond wback2 eoi
+#
+# PDP-11 compatibility mode instructions (entered from cm_table, which see).
+# A step that writes a register or memory cannot end the instruction: eoi
+# comes in a step of its own.
+#
+# RTI, RTT: PC <- (SP)+, PSW<4:0> (T N Z V C) <- (SP)+; the high bits of
+# the PSW popped are ignored.
+cm_rti:	and 6 6		crn
+	plus crv 0	cpuaddr word rmem	# the PC
+	plus rmemdat 0	arg1
+	plus crv 2	cpuaddr word rmem	# the PSW
+	plus crv 4	crw wreg		# SP + 4
+	and rmemdat 1F	arg2
+	bic 1F psl	psl
+	bis psl arg2	psl
+	and F F		crn
+	plus arg1 0	crw wreg
+cm_end:	plus 0 0	eoi
+# JMP: PC <- the address
+cm_jmp:	plus arg2 0	crw wreg goto cm_end
+# RTS R: PC <- R, R <- (SP)+ (R is arg3, read at the start)
+cm_rts:	plus crv 0	cpuaddr word rmem	# (SP)
+	plus crv 2	crw wreg		# SP + 2
+	and F F		crn
+	plus arg3 0	crw wreg		# PC <- R
+	plus 0 cmr	crn
+	plus rmemdat 0	crw wreg goto cm_end	# R <- the word popped
+# CLC ... SCC: IR<4> set or clear the codes IR<3:0> (arg1)
+cm_cc:	and 10 cmir	nzcond goto cm_cc1
+	bic arg1 psl	psl eoi
+cm_cc1:	bis psl arg1	psl eoi
+# SWAB: N, Z of the new low byte
+cm_swab: shl arg2 8	arg3
+	shr arg2 8	arg4
+	bis arg3 arg4	argd0 savnz use8 wback eoi
+# BR, Bxx: PC + twice the displacement, if the branch is taken (cmbr)
+cm_br:	plus crv cmbr	crw wreg goto cm_end
+# JSR R, dst: -(SP) <- R (as the destination left it, arg3), R <- PC,
+# PC <- the destination's address
+cm_jsr:	minus crv 2	arg4
+	plus arg4 0	cpuaddr word
+	plus arg3 0	crw wmem		# -(SP) <- R
+	plus arg4 0	crw wreg		# SP - 2
+	and F F		crn
+	plus crv 0	arg4			# the return address
+	plus 0 cmr	crn
+	plus arg4 0	crw wreg		# R <- PC (no change if R is PC)
+	and F F		crn
+	plus arg2 0	crw wreg goto cm_end	# PC <- the destination
+# ADC, SBC: dst + C, dst - C
+cm_adc:	plus arg2 arg3	argd0 savnz savv savc cmsz wback eoi
+cm_sbc:	minus arg2 arg3	argd0 savnz savv savc cmsz wback eoi
+# ROR, ROL, ASR, ASL (word, byte): C <- the bit shifted out (arg3, the
+# borrow of 0 - arg3); V is N XOR C (cmdecode.v)
+cm_ror:	minus 0 arg3	savc
+	and arg2 FFFF	arg3
+	shr arg3 1	arg3
+	and psl 1	zcond goto cm_ror1
+	bis arg3 8000	arg3
+cm_ror1: plus arg3 0	argd0 savnz use16 wback eoi
+cm_rol:	minus 0 arg3	savc
+	and psl 1	arg4
+	shl arg2 1	arg3
+	bis arg3 arg4	argd0 savnz use16 wback eoi
+cm_asr:	minus 0 arg3	savc
+	asr arg2 1	argd0 savnz use16 wback eoi
+cm_asl:	minus 0 arg3	savc
+	shl arg2 1	argd0 savnz use16 wback eoi
+cm_rorb: minus 0 arg3	savc
+	and arg2 FF	arg3
+	shr arg3 1	arg3
+	and psl 1	zcond goto cm_rorb1
+	bis arg3 80	arg3
+cm_rorb1: plus arg3 0	argd0 savnz use8 wback eoi
+cm_rolb: minus 0 arg3	savc
+	and psl 1	arg4
+	shl arg2 1	arg3
+	bis arg3 arg4	argd0 savnz use8 wback eoi
+cm_asrb: minus 0 arg3	savc
+	asr arg2 1	argd0 savnz use8 wback eoi
+cm_aslb: minus 0 arg3	savc
+	shl arg2 1	argd0 savnz use8 wback eoi
+# SXT: -1 if N is set (arg3 = PSL<N>), else 0
+cm_sxt:	plus arg3 0	nzcond goto cm_sxt1
+	plus 0 0	argd0 savnz use16 wback eoi
+cm_sxt1: bis FFFF FFFF	argd0 savnz use16 wback eoi
+# MUL R, src: the 32-bit product (N, Z) to R (high word) and R OR 1 (low
+# word); C if it does not fit in 16 bits
+cm_mul:	plus 0 cmr	crn
+	shr argd0 10	crw wreg		# R <- the high word
+	plus 0 cmr1	crn
+	plus argd0 0	crw wreg		# R OR 1 <- the low word
+	plus argd0 8000	arg2
+	shr arg2 10	arg2			# 0 if -8000 <= product <= 7FFF
+	minus 0 arg2	savc eoi
+# DIV R, src: R'R OR 1 / src, the quotient to R, the remainder (the sign of
+# the dividend) to R OR 1. Divide by zero: V and C; a quotient that does not
+# fit in 16 bits: V; then the registers are not changed, N and Z are clear.
+cm_div:	plus arg1 0	nzcond goto cm_div1
+	minus arg1 8000	savv savc use16		# V, C (0 - 8000)
+	plus 1 1	savnz eoi		# N, Z clear
+cm_div1: shl arg3 10	arg2
+	and arg4 FFFF	arg4
+	bis arg2 arg4	arg2			# the dividend
+	plus arg2 0	argd1 nncond goto cm_div2
+	minus 0 arg2	argd1			# |dividend|
+cm_div2: plus arg1 0	arg4 nncond goto cm_div3
+	minus 0 arg1	arg4			# |divisor|
+cm_div3: div arg4 argd1	argd0			# |quotient|, unsigned
+	mul argd0 arg4	arg4
+	minus argd1 arg4	argd1		# |remainder|
+	xor arg2 arg1	ncond goto cm_divn	# the signs differ: quotient < 0
+	minus 7FFF argd0	ncond goto cm_divv	# above 7FFF
+	plus 0 0	goto cm_div4
+cm_divn: minus 8000 argd0	ncond goto cm_divv	# above 8000
+	minus 0 argd0	argd0
+cm_div4: plus arg2 0	nncond goto cm_div5
+	minus 0 argd1	argd1			# the remainder: the dividend's sign
+cm_div5: plus argd0 0	crw wreg savnz use16	# R <- the quotient; N, Z
+	plus 0 cmr1	crn
+	plus argd1 0	crw wreg		# R OR 1 <- the remainder
+	plus 0 0	savv savc eoi		# V, C clear
+cm_divv: plus 7FFF 7FFF	savv use16		# overflow: V
+	plus 1 1	savnz savc eoi		# N, Z, C clear
+# ASH R, src: R shifted by src<5:0> (-32 to 31; negative to the right), R
+# kept in the high half of a longword: left, C the last bit out and V if
+# the bits through the sign are not all the same (shifted back it is not R);
+# right, C the last bit out, V clear; 0, V and C clear
+cm_ash:	shl arg3 10	arg2			# R<15:0>'0
+	plus arg1 0	zcond goto cm_ash0
+	and arg1 20	nzcond goto cm_ashr
+	minus arg1 1	arg4
+	shl arg2 arg4	arg4
+	plus arg4 arg4	savc			# C <- bit 31 shifted one less
+	shl arg2 arg1	argd0
+	asr argd0 arg1	arg4			# shifted back
+	xor arg4 arg2	zcond goto cm_ashv0
+	plus 7FFF 7FFF	savv use16 goto cm_ash2	# V
+cm_ashr: minus 40 arg1	arg1			# 64 - count: 1 to 32
+	asr arg2 arg1	argd0
+	and argd0 8000	arg4
+	minus 0 arg4	savc			# C <- the bit below R
+cm_ashv0: plus 0 0	savv goto cm_ash2	# V clear
+cm_ash0: plus 0 0	savv savc		# V, C clear
+	plus arg2 0	argd0
+cm_ash2: shr argd0 10	argd0
+	plus 0 cmr	crn
+	plus argd0 0	crw wreg savnz use16 goto cm_end	# R; N, Z
+# ASHC R, src: R'R OR 1 shifted as ASH does R; N, Z of the 32 bits
+cm_ashc: shl arg3 10	arg2
+	and arg4 FFFF	arg4
+	bis arg2 arg4	arg2			# R'R OR 1
+	plus arg1 0	zcond goto cm_ashc0
+	and arg1 20	nzcond goto cm_ashcr
+	minus arg1 1	arg4
+	shl arg2 arg4	arg4
+	plus arg4 arg4	savc			# C <- bit 31 shifted one less
+	shl arg2 arg1	argd0
+	asr argd0 arg1	arg4
+	xor arg4 arg2	zcond goto cm_ashcv0
+	plus 7FFF 7FFF	savv use16 goto cm_ashc2	# V
+cm_ashcr: minus 40 arg1	arg1			# 64 - count: 1 to 32
+	minus arg1 1	arg4
+	asr arg2 arg4	arg4
+	and arg4 1	arg4
+	minus 0 arg4	savc			# C <- bit 0 shifted one less
+	asr arg2 arg1	argd0
+cm_ashcv0: plus 0 0	savv goto cm_ashc2	# V clear
+cm_ashc0: plus 0 0	savv savc		# V, C clear
+	plus arg2 0	argd0
+cm_ashc2: plus 0 cmr	crn
+	shr argd0 10	crw wreg		# R <- the high word
+	plus 0 cmr1	crn
+	plus argd0 0	crw wreg		# R OR 1 <- the low word
+	plus argd0 0	savnz eoi		# N, Z of the 32 bits
+# SOB R, disp: R <- R - 1; if not 0, PC - twice the displacement (cmbr)
+cm_sob:	minus arg3 1	crw wreg zcond goto cm_end
+	and F F		crn
+	plus crv cmbr	crw wreg goto cm_end
 #
 !INSTRUCTIONS
 #

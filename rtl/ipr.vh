@@ -108,3 +108,6 @@
 /* the machine check frame (cpu.v, mc_frame): write the index of a
    longword (0 EHM.STS ... 21 CSES), read it */
 `define IPR_MCFRAME	7'h7a
+/* the type code of a compatibility mode exception (SCB 30), read: 0-5 the
+   faults of cmdecode.v, 6 odd address */
+`define IPR_CMCODE	7'h77

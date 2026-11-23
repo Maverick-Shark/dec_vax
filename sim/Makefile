@@ -4,7 +4,7 @@ MISTER = vax_uart.v vax_kbd.v vt_font.v vt_term.v vax_msg.v vax_selftest.v \
          vax_sdram.v vax_cache.v vax_sbi.v vax_uba.v vax_mba.v vax_rp07.v vax_io.v \
          vax_core.v vax_system.v
 RVAX = div.v ucode.v intrpt.v intclk.v constx.v consrx.v cons86.v console.v mmu.v \
-       argdecode.v alu.v vcache.v decunit.v fpunit.v cpu.v
+       argdecode.v alu.v vcache.v decunit.v fpunit.v cmdecode.v cpu.v
 SRC = $(addprefix ../rtl/,$(RVAX)) $(addprefix ../rtl/mister/,$(MISTER)) sdram_model.v tb_top.v
 
 obj/Vtb_top: $(SRC) tb.cpp hpsdisk.h

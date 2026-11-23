@@ -58,6 +58,15 @@
 `define EXEC		21
 `define XFAULT		22	/* enter microcode for a fault, maybe restoring state */
 `define DUWAIT		23	/* a decimal or floating point unit command runs */
+/* PDP-11 compatibility mode (cmdecode.v; see "Compatibility mode" below) */
+`define CM_DECODE	24	/* the instruction word is in cm_ir */
+`define CM_NEXT		25	/* the next operand, or into the microcode */
+`define CM_SPEC		26	/* an operand specifier: its register is read */
+`define CM_MEM		27	/* a reference or register update made (cm_step) */
+`define CM_OPND		28	/* the operand's address is known */
+`define CM_SEND		29	/* the operand is done */
+`define CM_REG		30	/* the register field: R */
+`define CM_REG2		31	/* ... R OR 1 */
 
 /* WREG return states */
 `define	WREG_HALT	0
@@ -66,6 +75,7 @@
 `define	WREG_FETCH	5
 `define	WREG_ARG_INDIR	9
 `define	WREG_xENDINST	10
+`define	WREG_CM		11	/* to CM_MEM */
 
 /* READMEM return states */
 `define	RMEM_ARG_INDIR	0
@@ -73,6 +83,26 @@
 `define	RMEM_ARG_READ	4
 `define	RMEM_xARGEND	5
 `define	RMEM_xENDINST	6
+`define	RMEM_CM		7	/* to CM_MEM */
+
+/* what a compatibility mode reference was for (cm_step) */
+`define	CMS_IR		3'd0	/* the instruction word */
+`define	CMS_EA		3'd1	/* (Rn)+, -(Rn): the register updated */
+`define	CMS_PTR		3'd2	/* @(Rn)+, @-(Rn): the register updated */
+`define	CMS_DEF		3'd3	/* the operand's address read */
+`define	CMS_IDX		3'd4	/* X(Rn), @X(Rn): the index word */
+`define	CMS_VAL		3'd5	/* the operand read */
+
+/* an operand's access (cmdecode.v bacc) */
+`define	CMA_READ	2'd0
+`define	CMA_WRITE	2'd1
+`define	CMA_MODIFY	2'd2
+`define	CMA_ADDR	2'd3
+
+/* microcode entries: the compatibility mode exception (SCB 30), and the
+   table of the compatibility mode instructions (ucode.def, cm_table) */
+`define	XE_CMODE	12'd11
+`define	CM_TABLE	12'd16
 
 /* WRITEMEM return states */
 `define WMEM_MCODE	0
@@ -353,6 +383,7 @@ module cpu(
 		`IPR_MMPAR: ipr_val = { MMU_TNV_I, 28'b0, MMU_PAR_I };
 		`IPR_ARITH: ipr_val = { 28'b0, afault_code != 4'd0 ? afault_code :
 		    arith_code != 4'd0 ? arith_code : 4'd1 };
+		`IPR_CMCODE: ipr_val = { 29'b0, cm_code };
 		default: ipr_val = ipr_regaddr[6:4] == 3'b110 ? du_rd :
 		    ipr_regaddr[6:4] == 3'b101 ? fpu_rd : ipr_val_tmp;
 		endcase
@@ -442,6 +473,8 @@ module cpu(
 	reg		psl_is, psl_fpd;
 	reg		psl_tp;		/* PSL<TP>, trace pending */
 initial psl_tp = 1'b0;
+	reg		psl_cm;		/* PSL<CM>, PDP-11 compatibility mode */
+initial psl_cm = 1'b0;
 	reg [1:0]	cur_mod, prv_mod;
 	reg [4:0]	psl_ipl;
 	reg [7:0]	psw;
@@ -449,8 +482,8 @@ initial psl_is = 1'b1;
 initial psl_fpd = 1'b0;
 initial psl_ipl = 5'h1f;
 	wire [31:0]	psl;
-	assign psl = 
-	    { 1'b0, psl_tp, 2'd0, psl_fpd, psl_is, cur_mod, prv_mod, 1'b0, psl_ipl,
+	assign psl =
+	    { psl_cm, psl_tp, 2'd0, psl_fpd, psl_is, cur_mod, prv_mod, 1'b0, psl_ipl,
 	      8'b0, psw };
 
 /* verilator lint_on UNDRIVEN */
@@ -467,6 +500,94 @@ initial psl_ipl = 5'h1f;
 	 */
 	reg		ext_op;
 	initial ext_op = 1'b0;
+
+	/*
+	 * PDP-11 compatibility mode (VAX Architecture Reference Manual,
+	 * chapter 9), entered by REI with PSL<CM> set and left by an exception
+	 * or an interrupt. With PSL<CM> set S_FETCH starts a compatibility
+	 * mode instruction (cm_inst): its word is read at PC as data - the
+	 * instruction buffer is not used, so that a program may write the
+	 * instructions it is about to execute -, decoded by cmdecode.v, and
+	 * the operand specifiers it has are evaluated here (CM_* states) as
+	 * the eight PDP-11 addressing modes do; then the microcode routine of
+	 * the instruction runs (cm_table in ucode.def). While cm_inst is set
+	 * the machine is a 16-bit one: the microcode reads the registers'
+	 * low words (crv), registers are written as words (the upper half
+	 * cleared, which the ARM allows), and addresses (cpuaddr, and those
+	 * evaluated here) are 16 bits, zero extended - compatibility mode
+	 * references the first 64 KB of P0 space, in user mode. A word
+	 * reference to an odd address is the odd address abort. The faults
+	 * - reserved instruction, BPT, IOT, EMT, TRAP, illegal instruction -
+	 * and the odd address abort enter the microcode at XE_CMODE with the
+	 * registers, PC and PSL as at the start of the instruction, the type
+	 * code in IPR_CMCODE; memory management faults and machine checks do
+	 * the same as in VAX mode. R7 and R8-R14 are not touched; the PC is
+	 * R15<15:0>.
+	 */
+	reg		cm_inst;	/* a compatibility mode instruction runs */
+	reg [15:0]	cm_ir;		/* its instruction word */
+	reg [2:0]	cm_code;	/* the exception type code (IPR_CMCODE) */
+	reg [2:0]	cm_step;	/* what the reference made was for (CMS_*) */
+	reg [2:0]	cm_ph;		/* the next operand phase (CM_NEXT) */
+	reg		cm_slot;	/* the specifier is operand B (else A) */
+	reg [5:0]	cm_spec;	/* the specifier: mode <5:3>, register <2:0> */
+	reg [1:0]	cm_acc;		/* its access (CMA_*) */
+	reg		cm_sb;		/* its size: a byte (else a word) */
+	reg [15:0]	cm_ea;		/* its address */
+	reg [31:0]	cm_val;		/* its value, sign extended */
+	reg		cm_isreg;	/* it is a register (mode 0) */
+	initial cm_inst = 1'b0;
+	initial cm_code = 3'd0;
+
+	wire [5:0]	cmd_cls;
+	wire		cmd_flt, cmd_bsz, cmd_rts, cmd_movb, cmd_ccnz;
+	wire [2:0]	cmd_fcode;
+	wire [1:0]	cmd_a, cmd_b, cmd_bacc, cmd_r, cmd_ccv, cmd_ccc;
+	wire [31:0]	cmd_brdisp;
+
+	cmdecode cmdecode(
+		.ir(cm_ir),
+		.n(psw[`PSL_N]),
+		.z(psw[`PSL_Z]),
+		.v(psw[`PSL_V]),
+		.c(psw[`PSL_C]),
+		.cls(cmd_cls),
+		.flt(cmd_flt),
+		.fcode(cmd_fcode),
+		.bsz(cmd_bsz),
+		.a(cmd_a),
+		.b(cmd_b),
+		.bacc(cmd_bacc),
+		.r(cmd_r),
+		.rts(cmd_rts),
+		.movb(cmd_movb),
+		.ccnz(cmd_ccnz),
+		.ccv(cmd_ccv),
+		.ccc(cmd_ccc),
+		.brdisp(cmd_brdisp)
+	);
+
+	/* PDP-11 register n: VAX R0-R6, R15 for R7 (PC) */
+	function [3:0] cm_map;
+		input [2:0]	n;
+		cm_map = (n == 3'd7) ? 4'hF : { 1'b0, n };
+	endfunction
+	/* the register field (microcode right operands cmr, cmr1) */
+	wire [2:0]	cm_rf = cmd_rts ? cm_ir[2:0] : cm_ir[8:6];
+	wire [3:0]	cm_r = cm_map(cm_rf);
+	wire [3:0]	cm_r1 = cm_map(cm_rf | 3'd1);
+	/* operand A's and B's specifiers */
+	wire [5:0]	cm_aspec = cmd_a == 2'd1 ? cm_ir[11:6] :
+			    cmd_a == 2'd2 ? cm_ir[5:0] : 6'o26;	/* (SP)+ */
+	wire [5:0]	cm_bspec = cmd_b == 2'd1 ? cm_ir[5:0] : 6'o46;	/* -(SP) */
+	/* the specifier's register */
+	wire [3:0]	cm_srn = cm_map(cm_spec[2:0]);
+	/* (Rn)+, -(Rn): the operand's size, but 2 for SP and PC */
+	wire [15:0]	cm_inc = (cm_sb && cm_spec[2:1] != 2'b11) ? 16'd1 : 16'd2;
+	/* a compatibility mode reference reads the I-stream (for the
+	   machine check frame) */
+	wire		cm_ifetch = cm_inst &&
+			    (cm_step == `CMS_IR || cm_step == `CMS_IDX);
 
 	reg		writeback, writeback2;
 	reg		fpd_active;	/* microcode can save its state if a fault hits */
@@ -632,9 +753,11 @@ initial fpd_active = 1'b0;
 			mcheck <= 1;
 			mc_hang <= 0;
 			mc_we <= cpu_write;
-			mc_ifetch <= (state == `S_FILLUP);
+			/* an instruction fetch (in compatibility mode: the
+			   instruction word or an index word) */
+			mc_ifetch <= (state == `S_FILLUP) || cm_ifetch;
 			mc_va <= cpu_addr;
-			mc_viba <= (state == `S_FILLUP) ? cpu_addr :
+			mc_viba <= (state == `S_FILLUP || cm_ifetch) ? cpu_addr :
 			    { itag, 2'b00 };
 			mc_pc <= oldpc;
 			/* EHMSTS: the error handling microcode's copy of EHSR,
@@ -692,15 +815,21 @@ initial fpd_active = 1'b0;
 			for (gi = 0; gi < 15; gi = gi + 1)
 				gshadow[gi] <= general_reg[gi];
 
+	/* in compatibility mode a register is written as a word */
+	wire [31:0]	greg_wbval = cm_inst ? { 16'b0, greg_wbdata[15:0] } :
+			    greg_wbdata;
 	always @(posedge clk)
 		if (state == `S_WREG)
-			general_reg[greg_wregnum] <= greg_wbdata;
+			general_reg[greg_wregnum] <= greg_wbval;
 		else if (state == `XFAULT && xrestore)
 			for (gi = 0; gi < 15; gi = gi + 1)
 				general_reg[gi] <= gshadow[gi];
 	wire [31:0] cur_reg_val;
 	assign cur_reg_val =
 	    (greg_addr == `REG_PC ? curpc : general_reg[greg_addr]);
+	/* X(Rn), @X(Rn): Rn plus the index word just read (PC: past it) */
+	wire [15:0]	cm_xea = cur_reg_val[15:0] +
+			    (cm_srn == 4'hF ? 16'd2 : 16'd0) + rmem_dat[15:0];
 
 	/* "microcode" */
 	wire [8:0]	i_argoff, a_argoff;	/* argument ROM address */
@@ -730,6 +859,7 @@ initial fpd_active = 1'b0;
 	wire		s_resopflt, s_wipr, s_wmem, s_wreg, s_use8, s_use16;
 	wire [1:0]	s_size;
 	wire		s_wint, s_probe, s_xpush, i_fpdok;
+	wire		s_cmsz;		/* the ALU at the compatibility mode operand size */
 	wire [3:0]	s_dest;
 	wire [11:0]	i_stepoff;
 	wire [3:0]	s_op, s_left, s_right;
@@ -807,6 +937,7 @@ initial fpd_active = 1'b0;
 		.s_wint(s_wint),
 		.s_probe(s_probe),
 		.s_xpush(s_xpush),
+		.s_cmsz(s_cmsz),
 
 		.s_const(s_const),
 		.s_addr(s_addr),
@@ -962,9 +1093,12 @@ initial debug = 0;
 		.neg(alu_neg),
 		.ovf(alu_ovf),
 		/* the instruction's operand size, not in the interrupt and
-		   exception microcode that may follow it */
-		.use8(s_use8 | (i_use8 & ~doing_intr)),
-		.use16(s_use16 | (i_use16 & ~doing_intr)),
+		   exception microcode that may follow it; in compatibility mode
+		   (no instruction ROM row) the steps marked cmsz take it */
+		.use8(s_use8 | (i_use8 & ~doing_intr & ~cm_inst) |
+		    (s_cmsz & cm_inst & cmd_bsz)),
+		.use16(s_use16 | (i_use16 & ~doing_intr & ~cm_inst) |
+		    (s_cmsz & cm_inst & ~cmd_bsz)),
 		.cry(alu_cry),
 		.zero(alu_zero),
 		.ures(alu_ures),
@@ -991,7 +1125,7 @@ initial debug = 0;
 	 * PSL<IV> set.
 	 */
 	wire		trapreq;
-	assign trapreq = !doing_intr && (arith_code != 4'd0 ||
+	assign trapreq = !doing_intr && !cm_inst && (arith_code != 4'd0 ||
 	    (i_intov && v_final && psw[`PSL_IV]));
 
 	always @* begin
@@ -1016,6 +1150,12 @@ initial debug = 0;
 			/* the trace fault (entry 10), if PSL<TP> is set */
 			s_stepoff = 12'd10;
 			s_enable = psl_tp;
+		end
+		`CM_NEXT: begin
+			/* a compatibility mode instruction's routine, when the
+			   operands are done */
+			s_stepoff = `CM_TABLE + { 6'd0, cmd_cls };
+			s_enable = 1;
 		end
 		`EXEC: begin
 			/* goto, computed goto (destination jmp), or the next step */
@@ -1268,6 +1408,28 @@ initial debug = 0;
 		end
 	endtask
 
+	/*
+	 * Compatibility mode: a word reference to an odd address is the odd
+	 * address abort (ARM 9, type code 6). It is taken before the
+	 * reference is made, as a fault: the registers, PC and PSL as at the
+	 * start of the instruction.
+	 */
+	task cmodd;
+		begin
+			cpu_stb <= 0;
+			cpu_write <= 0;
+			cpu_pmem <= 0;
+			cpu_wint <= 0;
+			cpu_probe <= 0;
+			cpu_xpush <= 0;
+			cm_code <= 3'd6;
+			xentry <= `XE_CMODE;
+			xrestore <= 1;
+			state <= `XFAULT;
+		end
+	endtask
+	wire		cm_odd = cm_inst && cpu_size == `O_WORD && cpu_addr[0];
+
 	always @(posedge clk) begin
 		if (rst) begin
 			/*
@@ -1307,6 +1469,8 @@ initial debug = 0;
 			fpd_active <= 0;
 			delay_halt <= 0;
 			psl_tp <= 0;
+			psl_cm <= 0;
+			cm_inst <= 0;
 			psl_fpd <= 0;
 			psl_is <= 1;
 			cur_mod <= 2'd0;
@@ -1317,6 +1481,7 @@ initial debug = 0;
 		case (state)
 		`S_HALT: begin
 			manhalt <= 1;
+			cm_inst <= 0;
 			if (cont) begin
 				state <= `S_FETCH;
 				ivalid <= 0;
@@ -1399,6 +1564,21 @@ initial debug = 0;
 				doing_intr <= 1;
 				scounter <= 12'd10;
 				state <= `PREEXEC;
+			end else if (psl_cm) begin
+				/*
+				 * A compatibility mode instruction: its word at
+				 * PC, read as data (an odd PC is the odd address
+				 * abort, S_READMEM). TP <- T as in VAX mode.
+				 */
+				cm_inst <= 1;
+				oldpc <= curpc;
+				oldpsl <= psl;
+				psl_tp <= psw[`PSL_T];
+				cpu_addr <= curpc;
+				cpu_size <= `O_WORD;
+				cm_step <= `CMS_IR;
+				rmemstate <= `RMEM_CM;
+				state <= `S_READMEM;
 			end else if (isvalid) begin
 if (debug) $fdisplay(32'h80000002, "FETCH: pc %x curbyte %x inslword %x pc+1 %x\r", curpc, cur_byte, inslword, pc_plus_1);
 				/* put insbyte in decode reg */
@@ -1723,7 +1903,9 @@ if (debug) $fdisplay(32'h80000002, "PREEXEC: op %d sleft %d sright %d scounter %
 			4'b1000: alu_left <= psl;
 			4'b1001: alu_left <= { 16'b0, s_const };
 			4'b1010: alu_left <= ipr_val;
-			4'b1011: alu_left <= cur_reg_val;
+			/* compatibility mode: the register's low word */
+			4'b1011: alu_left <= cm_inst ?
+			    { 16'b0, cur_reg_val[15:0] } : cur_reg_val;
 			4'b1100: alu_left <= rmem_dat;
 			4'b1101: alu_left <=
 			    { 11'b0, intlvl, tx_intreq, rx_intreq,
@@ -1747,7 +1929,13 @@ if (debug) $fdisplay(32'h80000002, "PREEXEC: op %d sleft %d sright %d scounter %
 				argp[s_right[0]];
 			4'b1000: alu_right <= psl;
 			4'b1001: alu_right <= { 16'b0, s_const };
-//			4'b1010: alu_right <= { 27'b0, intlvl };
+			/* compatibility mode (cmdecode.v): cmr, cmr1 the
+			   register field's register and R OR 1, cmbr what a
+			   branch or SOB adds to PC, cmir the instruction */
+			4'b1010: alu_right <= { 28'b0, cm_r };
+			4'b1011: alu_right <= { 28'b0, cm_r1 };
+			4'b1100: alu_right <= cmd_brdisp;
+			4'b1101: alu_right <= { 16'b0, cm_ir };
 			default: alu_right <= 0;
 			endcase
 
@@ -1763,10 +1951,10 @@ if (debug & alu_ack) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d ste
 
 			case (s_dest)
 			0: ;
-			1: { psl_tp, psl_fpd, psl_is, cur_mod, prv_mod, psl_ipl,
-			     tx_intack, rx_intack, psw } <=
-			    { alu_res[30], alu_res[27], alu_res[26], alu_res[25:24],
-			      alu_res[23:22], alu_res[20:16],
+			1: { psl_cm, psl_tp, psl_fpd, psl_is, cur_mod, prv_mod,
+			     psl_ipl, tx_intack, rx_intack, psw } <=
+			    { alu_res[31], alu_res[30], alu_res[27], alu_res[26],
+			      alu_res[25:24], alu_res[23:22], alu_res[20:16],
 			      alu_res[15:14], alu_res[7:0] };
 			2: argd[0] <= alu_res;
 			3: argd[1] <= alu_res;
@@ -1792,7 +1980,9 @@ if (debug & alu_ack) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d ste
 				greg_wregnum <= alu_res[3:0];
 			end
 			11: begin
-				cpu_addr <= alu_res;
+				/* compatibility mode: a 16-bit address */
+				cpu_addr <= cm_inst ? { 16'b0, alu_res[15:0] } :
+				    alu_res;
 				cpu_size <= s_size;
 			end
 			13: begin
@@ -1809,10 +1999,10 @@ if (debug & alu_ack) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d ste
 
 			alu_upper_res <= alu_ures; // used by EMUL
 
-			if ((wr_cond_ok && s_wback) || i_wback) begin
+			if ((wr_cond_ok && s_wback) || (i_wback && !cm_inst)) begin
 				writeback <= ~doing_intr;
 			end
-			if ((wr_cond_ok && s_wback2) || i_wback2) begin
+			if ((wr_cond_ok && s_wback2) || (i_wback2 && !cm_inst)) begin
 				writeback2 <= ~doing_intr;
 			end
 			if (s_savv)
@@ -1877,7 +2067,7 @@ if (debug & alu_ack) $fdisplay(32'h80000002, "EXEC2: stb %d ack %d enable %d ste
 				resopflt <= 1;
 
 			/* copy third arg XXX */
-			if (i_move2 && doing_intr == 0)
+			if (i_move2 && doing_intr == 0 && !cm_inst)
 				argd[1] <= arg[2];
 //if (resopflt)$fdisplay(32'h80000002, "EXEC: resopflt\r");
 		end
@@ -1902,6 +2092,9 @@ if (debug) $fdisplay(32'h80000002, "ENDINST: pc %x argd[1] %x argpsz[1] %d arg2p
 			state <= `S_FETCH;
 			doing_intr <= 0;
 			ext_op <= 0;
+			/* a compatibility mode instruction ends (but for its
+			   write back, below) */
+			cm_inst <= 0;
 
 //if (doing_intr)
 //$fdisplay(32'h80000002, "DOING INTR: i_setnz %d", i_setnz);
@@ -1956,6 +2149,7 @@ if (debug) $fdisplay(32'h80000002, "WB0: argd0 %x size %d curreg %x curval %x\r"
 				writeback <= 0;
 				if (argp_size[0] == `O_QUAD)
 					writeback2 <= 1; // XXX hack
+				cm_inst <= cm_inst;
 			end else if (writeback2) begin
 				if (argp_isreg[1]) begin
 					case (argp_size[1])
@@ -1979,6 +2173,7 @@ if (debug) $fdisplay(32'h80000002, "WB1: argd1 %x size %d addr %x\r", argd[1], a
 					wmemstate <= `WMEM_xENDINST;
 				end
 				writeback2 <= 0;
+				cm_inst <= cm_inst;
 			end else if (trapreq) begin
 				/*
 				 * Arithmetic trap (SCB 34): the results are stored,
@@ -1996,7 +2191,28 @@ if (debug) $fdisplay(32'h80000002, "WB1: argd1 %x size %d addr %x\r", argd[1], a
 				scounter <= { 8'b0, vecoff };
 				state <= `PREEXEC;
 			end
-			if (doing_intr == 0) begin
+			if (doing_intr == 0 && cm_inst) begin
+				/*
+				 * Compatibility mode: the condition codes from the
+				 * flags the microcode saved, as cmdecode.v says.
+				 */
+				if (cmd_ccnz) begin
+					psw[`PSL_N] <= Ntmp;
+					psw[`PSL_Z] <= Ztmp;
+				end
+				case (cmd_ccv)
+				2'd1: psw[`PSL_V] <= 0;
+				2'd2: psw[`PSL_V] <= Vtmp;
+				2'd3: psw[`PSL_V] <= Ntmp ^ Ctmp;
+				default: ;
+				endcase
+				case (cmd_ccc)
+				2'd1: psw[`PSL_C] <= 0;
+				2'd2: psw[`PSL_C] <= Ctmp;
+				2'd3: psw[`PSL_C] <= 1;
+				default: ;
+				endcase
+			end else if (doing_intr == 0) begin
 				if (i_fpdok)	/* an instruction that can resume has completed */
 					psl_fpd <= 0;
 				if (i_setcmpnz) begin
@@ -2077,7 +2293,7 @@ if (debug) $fdisplay(32'h80000002, "MCODE: ctr %d mc_rv %x\r", mcodectr, mc_rv);
 		`S_WREG: begin 
 // $fdisplay(32'h80000002, "S_WREG: regnum %x wbdata %x\r\n", greg_wregnum, greg_wbdata);
 			if (greg_wregnum == `REG_PC) begin
-				curpc <= greg_wbdata;
+				curpc <= greg_wbval;	/* compatibility mode: 16 bits */
 				/*
 				 * REI and exception or interrupt dispatch (PC
 				 * written by microcode) start fetching afresh:
@@ -2093,6 +2309,7 @@ if (debug) $fdisplay(32'h80000002, "MCODE: ctr %d mc_rv %x\r", mcodectr, mc_rv);
 			`WREG_FETCH: state <= `S_FETCH;
 			`WREG_ARG_INDIR: state <= `ARG_INDIR;
 			`WREG_xENDINST: state <= `ENDINST;
+			`WREG_CM: state <= `CM_MEM;
 			default: state <= `S_HALT;
 			endcase
 		end
@@ -2126,6 +2343,8 @@ if (debug) $fdisplay(32'h80000002, "MCODE: ctr %d mc_rv %x\r", mcodectr, mc_rv);
 			cpu_write <= 1;
 			cpu_stb <= 1;
 			state <= `S_WRITEMEM2;
+			if (cm_odd)
+				cmodd;
 		end
 
 		`S_WRITEMEM2: if (CPU_MMF_I && !cpu_acki) begin
@@ -2150,6 +2369,8 @@ if (debug) $fdisplay(32'h80000002, "MCODE: ctr %d mc_rv %x\r", mcodectr, mc_rv);
 			cpu_write <= 0;
 			cpu_stb <= 1;
 			state <= `S_READMEM2;
+			if (cm_odd)
+				cmodd;
 		end
 
 		`S_READMEM2: if (CPU_MMF_I && !cpu_acki) begin
@@ -2168,6 +2389,7 @@ if (debug) $fdisplay(32'h80000002, "S_READMEM2: addr %x dat %x pc %x size %d", c
 			`RMEM_ARG_READ: state <= `ARG_READ;
 			`RMEM_xARGEND: state <= `ARGEND;
 			`RMEM_xENDINST: state <= `ENDINST;
+			`RMEM_CM: state <= `CM_MEM;
 			default: state <= `S_HALT;
 			endcase
 			if (mcheck)
@@ -2194,10 +2416,12 @@ if (debug) $fdisplay(32'h80000002, "S_READMEM2: addr %x dat %x pc %x size %d", c
 			OA_isreg <= 0;
 			IA <= 0;
 			spec_idx <= 0;
+			cm_inst <= 0;
 			if (xrestore) begin
 				curpc <= oldpc;
-				{ psl_fpd, psl_is, cur_mod, prv_mod, psl_ipl, psw } <=
-				    { oldpsl[27:22], oldpsl[20:16], oldpsl[7:0] };
+				{ psl_cm, psl_fpd, psl_is, cur_mod, prv_mod, psl_ipl,
+				  psw } <= { oldpsl[31], oldpsl[27:22], oldpsl[20:16],
+				  oldpsl[7:0] };
 			end
 			/* a fault: TP is cleared in the saved PSL */
 			psl_tp <= 0;
@@ -2208,6 +2432,201 @@ if (debug) $fdisplay(32'h80000002, "S_READMEM2: addr %x dat %x pc %x size %d", c
 				doing_intr <= 0;
 				state <= `S_HALT;
 			end
+		end
+
+		/*
+		 * Compatibility mode: the instruction word has been read, PC
+		 * passes it. An instruction that faults does so now, with
+		 * nothing done; else its operands, phase by phase (CM_NEXT).
+		 */
+		`CM_DECODE: begin
+			cm_ph <= 3'd0;
+			state <= `CM_NEXT;
+			if (cmd_flt) begin
+				cm_code <= cmd_fcode;
+				xentry <= `XE_CMODE;
+				xrestore <= 1;
+				state <= `XFAULT;
+			end
+		end
+
+		/*
+		 * The operand phases: 0 the register field before the operands
+		 * (XOR), 1 operand A, 2 operand B, 3 the register field after
+		 * them, 4 into the microcode.
+		 */
+		`CM_NEXT: begin
+			cm_ph <= cm_ph + 3'd1;
+			case (cm_ph)
+			3'd0: if (cmd_r == 2'd1) begin
+				cur_reg_num_save <= cm_r;
+				state <= `CM_REG;
+			end
+			3'd1: if (cmd_a != 2'd0) begin
+				cm_slot <= 0;
+				cm_spec <= cm_aspec;
+				cm_acc <= `CMA_READ;
+				cm_sb <= cmd_bsz;
+				cur_reg_num_save <= cm_map(cm_aspec[2:0]);
+				state <= `CM_SPEC;
+			end
+			3'd2: if (cmd_b != 2'd0) begin
+				cm_slot <= 1;
+				cm_spec <= cm_bspec;
+				cm_acc <= cmd_bacc;
+				cm_sb <= cmd_bsz;
+				cur_reg_num_save <= cm_map(cm_bspec[2:0]);
+				state <= `CM_SPEC;
+			end
+			3'd3: if (cmd_r == 2'd2) begin
+				cur_reg_num_save <= cm_r;
+				state <= `CM_REG;
+			end
+			default: begin
+				/* the instruction's routine (cmdecode.v, cls); its
+				   references are data (cm_ifetch) */
+				scounter <= `CM_TABLE + { 6'd0, cmd_cls };
+				cm_step <= `CMS_VAL;
+				state <= `PREEXEC;
+			end
+			endcase
+		end
+
+		/* the register field: arg3 <- R, arg4 <- R OR 1 */
+		`CM_REG: begin
+			arg[2] <= { {16{cur_reg_val[15]}}, cur_reg_val[15:0] };
+			cur_reg_num_save <= cm_r1;
+			state <= `CM_REG2;
+		end
+		`CM_REG2: begin
+			arg[3] <= { {16{cur_reg_val[15]}}, cur_reg_val[15:0] };
+			state <= `CM_NEXT;
+		end
+
+		/*
+		 * An operand specifier (ARM 9, "General registers and
+		 * addressing modes"); cur_reg_val is its register. The
+		 * register updates of (Rn)+ and -(Rn) are made at once, so
+		 * that a later specifier sees them; a fault puts them back.
+		 */
+		`CM_SPEC: begin
+			cm_isreg <= 0;
+			case (cm_spec[5:3])
+			3'd0: begin			/* Rn */
+				cm_isreg <= 1;
+				cm_val <= cm_sb ?
+				    { {24{cur_reg_val[7]}}, cur_reg_val[7:0] } :
+				    { {16{cur_reg_val[15]}}, cur_reg_val[15:0] };
+				state <= `CM_SEND;
+			end
+			3'd1: begin			/* (Rn) */
+				cm_ea <= cur_reg_val[15:0];
+				state <= `CM_OPND;
+			end
+			3'd2, 3'd3: begin		/* (Rn)+, @(Rn)+ */
+				cm_ea <= cur_reg_val[15:0];
+				greg_wregnum <= cm_srn;
+				greg_wbdata <= { 16'b0, cur_reg_val[15:0] +
+				    (cm_spec[3] ? 16'd2 : cm_inc) };
+				cm_step <= cm_spec[3] ? `CMS_PTR : `CMS_EA;
+				wregstate <= `WREG_CM;
+				state <= `S_WREG;
+			end
+			3'd4, 3'd5: begin		/* -(Rn), @-(Rn) */
+				cm_ea <= cur_reg_val[15:0] -
+				    (cm_spec[3] ? 16'd2 : cm_inc);
+				greg_wregnum <= cm_srn;
+				greg_wbdata <= { 16'b0, cur_reg_val[15:0] -
+				    (cm_spec[3] ? 16'd2 : cm_inc) };
+				cm_step <= cm_spec[3] ? `CMS_PTR : `CMS_EA;
+				wregstate <= `WREG_CM;
+				state <= `S_WREG;
+			end
+			default: begin			/* X(Rn), @X(Rn) */
+				cpu_addr <= { 16'b0, curpc[15:0] };
+				cpu_size <= `O_WORD;
+				cm_step <= `CMS_IDX;
+				rmemstate <= `RMEM_CM;
+				state <= `S_READMEM;
+			end
+			endcase
+		end
+
+		/* a reference or register update for the instruction is done */
+		`CM_MEM: case (cm_step)
+			`CMS_IR: begin			/* the instruction word */
+				cm_ir <= rmem_dat[15:0];
+				curpc <= { 16'b0, curpc[15:0] + 16'd2 };
+				state <= `CM_DECODE;
+			end
+			`CMS_EA:			/* (Rn)+, -(Rn) */
+				state <= `CM_OPND;
+			`CMS_PTR: begin			/* @(Rn)+, @-(Rn): the pointer */
+				cpu_addr <= { 16'b0, cm_ea };
+				cpu_size <= `O_WORD;
+				cm_step <= `CMS_DEF;
+				rmemstate <= `RMEM_CM;
+				state <= `S_READMEM;
+			end
+			`CMS_DEF: begin			/* the operand's address */
+				cm_ea <= rmem_dat[15:0];
+				state <= `CM_OPND;
+			end
+			`CMS_IDX: begin			/* the index word: PC past it */
+				curpc <= { 16'b0, curpc[15:0] + 16'd2 };
+				if (cm_spec[3]) begin	/* @X(Rn): the pointer */
+					cpu_addr <= { 16'b0, cm_xea };
+					cpu_size <= `O_WORD;
+					cm_step <= `CMS_DEF;
+					rmemstate <= `RMEM_CM;
+					state <= `S_READMEM;
+				end else begin
+					cm_ea <= cm_xea;
+					state <= `CM_OPND;
+				end
+			end
+			default: begin			/* CMS_VAL: the operand */
+				cm_val <= cm_sb ?
+				    { {24{rmem_dat[7]}}, rmem_dat[7:0] } :
+				    { {16{rmem_dat[15]}}, rmem_dat[15:0] };
+				state <= `CM_SEND;
+			end
+			endcase
+
+		/*
+		 * The operand's address is known: read it (a modify operand
+		 * with write intent), or leave it for the write back, or (JMP,
+		 * JSR) the address is the operand.
+		 */
+		`CM_OPND: begin
+			cm_val <= { 16'b0, cm_ea };
+			state <= `CM_SEND;
+			if (cm_acc == `CMA_READ || cm_acc == `CMA_MODIFY) begin
+				cpu_addr <= { 16'b0, cm_ea };
+				cpu_size <= cm_sb ? `O_BYTE : `O_WORD;
+				cpu_wint <= (cm_acc == `CMA_MODIFY);
+				cm_step <= `CMS_VAL;
+				rmemstate <= `RMEM_CM;
+				state <= `S_READMEM;
+			end
+		end
+
+		/*
+		 * The operand is done: A to arg1; B to arg2, its location to
+		 * argp0 (MOVB to a register writes the whole word).
+		 */
+		`CM_SEND: begin
+			if (!cm_slot)
+				arg[0] <= cm_val;
+			else begin
+				arg[1] <= cm_val;
+				argp[0] <= { 16'b0, cm_ea };
+				argp_isreg[0] <= cm_isreg;
+				argp_regnum[0] <= cm_srn;
+				argp_size[0] <= (cm_sb && !(cm_isreg && cmd_movb)) ?
+				    `O_BYTE : `O_WORD;
+			end
+			state <= `CM_NEXT;
 		end
 
 		default: begin state <= `S_HALT; haltpos <= `HALT_BUG; end

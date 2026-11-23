@@ -15,8 +15,9 @@ Status: complete. 47 directed tests give the same results as the reference
 simulator (or, where it departs from the SRM, the SRM's); EVKAA,
 `hello.bin` and `bench.bin` still pass; the Quartus build meets timing and
 the memory management tests pass on the board. DEC's EVKAE, under the 8600
-Diagnostic Supervisor, passes 10 of its 11 tests in simulation; the other
-needs PDP-11 compatibility mode.
+Diagnostic Supervisor, passes its 11 tests in simulation (test 3 since
+PDP-11 compatibility mode, [CMODE.md](CMODE.md)), and on the board but for
+test 3 with the builds before compatibility mode.
 
 ## Sources
 
@@ -442,8 +443,8 @@ For the 8600, DEC's test of this part of the machine is **EVKAE, the VAX
 Privileged Architecture Exerciser**, which runs under the 8600 Diagnostic
 Supervisor (ZZ-EDSAA) from DEC's `VAX_MINIMUM_DIAGS.dsk`.
 
-The core has no disk controller yet, so the supervisor comes over as a
-memory image: `tests/evkae/mkdsimage.py` boots it in a VAX 8600 simulator on
+Before the core could boot from a disk (M9), the supervisor came over as
+a memory image: `tests/evkae/mkdsimage.py` boots it in a VAX 8600 simulator on
 the PC, loads EVKAE, and at the `DS>` prompt - where the supervisor runs
 with memory management off and polls the console - saves physical memory
 and appends the code (`tests/evkae/dsrestore.s`) that puts back the
@@ -457,7 +458,7 @@ EVKAE 6.5, test by test, on the core (full-system simulation):
 |---|---|---|
 | 1 | Interrupt Test | passes |
 | 2 | Exception Test | passes |
-| 3 | REI Instruction Test | fails: REI into compatibility mode |
+| 3 | REI Instruction Test | passes (since compatibility mode) |
 | 4 | Change Mode Instructions Test | passes |
 | 5 | Processor Register Instructions | passes |
 | 6 | Interval Timer | passes |
@@ -471,9 +472,9 @@ Test 3 returns with REI to a PSL with \<CM\> set and expects the PDP-11
 instruction there (a BPT) to come back as a compatibility mode exception
 (SCB 30, type 1). The 8600 has compatibility mode - "the 8600 includes all
 the instructions, architecturally defined processor registers, and
-compatibility mode" (SRM, chapter 8); the core does not have it yet, and
-does what the SRM asks of a processor without it, a reserved operand fault
-on the REI.
+compatibility mode" (SRM, chapter 8). Until the core had it, it did what
+the SRM asks of a processor without it, a reserved operand fault on the
+REI, and the test failed; it passes now ([CMODE.md](CMODE.md)).
 
 Test 8 exercises exactly the case where the frame of kernel stack not valid
 matters (see the next section). The core, which follows the SRM, passes it.
@@ -498,7 +499,6 @@ page of the VA, and the core's own value for the KSNV frame.
 
 ## Not done yet
 
-* PDP-11 compatibility mode (EVKAE test 3).
 * The console storage registers STXCS and STXDB.
 * PSL\<FPD\> for MOVTC and EDITPC (see [CIS.md](CIS.md)). They,
   CMPC3/CMPC5, LOCC, SKPC, SCANC, SPANC and the decimal instructions

@@ -256,6 +256,13 @@ BEGIN {
 	leftop["savpsw"] = 13; # rightop["OPu"] = 10;
 	leftop["ures"] = 14; # rightop["OPu"] = 10;
 	leftop["opc"] = 15;	# PC of the current instruction (oldpc)
+	# compatibility mode (cmdecode.v): the register field's register
+	# number and that of R OR 1 (as crn takes them), what a branch or SOB
+	# adds to PC, the instruction word
+	rightop["cmr"] = 10;
+	rightop["cmr1"] = 11;
+	rightop["cmbr"] = 12;
+	rightop["cmir"] = 13;
 
 	# args to microcode instructions
 	stepargs["wipr"] = 12;	# write to IPR
@@ -281,6 +288,8 @@ BEGIN {
 	stepargs["wint"] = 37;	# rmem with write (modify) intent
 	stepargs["probe"] = 38; # rmem only translates/checks (PROBEx; with phys: TBCHK)
 	stepargs["xpush"] = 39; # wmem pushes an exception/interrupt frame
+	# 40-51 the goto address
+	stepargs["cmsz"] = 52;	# ALU at the compatibility mode operand size
 
 	# sizes
 	sizeres["byte"] = 0;
@@ -347,14 +356,19 @@ BEGIN {
 			aop = aluops($shiftoff);
 			shiftoff++;
 			hval = "0000000000000000";
+			# a step has one constant field: two different
+			# constants cannot be both operands
+			lconst = rconst = "";
 # print " LOP " $shiftoff;
 			# @label: the step address of label as the constant
 			if (substr($shiftoff,1,1) == "@") {
 				lop = leftops("const");
 				constref[stepoff] = substr($shiftoff,2);
+				lconst = $shiftoff;
 			} else if (ishex($shiftoff)) {
 				lop = leftops("const");
 				hval = hexcvt($shiftoff);
+				lconst = hval;
 			} else
 				lop = leftops($(shiftoff));
 			shiftoff++;
@@ -362,12 +376,16 @@ BEGIN {
 			if (substr($shiftoff,1,1) == "@") {
 				rop = rightops("const");
 				constref[stepoff] = substr($shiftoff,2);
+				rconst = $shiftoff;
 			} else if (ishex($shiftoff)) {
 				rop = rightops("const");
 				hval = hexcvt($shiftoff);
+				rconst = hval;
 # print " ROP2 hval " hval;
 			} else
 				rop = rightops($shiftoff);
+			if (lconst != "" && rconst != "" && lconst != rconst)
+				err("two different constants, line " lineno ": " $0);
 			shiftoff++;
 
 			# ucstep[stepoff] = substr(hval,9)
@@ -549,9 +567,15 @@ BEGIN {
 			err(resolve[i] " not defined");
 print "resolving " resolve[i] " pos " i " as " steplbl[resolve[i]];
 		s = ucstep[i];
-		ucstep[i] = substr(s,1,16) num2bit(steplbl[resolve[i]], 16) \
+		# bits 51-40 (the step ROM has 4096 words); 55-52 are flags
+		ucstep[i] = substr(s,1,20) num2bit(steplbl[resolve[i]], 12) \
 		    substr(s,33);
 	}
+
+	# the hardware enters the compatibility mode table here (cpu.v,
+	# CM_TABLE)
+	if (!("cm_table" in steplbl) || steplbl["cm_table"] != 16)
+		err("cm_table must be at step 16");
 
 	for (i in constref) {
 		if (!(constref[i] in steplbl))

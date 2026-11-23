@@ -39,6 +39,14 @@ Operands (any general-mode operand may be followed by [Rx] for index mode):
 Expressions are evaluated left to right, like MACRO: terms are decimal or
 ^X/0x hex, ^O octal, ^B binary, 'c' characters, symbols and '.', combined with
 + - * / & | ! (or) and unary - and ~; < > group.
+
+PDP-11 code, for the VAX's compatibility mode (VAX Architecture Reference
+Manual, chapter 9): after .pdp11 the instructions are PDP-11 ones, in
+MACRO-11 syntax, until .vax. Registers R0-R7, SP (R6), PC (R7); operands
+Rn, (Rn) or @Rn, (Rn)+, @(Rn)+, -(Rn), @-(Rn), X(Rn), @X(Rn), #expr, @#expr,
+expr and @expr (PC relative); MUL, DIV, ASH, ASHC take src,R, XOR and JSR
+R,dst, SOB R,target, EMT/TRAP/MARK/SPL a number. Numbers are decimal, as
+everywhere here (^O for octal). Any 16-bit opcode can also be put with .word.
 """
 import os
 import re
@@ -52,6 +60,41 @@ import vaxfloat  # noqa: E402
 REGS = {('R%d' % i): i for i in range(12)}
 REGS.update({'AP': 12, 'FP': 13, 'SP': 14, 'PC': 15})
 SIZES = {'b': 1, 'w': 2, 'l': 4, 'q': 8, 'o': 16, 'f': 4, 'd': 8, 'g': 8, 'h': 16}
+
+# PDP-11 (compatibility mode), .pdp11
+PDP_REGS = {('R%d' % i): i for i in range(8)}
+PDP_REGS.update({'SP': 6, 'PC': 7})
+PDP_ZERO = {'HALT': 0o0, 'WAIT': 0o1, 'RTI': 0o2, 'BPT': 0o3, 'IOT': 0o4,
+            'RESET': 0o5, 'RTT': 0o6, 'MFPT': 0o7, 'NOP': 0o240, 'CLC': 0o241,
+            'CLV': 0o242, 'CLZ': 0o244, 'CLN': 0o250, 'CCC': 0o257,
+            'SEC': 0o261, 'SEV': 0o262, 'SEZ': 0o264, 'SEN': 0o270,
+            'SCC': 0o277}
+PDP_SINGLE = {'JMP': 0o000100, 'SWAB': 0o000300, 'CLR': 0o005000,
+              'COM': 0o005100, 'INC': 0o005200, 'DEC': 0o005300,
+              'NEG': 0o005400, 'ADC': 0o005500, 'SBC': 0o005600,
+              'TST': 0o005700, 'ROR': 0o006000, 'ROL': 0o006100,
+              'ASR': 0o006200, 'ASL': 0o006300, 'MFPI': 0o006500,
+              'MTPI': 0o006600, 'SXT': 0o006700, 'CSM': 0o007000,
+              'CLRB': 0o105000, 'COMB': 0o105100, 'INCB': 0o105200,
+              'DECB': 0o105300, 'NEGB': 0o105400, 'ADCB': 0o105500,
+              'SBCB': 0o105600, 'TSTB': 0o105700, 'RORB': 0o106000,
+              'ROLB': 0o106100, 'ASRB': 0o106200, 'ASLB': 0o106300,
+              'MTPS': 0o106400, 'MFPD': 0o106500, 'MTPD': 0o106600,
+              'MFPS': 0o106700}
+PDP_DOUBLE = {'MOV': 0o010000, 'CMP': 0o020000, 'BIT': 0o030000,
+              'BIC': 0o040000, 'BIS': 0o050000, 'ADD': 0o060000,
+              'MOVB': 0o110000, 'CMPB': 0o120000, 'BITB': 0o130000,
+              'BICB': 0o140000, 'BISB': 0o150000, 'SUB': 0o160000}
+PDP_BRANCH = {'BR': 0o000400, 'BNE': 0o001000, 'BEQ': 0o001400,
+              'BGE': 0o002000, 'BLT': 0o002400, 'BGT': 0o003000,
+              'BLE': 0o003400, 'BPL': 0o100000, 'BMI': 0o100400,
+              'BHI': 0o101000, 'BLOS': 0o101400, 'BVC': 0o102000,
+              'BVS': 0o102400, 'BCC': 0o103000, 'BHIS': 0o103000,
+              'BCS': 0o103400, 'BLO': 0o103400}
+PDP_SRCREG = {'MUL': 0o070000, 'DIV': 0o071000, 'ASH': 0o072000,
+              'ASHC': 0o073000}
+PDP_NUMBER = {'EMT': (0o104000, 255), 'TRAP': (0o104400, 255),
+              'MARK': (0o006400, 63), 'SPL': (0o000230, 7)}
 
 
 class AsmError(Exception):
@@ -89,6 +132,7 @@ class Assembler:
         self.choices = {}       # (line index, operand index) -> encoding choice
         self.pass_no = 1
         self.dot = 0
+        self.pdp = False        # .pdp11: PDP-11 instructions
 
     # ------------------------------------------------------------ expressions
     def value(self, text):
@@ -273,11 +317,115 @@ class Assembler:
             raise AsmError('displacement out of range: %s' % text)
         return bytes([(mode << 4) | rn]) + (d & ((1 << (8 * n)) - 1)).to_bytes(n, 'little')
 
+    # ------------------------------------------------------- PDP-11 operands
+    def pdp_reg(self, t):
+        r = PDP_REGS.get(t.strip().upper())
+        if r is None:
+            raise AsmError('bad PDP-11 register: %s' % t)
+        return r
+
+    def pdp_operand(self, text, loc):
+        """A PDP-11 operand: (the 6-bit specifier, [the word after the
+        instruction, if any]). loc is the address that word would have."""
+        t = text.strip()
+        up = t.upper()
+        if up in PDP_REGS:
+            return PDP_REGS[up], []
+        m = re.match(r'^(@?)\((\w+)\)(\+?)$', t)
+        if m and m.group(2).upper() in PDP_REGS:
+            r = PDP_REGS[m.group(2).upper()]
+            if m.group(3):                      # (Rn)+, @(Rn)+
+                return (0o30 if m.group(1) else 0o20) | r, []
+            if m.group(1):                      # @(Rn): @X(Rn) with X = 0
+                return 0o70 | r, [0]
+            return 0o10 | r, []                 # (Rn)
+        m = re.match(r'^(@?)-\((\w+)\)$', t)
+        if m and m.group(2).upper() in PDP_REGS:
+            return (0o50 if m.group(1) else 0o40) | PDP_REGS[m.group(2).upper()], []
+        if up.startswith('@') and up[1:] in PDP_REGS:   # @Rn = (Rn)
+            return 0o10 | PDP_REGS[up[1:]], []
+        if t.startswith('@#'):                  # absolute: @(PC)+
+            return 0o37, [(self.try_value(t[2:]) or 0) & 0xFFFF]
+        if t.startswith('#'):                   # immediate: (PC)+
+            return 0o27, [(self.try_value(t[1:]) or 0) & 0xFFFF]
+        deferred = t.startswith('@')
+        if deferred:
+            t = t[1:]
+        m = re.match(r'^(.*?)\((\w+)\)$', t)
+        if m and m.group(2).upper() in PDP_REGS:    # X(Rn), @X(Rn)
+            x = self.try_value(m.group(1)) or 0
+            return (0o70 if deferred else 0o60) | PDP_REGS[m.group(2).upper()], \
+                [x & 0xFFFF]
+        v = self.try_value(t)                   # relative: X(PC), @X(PC)
+        x = 0 if v is None else v - (loc + 2)
+        return (0o77 if deferred else 0o67), [x & 0xFFFF]
+
+    def pdp_line(self, mn, rest, image):
+        ops = split_operands(rest) if rest.strip() else []
+
+        def need(n):
+            if len(ops) != n:
+                raise AsmError('%s takes %d operands, got %d' % (mn, n, len(ops)))
+
+        def target(t):
+            v = self.try_value(t)
+            return v
+        words = []
+        if mn in PDP_ZERO:
+            need(0)
+            words = [PDP_ZERO[mn]]
+        elif mn in PDP_SINGLE:
+            need(1)
+            spec, ext = self.pdp_operand(ops[0], self.dot + 2)
+            words = [PDP_SINGLE[mn] | spec] + ext
+        elif mn in PDP_DOUBLE:
+            need(2)
+            s1, e1 = self.pdp_operand(ops[0], self.dot + 2)
+            s2, e2 = self.pdp_operand(ops[1], self.dot + 2 + 2 * len(e1))
+            words = [PDP_DOUBLE[mn] | (s1 << 6) | s2] + e1 + e2
+        elif mn in PDP_BRANCH:
+            need(1)
+            v = target(ops[0])
+            d = 0 if v is None else v - (self.dot + 2)
+            if d & 1 or not -256 <= d <= 254:
+                raise AsmError('branch out of range: %s' % ops[0])
+            words = [PDP_BRANCH[mn] | ((d >> 1) & 0o377)]
+        elif mn == 'SOB':
+            need(2)
+            v = target(ops[1])
+            d = 0 if v is None else (self.dot + 2) - v
+            if d & 1 or not 0 <= d <= 126:
+                raise AsmError('SOB out of range: %s' % ops[1])
+            words = [0o077000 | (self.pdp_reg(ops[0]) << 6) | (d >> 1)]
+        elif mn in PDP_SRCREG:                  # MUL src,R
+            need(2)
+            spec, ext = self.pdp_operand(ops[0], self.dot + 2)
+            words = [PDP_SRCREG[mn] | (self.pdp_reg(ops[1]) << 6) | spec] + ext
+        elif mn in ('XOR', 'JSR'):              # XOR R,dst  JSR R,dst
+            need(2)
+            spec, ext = self.pdp_operand(ops[1], self.dot + 2)
+            words = [(0o074000 if mn == 'XOR' else 0o004000) |
+                     (self.pdp_reg(ops[0]) << 6) | spec] + ext
+        elif mn == 'RTS':
+            need(1)
+            words = [0o000200 | self.pdp_reg(ops[0])]
+        elif mn in PDP_NUMBER:
+            code, top = PDP_NUMBER[mn]
+            n = self.try_value(ops[0]) if ops else 0
+            n = n or 0
+            if not 0 <= n <= top:
+                raise AsmError('%s number out of range: %s' % (mn, ops[0]))
+            words = [code | n]
+        else:
+            raise AsmError('unknown PDP-11 instruction %s' % mn)
+        self.emit(image, b''.join(struct.pack('<H', w & 0xFFFF) for w in words))
+
     # ------------------------------------------------------------------- lines
     def assemble(self, lines):
         image = {}
         for self.pass_no in (1, 2):
             self.dot = 0
+            self.pdp = False
             for idx, (lineno, raw) in enumerate(lines):
                 line = raw.split(';', 1)[0].strip()
                 try:
@@ -316,6 +464,8 @@ class Assembler:
         if op.startswith('.'):
             return self.directive(op.lower(), rest, image)
         mn = op.upper()
+        if self.pdp:
+            return self.pdp_line(mn, rest, image)
         if mn not in OPTABLE:
             raise AsmError('unknown instruction %s' % op)
         code, specs = OPTABLE[mn]
@@ -364,6 +514,10 @@ class Assembler:
             a = self.value(rest)
             pad = (-self.dot) % a
             self.emit(image, bytes(pad))
+        elif d == '.pdp11':
+            self.pdp = True
+        elif d == '.vax':
+            self.pdp = False
         elif d in ('.globl', '.title', '.ident', '.end'):
             pass
         else:

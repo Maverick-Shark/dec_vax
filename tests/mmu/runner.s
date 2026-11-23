@@ -126,8 +126,18 @@ fresh:	mtpr	#^x1F, #IPL		; PSL: IS, kernel, kernel, IPL 1F
 clr1:	movc5	#0, (r3), #0, #^x8000, (r3)
 	cmpl	r3, #ZTOP
 	blssu	clr1
-	movl	tent, r4
-	movc3	TE_LEN(r4), @TE_IMG(r4), @#TBASE
+	movl	tent, r4		; the test to TBASE, in pieces of at
+	movl	TE_LEN(r4), r6		; most 8000 bytes (MOVC3's length is a
+	movl	TE_IMG(r4), r1		; word; t62's image is 220 KB)
+	movl	#TBASE, r3
+cpy1:	movl	r6, r7
+	cmpl	r7, #^x8000
+	blequ	cpy2
+	movl	#^x8000, r7
+cpy2:	subl2	r7, r6
+	movc3	r7, (r1), (r3)		; R1, R3 end past the piece
+	tstl	r6
+	bnequ	cpy1
 	clrq	r0
 	clrq	r2
 	clrq	r4

@@ -118,6 +118,7 @@ module ucode(
 	output			s_wint,
 	output			s_probe,
 	output			s_xpush,
+	output			s_cmsz,		/* ALU at the compatibility mode operand size */
 
 	output [15:0]		s_const,
 	output [15:0]		s_addr,
@@ -212,7 +213,8 @@ parameter	S_ROM_ADDRS = 4096;
 	assign s_wint = ucstep_data[37];	// read with write (modify) intent
 	assign s_probe = ucstep_data[38];	// translate/check only (PROBEx, TBCHK)
 	assign s_xpush = ucstep_data[39];	// exception/interrupt frame push
-	assign s_addr = ucstep_data[55:40];
+	assign s_addr = { 4'b0, ucstep_data[51:40] };	// goto: 4096 steps
+	assign s_cmsz = ucstep_data[52];	// ALU at the compat mode operand size
 	assign s_const = ucstep_data[71:56];
 
 	assign i_argoff = { ucinsn_data[15], ucinsn_data[7:0] };

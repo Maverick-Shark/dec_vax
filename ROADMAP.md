@@ -14,7 +14,11 @@ two-byte opcodes, which completes the VAX instruction set but for PDP-11
 compatibility mode; DEC's floating point exerciser, EVKAC, runs under the
 supervisor. Then M8: the 8600's I/O side - the physical address memory map,
 SBIA 0, the RH780 Massbus adapter with two RP07 disks on SD card images and
-the DW780 Unibus adapter.
+the DW780 Unibus adapter. Then M9: the core boots like an 8600, VMB from
+the OSD and the Diagnostic Supervisor from an RP07, with the 8600's console
+registers; the exercisers load from the disk. Then PDP-11 compatibility
+mode (planned for M11), which the 8600 has: DEC's compatibility mode
+exerciser, EVKAD, passes, and so does EVKAE in full.
 
 Relative size: **S** a change in one module, **M** a new module or a block of
 microcode, **L** a subsystem, **XL** the largest pieces.
@@ -47,7 +51,9 @@ OpenVMS VAX 7.3, the last VAX release, still supports the 8600.
   packed decimal (with a decimal unit, [docs/CIS.md](docs/CIS.md)), EDITPC,
   and the two-byte (FD) opcodes: F, D, G and H floating point (with a
   floating point unit, [docs/FPU.md](docs/FPU.md)) and the octaword
-  instructions. It passes **EVKAA V8.0**, DEC's hardcore instruction test.
+  instructions - and **PDP-11 compatibility mode**
+  ([docs/CMODE.md](docs/CMODE.md)). It passes **EVKAA V8.0**, DEC's
+  hardcore instruction test.
 - **Memory management as on the VAX 8600** (M5, below): the 8600's translation
   buffer, page table walk, protection and modify bit, access-control and
   translation-not-valid faults with instruction restart, PSL<FPD> for MOVC3 and
@@ -67,19 +73,19 @@ OpenVMS VAX 7.3, the last VAX release, still supports the 8600.
   ([docs/IO.md](docs/IO.md)). Its tests in `mmutest.bin` pass on the
   board (the disk transfers of t52-t54 need generated disks and run in
   simulation only).
-- 60 directed and random tests (`tests/mmu`) give the same results as the
+- 65 directed and random tests (`tests/mmu`) give the same results as the
   reference simulator, or the values DEC's documents give where the
   simulator models the 8600 differently; `software/mmutest.bin` runs them on
-  the core, in simulation and on the board. **EVKAE**, DEC's
-  privileged architecture exerciser, passes 10 of its 11 tests under the 8600
-  Diagnostic Supervisor (loaded as a memory image taken from a simulator), in
-  simulation and on the board; the eleventh needs compatibility mode. **EVKAB**, the basic instruction
-  exerciser, passes all of its 161 tests under it (README_MiSTer.md).
+  the core, in simulation and on the board. DEC's exercisers run under the
+  8600 Diagnostic Supervisor, booted from the RP07 and loaded from it:
+  **EVKAB** (basic instructions, 161 tests), **EVKAC** (floating point, 98)
+  and **EVKAE** (privileged architecture, 11) pass on the board, and in
+  simulation **EVKAD** (compatibility mode, 4) and EVKAE's test 3, which
+  needs compatibility mode, pass too (README_MiSTer.md).
 - 16 KB cache in M10K, SDRAM controller with read-phase calibration, power-on
   memory test, on-screen VT terminal with USB keyboard, MiSTer UART, program
   loader with autostart, and r-vax's hardware console monitor (`>` prompt).
-- Not there yet: PDP-11 compatibility mode, Unibus devices, and a way to
-  boot from the disks (VMB).
+- Not there yet: Unibus devices, and VMS itself (M10).
 
 ## Milestone 3: Halt, and the tools for everything after
 
@@ -134,12 +140,12 @@ cross-compiler gives the same trace on the core and on the simulator.
 
 | Area | VAX 8600 | r-vax today |
 |---|---|---|
-| Instructions | All 304 opcodes in hardware, plus PDP-11 compatibility mode. | All 304 opcodes ([docs/FPU.md](docs/FPU.md) for the floating point and octaword ones). Missing: PDP-11 compatibility mode. |
-| Exceptions and privileged architecture | Every SCB vector with its parameters; four access modes with five stack pointers; CHMx; REI with all its checks; ASTs (ASTLVL); software interrupts; LDPCTX/SVPCTX; privileged-instruction checks; arithmetic traps; trace; 8600 machine-check frame; kernel stack not valid; the 8600's halt codes. | Done: SCB dispatch for the interval timer, console and software interrupts; CHMK, CHME, CHMS, CHMU; BPT, XFC; reserved instruction, reserved operand and reserved addressing mode faults; machine check and the memory management faults; kernel stack not valid; interrupt stack not valid; REI with all its checks; AST delivery; LDPCTX/SVPCTX; MTPR/MFPR privileged and checked; trace; the arithmetic traps (integer overflow, integer and decimal divide by zero, decimal overflow, subscript range); the 8600's halt codes (4, 6, 7, 8, A, B, 11). the floating faults (overflow, divide by zero, underflow; types 8, 9, A). Missing: PDP-11 compatibility mode, the 8600 machine-check frame's contents. |
+| Instructions | All 304 opcodes in hardware, plus PDP-11 compatibility mode. | All 304 opcodes ([docs/FPU.md](docs/FPU.md) for the floating point and octaword ones), and PDP-11 compatibility mode ([docs/CMODE.md](docs/CMODE.md)). |
+| Exceptions and privileged architecture | Every SCB vector with its parameters; four access modes with five stack pointers; CHMx; REI with all its checks; ASTs (ASTLVL); software interrupts; LDPCTX/SVPCTX; privileged-instruction checks; arithmetic traps; trace; 8600 machine-check frame; kernel stack not valid; the 8600's halt codes. | Done: SCB dispatch for the interval timer, console and software interrupts; CHMK, CHME, CHMS, CHMU; BPT, XFC; reserved instruction, reserved operand and reserved addressing mode faults; machine check and the memory management faults; kernel stack not valid; interrupt stack not valid; REI with all its checks; AST delivery; LDPCTX/SVPCTX; MTPR/MFPR privileged and checked; trace; the arithmetic traps (integer overflow, integer and decimal divide by zero, decimal overflow, subscript range); the 8600's halt codes (4, 6, 7, 8, A, B, 11). the floating faults (overflow, divide by zero, underflow; types 8, 9, A); the compatibility mode exceptions (SCB 30, types 0-6). Missing: the 8600 machine-check frame's contents. |
 | Memory management | P0, P1 and S0 regions, page tables, translation buffer, protection, modify bit, access-violation and translation-not-valid faults, restartable instructions. | Done, in simulation ([docs/MMU.md](docs/MMU.md)). |
 | 8600 registers | SID with type 4; IPRs ACCS, PAMACC, PAMLOC, CSWP, MDECC, MENA, MDCTL, MCCTL, MERG, CRBT, DFI, EHSR, STXCS, STXDB, ESPA, ESPD; console registers with the 8600's ID codes (console terminal, remote services, environmental monitor, logical console). | SID returns `040704D2`: type 4 (8600), ECO level 7, serial number 1234. ACCS (no accelerator), PAMACC, PAMLOC, CSWP, MDCTL, MERG, CRBT, EHSR and PME are there; MDECC, MENA, MCCTL, DFI, ESPA and ESPD are not yet (reserved operands, as the 780's and 750's registers are). The console registers have the 8600's lines and ID codes, with the logical console's requests (`rtl/cons86.v`); no remote services port, no EMM. Missing: STXCS and STXDB (console storage). |
 | I/O | SBIA with SBI fault and error registers; memory controllers; DW780 Unibus adapter (map registers, interrupt vectors); RH780 Massbus adapter (map registers); disks behind them; interrupts at IPL 20-23; DMA. | Done ([docs/IO.md](docs/IO.md)): the PAMM (the 8600's memory arrays hang off the MBox, not the SBI), SBIA 0 with its registers, errors, interrupts and DMA side, the RH780 at TR 8 with two RP07 disks on SD card images, the DW780 at TR 3 with its map, data paths and interrupts. Missing: Unibus devices. |
-| Boot | The console loads VMB.EXE at `0x200` with R0-R5 describing the boot device. | Programs are loaded from the OSD and started by the monitor. |
+| Boot | The console loads VMB.EXE at `0x200` with R0-R5 describing the boot device. | The OSD's *Boot (VMB.EXE)* entry does the same (M9). |
 
 ## How the MMU was built
 
@@ -323,7 +329,7 @@ pass on the DE10-Nano.
   the reference simulator (README_MiSTer.md, *Booting from a disk: VMB*).
 - The 8600/8650 Diagnostic Supervisor (EDSAA) from `VAX_MINIMUM_DIAGS.dsk`,
   with EVKAB (basic instructions), EVKAC (floating point), EVKAD
-  (compatibility mode, once it exists) and EVKAE (privileged architecture).
+  (compatibility mode) and EVKAE (privileged architecture).
   On the core it goes on the Massbus disk. The first board test stopped
   after VMB: the supervisor's bootstrap, DIAGBOOT, asks the console for the
   microcode version through the logical console, and the console registers
@@ -337,7 +343,10 @@ pass on the DE10-Nano.
   (`tests/mmu/t51_mba.s`). Confirmed on the board with the build of 21
   November 2026: the supervisor boots from the RP07 and loads EVKAE from
   it. In the full-system simulation EVKAB, EVKAC and EVKAE loaded from the
-  disk pass as their images do (EVKAE but test 3). Before that, `tests/evkae/mkdsimage.py` brought the supervisor over
+  disk pass as their images do, and so they do on the board (the build of
+  21 November 2026: EVKAB and EVKAC in full, without QUICK, and EVKAE's
+  tests 1-2 and 4-11). With compatibility mode (below) EVKAD and EVKAE's
+  test 3 pass too, in simulation. Before that, `tests/evkae/mkdsimage.py` brought the supervisor over
   as a memory image taken from a simulator at its `DS>` prompt, with any of
   the four exercisers loaded; that is how EVKAB, EVKAC and EVKAE ran, and
   the images still work.
@@ -363,9 +372,14 @@ multi-user.
 
 ### M11 - The rest of the 8600 (optional)
 
-- PDP-11 compatibility mode. Only the RSX application layer uses it, and VMS
-  runs without it, but the 8600 has it: EVKAE's REI test (test 3) and EVKAD
-  need it.
+- PDP-11 compatibility mode - done ([docs/CMODE.md](docs/CMODE.md)):
+  the PDP-11 instructions decoded in hardware (`rtl/cmdecode.v`), their
+  operand specifiers evaluated as the CPU evaluates VAX ones and their
+  operations in microcode, REI into it with its checks, the compatibility
+  mode exceptions (SCB 30), the odd address abort, trace, memory management
+  faults with restart. Only the RSX application layer uses it, and VMS runs
+  without it, but the 8600 has it: EVKAD and EVKAE's REI test (test 3)
+  pass with it.
 - The 8600 console's own command language (`>>>`, BOOT, EXAMINE, DEPOSIT,
   CONTINUE, HALT), replacing r-vax's minimal monitor.
 - Console RL02 (`CSA1:`) through STXCS/STXDB.
@@ -381,15 +395,16 @@ multi-user.
 | Program | What it exercises | When |
 |---|---|---|
 | EVKAA V8.0 | basic instructions | passes now |
-| `tests/mmu` (47 programs) | memory management, faults and restart, FPD, PROBE, LDPCTX/SVPCTX, REI, CHMx, BPT, XFC, halt codes, IPRs, reserved addressing modes, CASE, BBx, ACB, arithmetic traps, trace, the string, queue and decimal instructions, the octaword and floating point instructions (random operands), compared with the reference simulator | pass now |
+| `tests/mmu` (65 programs) | memory management, faults and restart, FPD, PROBE, LDPCTX/SVPCTX, REI, CHMx, BPT, XFC, halt codes, IPRs, reserved addressing modes, CASE, BBx, ACB, arithmetic traps, trace, the string, queue and decimal instructions, the octaword and floating point instructions (random operands), the I/O side, PDP-11 compatibility mode (random operands too), compared with the reference simulator | pass now |
 | `software/mmutest.bin` | the same programs on the core itself, self-checking | passes on the full-system model and on the board |
-| EVKAB (Basic Instructions Exerciser) | every integer, branch, bit field, queue, character string and decimal instruction, with every addressing mode, page faults on the operands, timer interrupts and trace | all 161 tests pass under the Diagnostic Supervisor image, and loaded from the RP07 (QUICK, in simulation) |
-| EVKAC (Floating Point Instructions Exerciser) | every floating point instruction of the four formats, with every addressing mode, page faults on the operands and timer interrupts | all 98 tests pass under the Diagnostic Supervisor image, with the QUICK flag and without it (page faults on the operands), and loaded from the RP07 (QUICK, in simulation) |
-| EVKAE (Privileged Architecture Exerciser) | interrupts, exceptions, REI, CHMx, IPRs, interval timer, memory management, kernel stack not valid, PROBE, LDPCTX/SVPCTX - DEC's own test of the MMU work | 10 of 11 tests pass under the Diagnostic Supervisor image, in simulation and on the board, and loaded from the RP07 (in simulation; on the board tests 1-2); test 3 needs compatibility mode (M11) |
+| EVKAB (Basic Instructions Exerciser) | every integer, branch, bit field, queue, character string and decimal instruction, with every addressing mode, page faults on the operands, timer interrupts and trace | all 161 tests pass under the Diagnostic Supervisor image, and loaded from the RP07 (QUICK in simulation, in full on the board) |
+| EVKAC (Floating Point Instructions Exerciser) | every floating point instruction of the four formats, with every addressing mode, page faults on the operands and timer interrupts | all 98 tests pass under the Diagnostic Supervisor image, with the QUICK flag and without it (page faults on the operands), and loaded from the RP07 (QUICK in simulation, in full on the board) |
+| EVKAE (Privileged Architecture Exerciser) | interrupts, exceptions, REI, CHMx, IPRs, interval timer, memory management, kernel stack not valid, PROBE, LDPCTX/SVPCTX - DEC's own test of the MMU work | all 11 tests pass in simulation, loaded from the RP07 or as an image; on the board 10 (test 3 needs compatibility mode, which the board build has not got yet) |
+| EVKAD (Compatibility Mode Instructions Exerciser) | REI into compatibility mode and the exceptions out of it, the single and double operand and program control instructions | its 4 tests pass in simulation, loaded from the RP07 |
 | Own C and assembler tests | each new instruction and exception, traced against the reference simulator | from M3 |
 | SVK | MMU, SCB, interval timer and console interrupts, software interrupts, SVPCTX/LDPCTX | M5 |
 | Random-operand comparison with the reference simulator | decimal, string, floating point (done) | M6, M7 |
-| EDSAA + EVKAB, EVKAC, EVKAD, EVKAE | DEC's own exercisers under the 8600 Diagnostic Supervisor, booted from the RP07 | M9: the supervisor boots from the RP07 (simulation and board) and loads EVKAB, EVKAC and EVKAE from it, which pass; EVKAD needs compatibility mode (M11) |
+| EDSAA + EVKAB, EVKAC, EVKAD, EVKAE | DEC's own exercisers under the 8600 Diagnostic Supervisor, booted from the RP07 | M9: the supervisor boots from the RP07 (simulation and board) and loads the four exercisers from it, which pass (EVKAD and EVKAE's test 3 in simulation so far) |
 | NetBSD/vax | a complete OS | M9 |
 | OpenVMS VAX 7.3 | the goal | M10 |
 

@@ -20,22 +20,26 @@ the 8600 has in hardware (a small decimal unit does their arithmetic,
 [docs/CIS.md](docs/CIS.md)), and the **floating point instructions in all
 four formats, F, D, G and H**, with the octaword instructions and the
 two-byte opcodes (a floating point unit, exactly rounded,
-[docs/FPU.md](docs/FPU.md)); only PDP-11 compatibility mode is missing.
-DEC's **VAX 8600 Diagnostic Supervisor** runs on the core with three of its
-exercisers. In the full-system simulation **EVKAB**, the basic instruction
-exerciser, passes all of its 161 tests, **EVKAC**, the floating point
-exerciser, all of its 98, and **EVKAE**, the privileged architecture
-exerciser, 10 of its 11; the other one needs PDP-11 compatibility mode,
-which the 8600 has and the core does not yet (see *Running the Diagnostic
-Supervisor and EVKAE*, *Running EVKAB* and *Running EVKAC*). On the board,
-the build of 17 November 2026 passes `mmudiag.bin`, `mmutest.bin` (the 51
-tests) and those ten EVKAE tests.
+[docs/FPU.md](docs/FPU.md)) - and so is **PDP-11 compatibility mode**,
+which the 8600 has ([docs/CMODE.md](docs/CMODE.md)).
+DEC's **VAX 8600 Diagnostic Supervisor** boots on the core from an RP07
+disk image and runs its four exercisers from it: **EVKAB**, the basic
+instruction exerciser, passes all of its 161 tests, **EVKAC**, the floating
+point exerciser, all of its 98, **EVKAD**, the compatibility mode
+exerciser, all of its 4, and **EVKAE**, the privileged architecture
+exerciser, all of its 11 (see *Running the Diagnostic Supervisor and
+EVKAE*, *Running EVKAB*, *Running EVKAC* and *Running EVKAD*). On the board,
+the build of 21 November 2026 boots the supervisor from the disk and passes
+EVKAB and EVKAC in full and EVKAE's tests 1-2 and 4-11 (that build has no
+compatibility mode yet); EVKAD and EVKAE's test 3 pass in the full-system
+simulation.
 The 8600's **I/O side** is there too: the physical address memory map,
 SBIA 0 with its interrupts and DMA, the 8600's machine checks, an **RH780
 Massbus adapter with two RP07 disks** whose contents are disk images on the
 SD card, mounted from the OSD, and a **DW780 Unibus adapter**, with no
-devices on its Unibus yet ([docs/IO.md](docs/IO.md)). OpenVMS cannot run
-yet: nothing boots it from the disk (VMB, milestone 9).
+devices on its Unibus yet ([docs/IO.md](docs/IO.md)). The OSD boots a
+disk as the 8600's console does, through DEC's VMB (*Booting from a disk:
+VMB*); OpenVMS itself is the next milestone.
 See *What is missing*, and [ROADMAP.md](ROADMAP.md) for the plan.
 
 ```
@@ -56,6 +60,7 @@ See *What is missing*, and [ROADMAP.md](ROADMAP.md) for the plan.
 | Memory management | `rtl/mmu.v` | 8600 translation buffer, page table walk, protection ([docs/MMU.md](docs/MMU.md)) |
 | Decimal unit | `rtl/decunit.v` | Packed decimal arithmetic for the decimal string instructions ([docs/CIS.md](docs/CIS.md)) |
 | Floating point unit | `rtl/fpunit.v` | F, D, G and H floating point, exactly rounded ([docs/FPU.md](docs/FPU.md)) |
+| Compatibility mode | `rtl/cmdecode.v` | PDP-11 instruction decode; the operands in `cpu.v`, the operations in microcode ([docs/CMODE.md](docs/CMODE.md)) |
 | Cache | `rtl/mister/vax_cache.v` | 16 KB, M10K block RAM |
 | Memory | `rtl/mister/vax_sdram.v` | 32 MB on the MiSTer SDRAM module |
 | MBox and SBIA | `rtl/mister/vax_io.v`, `vax_sbi.v` | Physical address memory map, SBIA 0, machine checks, DMA ([docs/IO.md](docs/IO.md)) |
@@ -820,10 +825,10 @@ answers - `1ER` tells you where and `1CR` what the instruction was.
 `VAX_MINIMUM_DIAGS.dsk` is a disk image with the Diagnostic Supervisor and
 EVKAB (basic instructions), EVKAC (floating point), EVKAD (compatibility
 mode) and EVKAE (privileged architecture, memory management among it). The
-core has no disk controller yet, so the supervisor is brought over as a
-memory image instead - see *Running the Diagnostic Supervisor and EVKAE*
-below. These are DEC programs; they are not part of this repository and
-not mine to relicense.
+core boots the supervisor from it on an RP07 (*Booting from a disk: VMB*);
+it can also be brought over as a memory image - see *Running the Diagnostic
+Supervisor and EVKAE* below. These are DEC programs; they are not part of
+this repository and not mine to relicense.
 
 `tools/vaxdisk.py` lists or extracts the files of such an image - a Files-11
 ODS-2 disk like `VAX_MINIMUM_DIAGS.dsk`, or an RT-11 floppy such as the
@@ -899,13 +904,14 @@ DS> SET LOAD DRA0:[SYSMAINT]
 DS> SELECT KA0
 ```
 
-Then `LOAD EVKAE` (or `LOAD EVKAB`, `LOAD EVKAC`; EVKAD needs
-compatibility mode) brings an exerciser from the disk, replacing the one
-loaded before, and `START` runs it, as below. A program loaded on the core
-is byte for byte what the reference simulator loads from the same disk, and
-in the full-system simulation, booted and loaded from the disk, EVKAE's
-tests 1-2 and 4-11, EVKAB's 161 and EVKAC's 98 (these two with `SET FLAGS
-QUICK`) all end in `0 errors detected`, as from the images below.
+Then `LOAD EVKAE` (or `LOAD EVKAB`, `LOAD EVKAC`, `LOAD EVKAD`) brings an
+exerciser from the disk, replacing the one loaded before, and `START` runs
+it, as below. A program loaded on the core is byte for byte what the
+reference simulator loads from the same disk, and in the full-system
+simulation, booted and loaded from the disk, EVKAE's 11 tests, EVKAB's
+161, EVKAC's 98 (these two with `SET FLAGS QUICK`) and EVKAD's 4 all end in
+`0 errors detected`, as from the images below. On the board EVKAB and
+EVKAC pass in full, without QUICK.
 
 **From a memory image.** Before the core could boot from a disk,
 `tests/evkae/mkdsimage.py` did the booting in a VAX 8600 simulator on the
@@ -926,10 +932,9 @@ python3 tests/evkae/mkdsimage.py      # -> software/evkae_ds.bin (800 400 bytes)
 It needs the simulator and DEC's `vmb.exe` (the header of the script says
 where it looks for them) and `software/VAX_MINIMUM_DIAGS.dsk`. With `-p EVKAB` (or `EVKAC`, `EVKAD`) it
 loads another exerciser of that disk instead, into `software/evkab_ds.bin`
-(and so on): EVKAB and EVKAC run (*Running EVKAB*, *Running EVKAC* below);
-EVKAD needs compatibility mode, which the core does not have yet. The image is
-DEC software in another form, so `.gitignore` keeps it out of the
-repository, like the disk.
+(and so on): EVKAB, EVKAC and EVKAD run (*Running EVKAB*, *Running EVKAC*,
+*Running EVKAD* below). The image is DEC software in another form, so
+`.gitignore` keeps it out of the repository, like the disk.
 
 On the core, with an image:
 
@@ -974,7 +979,7 @@ What the tests give in the full-system simulation:
 |---|---|---|
 | 1 | Interrupt Test | pass |
 | 2 | Exception Test | pass |
-| 3 | REI Instruction Test | **fails**: an `REI` into PDP-11 compatibility mode (PSL\<CM\> set), which the 8600 has and the core has not yet, takes a reserved operand fault at `87D0` |
+| 3 | REI Instruction Test | pass (it returns to PDP-11 compatibility mode, [docs/CMODE.md](docs/CMODE.md)) |
 | 4 | Change Mode Instructions Test | pass |
 | 5 | Processor Register Instructions | pass |
 | 6 | Interval Timer | pass |
@@ -984,9 +989,10 @@ What the tests give in the full-system simulation:
 | 10 | PROBE Instruction Test | pass |
 | 11 | Process Context Switching Instructions | pass |
 
-`START` stops at test 3, so for now run `START/TEST:1:2`, then
-`START/TEST:4`. To run the same in the simulation:
-`make -C sim fast`, then `tests/evkae/run_sim.sh 1:2 4:11`.
+`START` runs them all. (Before compatibility mode, test 3 took a reserved
+operand fault on its `REI` into it, and the runs were `START/TEST:1:2` and
+`START/TEST:4`.) To run the same in the simulation: `make -C sim fast`,
+then `tests/evkae/run_sim.sh 1:11`.
 
 ## Running EVKAB
 
@@ -1115,6 +1121,52 @@ with the page faults. To run it there:
 (about an hour of simulation); without `QUICK=1`, and with
 `BUDGET=8000000000`, the slow mode (some hours).
 
+## Running EVKAD
+
+EVKAD, the VAX Compatibility Mode Instructions Exerciser (revision 3.1),
+tests PDP-11 compatibility mode ([docs/CMODE.md](docs/CMODE.md)) in four
+tests: entering it with REI and leaving it by its exceptions, the single
+operand instructions, the double operand ones, and the program control
+ones (branches, JMP, JSR, RTS, RTI, RTT, SOB). From the disk it is `LOAD
+EVKAD` at the supervisor's prompt (*Running the Diagnostic Supervisor and
+EVKAE*); `python3 tests/evkae/mkdsimage.py -p EVKAD` makes an image of it,
+as for the others. At `DS>`:
+
+```
+DS> SET FLAGS TRACE
+DS> LOAD EVKAD
+DS> START
+
+.. Program: VAX Compatibility Mode Instructions Exerciser, EVKAD, revision 3.1,
+4 tests,
+   at 09:41:31.50.
+Testing: _KA0
+
+Test 1: Compatibility Mode ENTRY and EXIT Test
+Test 2: Compatibility Mode SINGLE OPERAND Instructions
+Test 3: Compatibility Mode DOUBLE OPERAND Instructions
+Test 4: Compatibility Mode PROGRAM CONTROL Instructions
+.. End of run, 0 errors detected, pass count is 1,
+   time is 12-JUL-1987 09:41:44.16
+DS> LOAD EVKAE
+DS> START/TEST:3:3
+
+.. Program: ZZ-EVKAE, VAX Privileged Architecture Exerciser , revision 6.5, 11 t
+ests,
+   at 09:41:45.11.
+Testing: _KA0
+
+Test 3: REI Instruction Test
+.. End of run, 0 errors detected, pass count is 1,
+   time is 12-JUL-1987 09:41:45.92
+DS>
+```
+
+(captured from the full-system simulation, booted and loaded from the
+RP07). EVKAD's run is 635 million clocks, 12.7 seconds on the core - the
+supervisor's clock agrees - most of it test 2. EVKAE's test 3, the REI
+test, returns to compatibility mode too and passes with it.
+
 ## Testing the memory management and the privileged architecture on the core
 
 `software/mmutest.bin` runs the programs of `tests/mmu` on the core itself
@@ -1129,14 +1181,17 @@ packed decimal instructions (the decimal ones and EDITPC on a few hundred
 random operands), the octaword instructions and the floating point ones
 (some 1 600 random cases of the four formats, and their faults), and the
 I/O side: the PAMM, SBIA 0, machine checks, the RH780 and the DW780, and
-the 8600's console registers with the logical console (`t60`). (The
+the 8600's console registers with the logical console (`t60`), and PDP-11
+compatibility mode (`t61`-`t64`: entering and leaving it, its exceptions,
+600 instructions with random operands, program control and trace, and
+memory management faults in it). (The
 programs that end in a processor halt other than t16's, `t22`-`t24` and
 `t49`, those that need generated disks, `t52`-`t54`, and `t59`, which needs
 the test bench's Unibus device, are only run in simulation.)
 
 1. OSD: *Load Address* = `0x00001000`, *Start Address* = *Load address*,
    *Autostart* = Yes (the settings for `hello.bin`).
-2. *Load Program* -> `mmutest.bin`. About seven seconds later the screen
+2. *Load Program* -> `mmutest.bin`. About eight seconds later the screen
    shows:
 
 ```
@@ -1146,10 +1201,12 @@ architecture), checked against their expected results
 t00_harness....... PASS
 t01_xlate......... PASS
    ...
-t58_ubainit....... PASS
 t60_cons86........ PASS
+t61_cmode......... PASS
+   ...
+t64_cmmm.......... PASS
 
-Passed: 52   Failed: 00
+Passed: 56   Failed: 00
 All tests passed.
 
 Last, t16_isnv: the CPU must halt here with code 00000004.
@@ -1384,8 +1441,6 @@ simulator gives the expected values for seeds 1 to 31 and that seed 200 set
 
 The plan for all of this, in order, is in [ROADMAP.md](ROADMAP.md).
 
-- **PDP-11 compatibility mode**, which the 8600 has (EVKAE test 3 and EVKAD
-  use it).
 - **The rest of the privileged architecture**: the contents of the 8600's
   machine check frame.
   Everything else is in, described in [docs/MMU.md](docs/MMU.md) and
@@ -1444,6 +1499,7 @@ ATTACH RP07 RH0 DRA0~|@DS> |SET LOAD DRA0:[SYSMAINT]~|@DS> |SELECT KA0~|@DS> |\
 LOAD EVKAE~|@DS> |START/TEST:1:2~|@End of run|@DS> " \
     sim/obj_fast/Vtb_top software/vmb.exe 1 ""      # the OSD's Boot: VMB, DIAGBOOT, the
                                  # supervisor from the RP07, EVKAE loaded from it (25 min)
+                                 # (LOAD EVKAD~|@DS> |START~|@End of run: EVKAD, 75 min)
 IMAGE=software/evkab_ds.bin TRACE=1 tests/evkae/run_sim.sh 134:144   # EVKAB's string tests
 IMAGE=software/evkac_ds.bin TRACE=1 QUICK=1 BUDGET=2000000000 \
     tests/evkae/run_sim.sh 1:98  # EVKAC, floating point (QUICK: about an hour)
