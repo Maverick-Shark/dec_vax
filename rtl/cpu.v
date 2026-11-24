@@ -1624,9 +1624,14 @@ if (debug)$fdisplay(32'h80000002, "ARG_READ2: arg_read_add %x indir_OA %x lit %d
 			end else if (arg_aR) begin
 				/* memory: the longwords one after the other */
 				cpu_size <= a_argsz;
-				cpu_wint <= arg_aW;	/* modify operand */
 				rmemstate <= `RMEM_ARG_READ;
 				if (!arg_rd) begin
+					/* modify operand: the read with write intent. Only
+					   here, where the read is done: with the data read
+					   already (the branch below) nothing clears it, and
+					   the next instruction fetch carried write intent -
+					   an access violation on a read-only code page */
+					cpu_wint <= arg_aW;
 					cpu_addr <= arg_read_add;
 					arg_rd <= 1;
 					state <= `S_READMEM;
@@ -2070,6 +2075,8 @@ if (debug) $fdisplay(32'h80000002, "MCODE: ctr %d mc_rv %x\r", mcodectr, mc_rv);
 			/* Fetch new longword */
 			cpu_addr <= { curpc[31:2], 2'b00 };
 			cpu_write <= 0;
+			cpu_wint <= 0;		/* an instruction fetch only reads */
+			cpu_probe <= 0;
 			cpu_stb <= 1;
 			cpu_size <= `O_LONG;
 			if (cpu_acki) begin
