@@ -2624,19 +2624,28 @@ insque:
 #
 # REMQUE arg1,arg1p (entry,addr)
 remque:
-	# **(entry+4) = *entry
+	# arg3 = succ = *entry, arg4 = pred = *(entry+4)
 	plus arg1 0	cpuaddr rmem long
-	plus rmemdat 0	arg4
+	plus rmemdat 0	arg3
 	plus arg1 4	cpuaddr rmem long
-	plus arg4 0	crw
-	plus rmemdat 0	cpuaddr wmem long
-
-	# *(*entry+4) = *(entry+4)
-	plus arg1 4	cpuaddr rmem long	# *(entry+4)
 	plus rmemdat 0	arg4
-	plus arg1 0	cpuaddr rmem long	# *entry
+
+	# Nothing is written before both places to write are known to be
+	# writable (SRM: the instruction is restartable): a fault (the
+	# successor's page not valid, say) comes before the queue changes,
+	# with write intent as the reference simulator's. Otherwise the
+	# restart reads the new *pred and removes the entry after the right
+	# one (VMS 7.3's STARTUP hung on this).
+	plus arg3 4	cpuaddr rmem long wint	# write check succ+4
+	plus arg4 0	cpuaddr rmem long wint	# write check pred
+
+	# *pred = succ
+	plus arg3 0	crw
+	plus arg4 0	cpuaddr wmem long
+
+	# *(succ+4) = pred
 	plus arg4 0	crw
-	plus rmemdat 4	cpuaddr wmem long
+	plus arg3 4	cpuaddr wmem long
 
 	# addr = entry
 	plus arg1 0	argd1
