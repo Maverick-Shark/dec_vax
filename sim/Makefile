@@ -22,6 +22,17 @@ obj_fast/Vtb_top: $(SRC) tb.cpp hpsdisk.h
 
 fast: obj_fast/Vtb_top
 
+# the same with checkpoints (--savable): "!Cfile" in SESSION writes one,
+# RESTORE=file starts from it (tb.cpp, save_state); for runs of hours, the
+# operating systems
+obj_save/Vtb_top: $(SRC) tb.cpp hpsdisk.h
+	verilator --cc --exe --build -j 4 -O3 --x-assign fast --x-initial fast --savable \
+	  -Wno-fatal -Wno-WIDTH -Wno-TIMESCALEMOD -DMISTER -DCLKPERBIT=16 -DCACHEIDX=10 \
+	  --public-flat-rw -I../rtl --top-module tb_top -Mdir obj_save $(SRC) tb.cpp \
+	  -CFLAGS "-O2 -w -DSAVABLE" -o Vtb_top
+
+save: obj_save/Vtb_top
+
 # CPU-level test bench (cpu, vcache, mmu, plain memory) for tests/mmu
 CPUTB = $(addprefix ../rtl/,$(RVAX)) ../rtl/mister/vax_sbi.v ../rtl/mister/vax_uba.v \
         ../rtl/mister/vax_mba.v \
@@ -55,7 +66,7 @@ obj_fpu/Vfpunit: ../rtl/fpunit.v fpu_tb/fpu_tb.cpp
 	  -CFLAGS "-O1 -w" -o Vfpunit
 
 clean:
-	rm -rf obj obj_unit obj_nc obj_e obj_l obj_cpu obj_fast obj_du obj_dqma obj_fpu obj_cpux obj_x obj_cpuf
+	rm -rf obj obj_unit obj_nc obj_e obj_l obj_cpu obj_fast obj_save obj_du obj_dqma obj_fpu obj_cpux obj_x obj_cpuf
 
 UNIT = $(addprefix ../rtl/mister/,vt_font.v vt_term.v vax_kbd.v) unit_top.v
 

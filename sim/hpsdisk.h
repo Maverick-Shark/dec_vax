@@ -54,6 +54,9 @@ public:
 
 	bool any() const { return disk[0].mounted || disk[1].mounted; }
 
+	// no block request in flight (for a checkpoint)
+	bool quiet() const { return st == 0 && !((*P.rd | *P.wr) & 3) && !*P.ack; }
+
 	// the img_mounted pulse for unit u: call with step = 0, 1, 2 on
 	// three consecutive clocks
 	void mount_step(int u, int step) {

@@ -2876,7 +2876,11 @@ priv_flt:
 # LDPCTX (SRM 6.4): load the process context from the PCB (physical
 # address in PCBB). Writing P0BR..P1LR flushes the process half of the TB.
 # Then from the interrupt stack to the process's kernel stack, where the PC
-# and PSL of the PCB are pushed for the REI that must follow.
+# and PSL of the PCB are pushed for the REI that must follow. The SRM leaves
+# LDPCTX on the kernel stack UNDEFINED; NetBSD returns from a soft interrupt
+# that way (softint_process), and there the old kernel stack is just left:
+# SP goes into ISP only from the interrupt stack (as the reference simulator
+# does), or the next interrupt would run on the soft interrupt's stack.
 ldpctx:
 	and savpsw 1000	nzcond goto priv_flt
 	and 10 10	crn
@@ -2919,9 +2923,13 @@ ldp_r:
 	plus arg1 14	cpuaddr rmem phys	# P1LR (PME not kept)
 	and B B		crn
 	and rmemdat argd0	crw wipr
+	shl psl 5	ncond goto ldp_isp	# on the interrupt stack
+	plus 0 0	goto ldp_ksp		# on the kernel stack: ISP stays
+ldp_isp:
 	and E E		crn
 	plus crv 0	crw
 	and 4 4		crn wipr		# ISP <- SP
+ldp_ksp:
 	and 400 400	argd1
 	shl argd1 10	argd1
 	bic argd1 psl	psl			# PSL<IS> <- 0

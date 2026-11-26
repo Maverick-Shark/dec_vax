@@ -18,19 +18,19 @@
 ;   - a drive with no image: UNS; unload: off line (MOL clear), PIP until
 ;     an image is mounted again, which INIT does not change.
 ;
-; Drive register reads return SR<31:16> too: SR<16> (attention) follows
-; the Massbus ATTN line until software clears it. Expected values:
+; Drive register reads return SR<31:16> too: SR<16> (attention) is the
+; Massbus ATTN line, there while a drive's ATA is set. Expected values:
 ; tests/mmu/gen/mk_t52.py.
 ;@ noref
-;@ board=skip
 ;@ rtl=18000:00001180,18004:000011C0,18008:00009C00,1800C:00008000,18010:00000000,18014:00000000
 ;@ rtl=18018:000011C0,1801C:00003140,18020:00000805,18024:000191C0,18028:00010064,1802C:00010001
 ;@ rtl=18030:000011C0,18034:00000000,18038:0001F140,1803C:00010004,18040:00010000,18044:00010258
-;@ rtl=18048:0001D1C0,1804C:0001D1C0,18050:00010258,18054:00010000,18058:000011C0,1805C:0001D1C0
+;@ rtl=18048:0001D1C0,1804C:0001D1C0,18050:00010258,18054:00000000,18058:000011C0,1805C:0001D1C0
 ;@ rtl=18060:00010400,18064:00010258,18068:00010400,1806C:00010001,18070:0001D1C0,18074:00010640
 ;@ rtl=18078:000191C0,1807C:00010000,18080:000191C0,18084:000191C1,18088:000191C0,1808C:000191C0
 ;@ rtl=18090:0001000A,18094:000191C0,18098:00000180,1809C:00014000,180A0:0001C180,180A4:00010002
 ;@ rtl=180A8:00000000,180AC:00002100,180B0:00000803,180B4:00002100,180B8:00000000,180BC:00000000
+;@ board=skip
 ;@ disk0=pattern
 ;@ clocks=8000000
 LOG	= ^x18000
@@ -105,7 +105,7 @@ scbfill:
 	movl	DS(r10), (r11)+		; 0001D1C0: no PIP
 	movl	CC(r10), (r11)+		; 00010258
 	movl	#^x09, CS1(r10)		; drive clear (011)
-	movl	ER1(r10), (r11)+	; 00010000
+	movl	ER1(r10), (r11)+	; 0: ATA and SR<16> cleared
 	movl	#^x10000, @#SR
 	movl	DS(r10), (r11)+		; 000011C0
 
@@ -198,7 +198,8 @@ wrdy1:	movl	DS(r10), r0
 	halt
 wrdy2:	rsb
 
-; clear the drive's attention (AS) and the adapter's SR<16>
+; clear the drive's attention (AS; SR<16> goes with it, the SR write
+; does nothing)
 clra:	movl	#1, AS(r10)
 	movl	#^x10000, @#SR
 	rsb

@@ -276,7 +276,7 @@ once, reads when the drive's data is there.
 |---|---|---|
 | 00 | CSR | <23> adapter power down, <22> power up (write 1 to clear; never set: processor initialization is not a power-up), <7:0> adapter code 20; the SBI fault bits <31:26> never set |
 | 04 | CR | <3> maintenance mode (not while a transfer runs: program error), <2> interrupt enable, <1> abort data transfer, <0> INIT (reads 0: clears CSR status, CR<2:1>, SR, BCR and DR, aborts a transfer, Massbus INIT to every drive). Every bit is read/write (TD figure 3-2), so a write with INIT also writes <3>: the 8600 Diagnostic Supervisor checks the adapter with CR = C (maintenance mode, IE) and leaves maintenance mode with CR = 1 |
-| 08 | SR | <31> DT busy, <30> no response confirmation, <19> program error, <18> non-existent drive, <16> attention (set by the Massbus ATTN line), <13> DT complete, <12> DT aborted, <11> data late, <10>/<09> write check upper/lower byte, <08> missed transfer, <07> Massbus exception, <04> invalid map, <02> read data substitute, <01> interface sequence timeout; written 1 to clear (<31> read only). CRD, MCPE, map and data parity, error confirmation and read data timeout never happen here |
+| 08 | SR | <31> DT busy, <30> no response confirmation, <19> program error, <18> non-existent drive, <16> attention, <13> DT complete, <12> DT aborted, <11> data late, <10>/<09> write check upper/lower byte, <08> missed transfer, <07> Massbus exception, <04> invalid map, <02> read data substitute, <01> interface sequence timeout; written 1 to clear (<31> read only), but for <16>: it is the Massbus ATTN line itself, the drives' ATA bits, and goes when they are cleared (table 3-6 gives it no other way to clear; NetBSD's interrupt routine, like 4.3BSD's, writes SR back before it clears AS, and a bit that stayed set would interrupt again with no transfer queued). CRD, MCPE, map and data parity, error confirmation and read data timeout never happen here |
 | 0C | VAR | <16:9> map pointer, <8:0> byte offset |
 | 10 | BCR | <31:16> Massbus byte counter (read only), <15:0> SBI byte counter; a write loads the 2's complement of the byte count into both |
 | 14 | DR | <31:21> written in maintenance mode only (<28> blocks commands to the SBI); <20:8> the Massbus FAIL, RUN, WCLK, EXC, CTOD lines, DS and RS of the last control operation; <7:0> a byte of the Massbus data input buffer (<23> selects the upper one) |
@@ -719,7 +719,7 @@ pass without being compared.
 | EHSR | <05> only | the whole longword |
 | MERG | reads 0 | <12:9,5:0>, <8> MAPEN |
 | DMA side | quadclear and DMA go straight to memory | the receiver's rules (CSR<29>, memory separator), transaction buffers and their registers, MBox abort of non-memory PAMM codes |
-| RH780 | starting a transfer clears SR's status bits; no missed transfer or data late | SR bits only cleared by software or INIT; MXF, DLT; byte-exact transfers through the silo |
+| RH780 | starting a transfer clears SR's status bits; no missed transfer or data late | SR bits only cleared by software or INIT (SR<16> follows ATTN, as in the simulator); MXF, DLT; byte-exact transfers through the silo |
 | RP07 | header commands move data only; a command to a drive with ERR set is ILF; times counted in instructions | four header words per sector; the command ignored (RH780 TD 3.3); the RP07's times |
 | DW780's own interrupts | BR5 (IPL 15, SCB 14C) | BR4 (IPL 14, SCB 10C): the first DW780's jumpers |
 | DW780 registers | longwords only (others an error confirmation) | any read length (TD 3.4.7.2) |

@@ -25,10 +25,11 @@ L.put(PIP | MOL | DPR | VV, 0x0805,
       MOL | DPR | DRY | VV, 0)
 # RMR during a seek: ERR and ATA at once, PIP still; the register is not
 # written; the seek ends; a command with ERR is ignored; drive clear
+# (ATA, and with it the ATTN line and SR<16>, cleared)
 L.put(SR_ATTN | ATA | ERR | PIP | MOL | DPR | VV, SR_ATTN | 0x0004, SR_ATTN,
       SR_ATTN | 600, SR_ATTN | ATA | ERR | MOL | DPR | DRY | VV,
       SR_ATTN | ATA | ERR | MOL | DPR | DRY | VV, SR_ATTN | 600,
-      SR_ATTN, MOL | DPR | DRY | VV)
+      0, MOL | DPR | DRY | VV)
 # IAE (cylinder 630): no motion; IAE (sector 50); ILF (041)
 L.put(SR_ATTN | ATA | ERR | MOL | DPR | DRY | VV, SR_ATTN | 0x0400,
       SR_ATTN | 600, SR_ATTN | 0x0400, SR_ATTN | 0x0001,

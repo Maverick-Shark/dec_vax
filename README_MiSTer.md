@@ -588,6 +588,135 @@ too, and the session above, from the OSD's *Boot* to EVKAE's tests 1 and
 2 loaded from the disk, runs in the full-system simulation as on the
 reference simulator, and on the board (the build of 21 November 2026).
 
+### Booting NetBSD
+
+NetBSD/vax 11.0 (July 2026) still supports the 8600: its GENERIC kernel
+has `options VAX8600`, the ABus, the SBI, the DW780, the RH780 and its
+disks. It boots from an RP07 the way an 8600 boots anything that is not
+VMS: VMB with *Boot Flags* `8 Boot block` reads logical block 0, NetBSD's
+boot block, which reads the rest of itself through VMB's I/O routine and
+loads `/boot`; `/boot` reads the kernel with its own RH780 driver.
+
+**The disk image.** NetBSD's install ISO (`NetBSD-11.0-vax.iso`, from
+NetBSD's site) does not boot on the 11/780 and 8600 models of the
+reference simulator - its `/boot` corrupts the kernel it reads from the
+CD there (port-vax, March 2024) - so the installation is done on its
+MicroVAX 3900 model and the result moved to an RP07:
+
+```
+python3 tools/netbsd/mkimage.py NetBSD-11.0-vax.iso netbsd-rp07.dsk
+```
+
+does it all in about five minutes: it installs base, etc, kern-GENERIC,
+man, misc and text on an RA92 whose label has the RP07's geometry (an
+MSCP disk is addressed by block number, so its first 1 008 000 blocks are
+an RP07 image as they are: `a` = root, 460 MB, FFS; `b` = swap, 32 MB),
+with NetBSD's boot block, an `fstab` for `hp0` and an `rc.conf` without
+the network daemons; cuts the image to the RP07's size; puts two fixes
+into the kernel (`tools/netbsd/nbpatch.py`, below); and boots it once on
+the reference simulator's 8600 from an RP07, to the login prompt and a
+clean `shutdown -h`. It needs the reference simulator's MicroVAX 3900 and
+VAX 8600 models and Python's `pexpect`. The image is NetBSD (BSD licence),
+so it can be passed around; `.gitignore` keeps disk images out of the
+repository.
+
+**Two bugs in NetBSD.** As released, NetBSD 11.0 cannot use a Massbus
+disk on any VAX: both bugs are in its source and were found running its
+kernel on the reference simulator's 8600, and `nbpatch.py` fixes each with
+an instruction sequence of the same length in the kernel:
+
+* `hp.c`, `hpattach()` reads a disk's label through partition `a` of the
+  label it has just made up, in which only partition `c` has a size, so
+  the read is out of bounds: every RP07 attaches with "I/O error" and no
+  label, and the root file system cannot be mounted. The fix reads it
+  through partition `c`.
+* `disksubr.c`, `disk_reallymapin()` takes the PTE of a buffer in user
+  space (raw I/O, such as `fsck` on `/dev/rhp0a` at every boot) from the
+  process's page table indexed with the buffer's byte address instead of
+  its page number: the kernel faults ("SEGV in kernel"). The fix indexes
+  with the page number.
+
+**What NetBSD found in the core.** The first boot on the RTL went as on
+the reference simulator up to the RP07s: `hp0` attached, but reading the
+label of `hp1`, a drive with no image (off line), the kernel panicked in
+the RH780's interrupt routine. The read gets UNS from the drive, ATA at
+once, and the adapter a missed transfer; NetBSD's interrupt routine writes
+SR back to clear it and then clears the drive's attention in AS. The
+core's RH780 kept SR<16>, attention, as a latch that only a write of 1
+cleared, so it stayed set after AS was cleared and interrupted again with
+no transfer queued, which NetBSD does not expect. The RH780's technical
+description (table 3-6) gives SR<16> no way to clear but the ATTN line
+going down; now SR<16> is the ATTN line, the drives' ATA bits
+(`rtl/mister/vax_mba.v`, `docs/IO.md`; t51 and t52 expect it).
+
+Then the kernel stopped after "WARNING: system needs entropy": the
+CPU went round the 24-round loop of `keccakf1600`, the hash of the entropy
+pool, for ever, because every clock interrupt overwrote the pointer that
+ends it, a local variable. NetBSD runs a soft interrupt as a process of its
+own: the interrupt switches to it with SVPCTX, LDPCTX and REI, and when it
+is done the soft interrupt gives the CPU back with LDPCTX and REI on its own
+kernel stack. The VAX Architecture Reference Manual leaves LDPCTX on the
+kernel stack undefined; its operation text saves SP in ISP first, and the
+core did that, so ISP pointed into the soft interrupt's stack and the next
+interrupt, which runs on the interrupt stack, wrote over the next soft
+interrupt's variables. The reference simulator saves SP in ISP only when
+LDPCTX runs on the interrupt stack, and so does the core now
+(`rtl/ucode.def`, `docs/MMU.md`, `tests/mmu/t65_ldpks.s`).
+
+Then the kernel mounted the root file system and started `init`, which
+took an access-control violation for every relocation its dynamic linker
+applied to the C library: each ADDL2 R2,(R1) that relocates a word left
+the CPU's write intent flag set, and the next instruction fetch, from the
+linker's read-only text, went out with it. The flag is now set for the
+read of a modify operand alone (`rtl/cpu.v`, `docs/MMU.md`,
+`tests/mmu/t66_acvmod.s`).
+
+**On the core.** Copy the image to the SD card (`games/DEC_VAX`), and in
+the OSD: *RP07 Unit 0* = the image, *Boot Device* `DBA0`, *Boot Flags*
+`8 Boot block`, *VMB Memory Test* `Off` (or `On`, a little slower), then
+*Boot (VMB.EXE)*. After VMB, NetBSD's boot program counts 5 seconds down
+(a key gives its `>` prompt: `boot netbsd -s` boots single user), loads the
+kernel (some 4 MB, at the RP07's own speed), and the kernel finds the
+machine:
+
+```
+>> NetBSD/vax boot [1.12 (Thu Jul 30 15:23:12 UTC 2026)] <<
+>> Press any key to abort autoboot  5
+...
+NetBSD 11.0 (GENERIC) #0: Thu Jul 30 15:23:12 UTC 2026
+VAX 8600
+total memory = 32764 KB
+mainbus0 (root)
+cpu0 at mainbus0: KA860, S/N 1234, Rev. G, manufactured in Unknown.
+cpu0: no FPA
+abus0 at mainbus0
+sbi1 at abus0: SBIA Rev. 0, base address 0x20000000
+uba1 at sbi1 tr3: DW780
+mba0 at sbi1 tr8
+hp0 at mba0 drive 0: rp07, size = 1008000 sectors
+...
+root on hp0a dumps on hp0b
+...
+NetBSD/vax (vax8600) (constty)
+
+login:
+```
+
+`root` logs in without a password. `shutdown -h now` ends with "halting
+(in tight loop); hit ^P": Ctrl+P is the 8600's console halt (halt code
+11). The first boot of the image on the reference simulator wrote
+NetBSD's random seed, so the core's first boot does not wait for one.
+
+The core does some 1.1 million VAX instructions a second, so a boot to
+the login prompt takes minutes: the kernel's own AES self-tests alone take
+five seconds. In the full-system simulation (some 5 000 instructions a
+second) `boot netbsd -s` reaches the shell and `ls /` after 41 million
+instructions, 1.8 thousand million clocks (36 seconds of the real core),
+with the same output as the reference simulator; multi-user is left to the
+board. The simulation was run with checkpoints (`make -C sim save`,
+*Simulation* below): from one taken at the single-user prompt, what follows
+takes half an hour instead of four.
+
 ### Loading and running a program
 
 *Where* a file goes in memory is decided by the OSD option **Load Address**,
@@ -1184,7 +1313,10 @@ I/O side: the PAMM, SBIA 0, machine checks, the RH780 and the DW780, and
 the 8600's console registers with the logical console (`t60`), and PDP-11
 compatibility mode (`t61`-`t64`: entering and leaving it, its exceptions,
 600 instructions with random operands, program control and trace, and
-memory management faults in it). (The
+memory management faults in it), and two things NetBSD found: LDPCTX on
+the kernel stack the way its soft interrupts use it (`t65`), and
+access-control violations on modify operands with the code on a read-only
+page (`t66`). (The
 programs that end in a processor halt other than t16's, `t22`-`t24` and
 `t49`, those that need generated disks, `t52`-`t54`, and `t59`, which needs
 the test bench's Unibus device, are only run in simulation.)
@@ -1205,8 +1337,10 @@ t60_cons86........ PASS
 t61_cmode......... PASS
    ...
 t64_cmmm.......... PASS
+t65_ldpks......... PASS
+t66_acvmod........ PASS
 
-Passed: 56   Failed: 00
+Passed: 58   Failed: 00
 All tests passed.
 
 Last, t16_isnv: the CPU must halt here with code 00000004.
@@ -1451,8 +1585,9 @@ The plan for all of this, in order, is in [ROADMAP.md](ROADMAP.md).
   the architecture allows, and hold off interrupts until they finish: some
   tens of microseconds for EDITPC and the decimal ones, but tens of
   milliseconds for a MOVTC of 65535 bytes.
-- **VMS.** VMB boots the Diagnostic Supervisor from an RP07 (*Booting
-  from a disk: VMB*); VMS itself is milestone 10.
+- **VMS.** VMB boots the Diagnostic Supervisor and NetBSD from an RP07
+  (*Booting from a disk: VMB*, *Booting NetBSD*); VMS itself is milestone
+  10.
 - **The 8600 console's other lines.** No remote services port (modem), no
   environmental monitoring module, no console command strings (the logical
   console's request 20, which diagnostics such as EDKAX use); no console
@@ -1478,6 +1613,7 @@ make -C sim nocache              # same, with the cache forced to always miss
 make -C sim cputb                # CPU, aligner, MMU, I/O side and plain memory, for tests/mmu
                                  # (with generated RP07 disks and a Unibus test device)
 make -C sim fast                 # full system, optimised harder, for long runs
+make -C sim save                 # the same with checkpoints (Verilator --savable)
 make -C sim dutb && sim/obj_du/Vdecunit 20000   # the decimal unit against a C model
 make -C sim fputb && python3 sim/fpu_tb/vaxfp.py v.txt 20000 && sim/obj_fpu/Vfpunit v.txt
                                  # the floating point unit against an exact model
@@ -1527,8 +1663,16 @@ reset, `!Wn` waits n clocks, `!Lfile` loads another program over whatever is
 running, as *Load Program* does (`!L+wfile` / `!L+rfile` first wait until the
 CPU has a write / read cycle in flight, so that the load lands on one), and
 `!Bn` / `!Sn` set *Load Address* and *Start Address* (n is the OSD option's
-index: `!B0` is 1000, `!B1` 0; `!S1` is 200) for the loads after them, and
-`!Dfile@addr:n` writes n longwords of memory from addr (hex) into a file.
+index: `!B0` is 1000, `!B1` 0; `!S1` is 200) for the loads after them,
+`!Dfile@addr:n` writes n longwords of memory from addr (hex) into a file,
+and, with `sim/obj_save/Vtb_top`, `!Cfile` writes a checkpoint: the whole
+model, the bench's counters and console log, and copies of the mounted
+image files (`file.d0`, `file.d1`). `RESTORE=file` starts from it instead
+of powering up, with the images `DISK0` and `DISK1` name (the copies, if
+the run wrote to its images after the checkpoint), and goes on with
+`SESSION`; the program and key arguments are then not used. An operating
+system's boot that takes an hour to simulate is then run once, and what
+comes after it as often as needed.
 `PRELOAD=file@hexaddr` puts a file into memory after the memory test, as if an
 earlier program had left it there. `TTOLOG=file` writes everything the CPU
 sent to the console line into a file. `MEMDUMP=addr:count,...` prints memory

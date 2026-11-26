@@ -32,6 +32,8 @@
 //               another program (OSD Load Program, whatever is running;
 //               "!L+wfile" / "!L+rfile" first wait until the CPU has a
 //               write / read cycle in flight, so the load lands on one),
+//               "!Cfile" writes a checkpoint (make -C sim save; RESTORE=file
+//               starts from it, see save_state),
 //               "!Dfile@a:n" writes n longwords of memory from a (hex) into
 //               a file, "!Bn" sets the OSD Load Address (0 = 1000, 1 = 0, 2 = 200,
 //               3 = 10000), "!S0" / "!S1" the Start Address (load address
@@ -400,6 +402,196 @@ static bool wait_done(uint64_t budget, const char *pat, size_t from = std::strin
 	return tto_log.find(pat ? pat : "DONE", from) != std::string::npos;
 }
 
+// Checkpoints (a model built with --savable, make -C sim save): the whole
+// model, the bench's counters and console log, and a copy of each mounted
+// image file next to the checkpoint (file.d0, file.d1), taken when the HPS
+// side has no block request in flight. RESTORE=file starts from one
+// instead of powering up, with the images DISK0/DISK1 name (the copies, or
+// the images as they were then) and goes on with SESSION.
+#ifdef SAVABLE
+#include "verilated_save.h"
+static void save_state(const char *fn) {
+	while (!hps.quiet()) tick();
+	VerilatedSave os;
+	os.open(fn);
+	os << *tb;
+	os << cycles << nhit << nmiss << nrun << ninst << (uint32_t)halted_d
+	   << (uint32_t)state_d << (uint32_t)ps2_toggle << tto_log << uart_log;
+	os.close();
+	for (int u = 0; u < 2; u++) {
+		const char *spec = getenv(u ? "DISK1" : "DISK0");
+		if (!spec || !hps.disk[u].f) continue;
+		std::string src(spec);
+		if (src.size() > 3 && src.compare(src.size() - 3, 3, ":ro") == 0)
+			src.resize(src.size() - 3);
+		std::string dst = std::string(fn) + (u ? ".d1" : ".d0");
+		fflush(hps.disk[u].f);
+		std::string cmd = "cp --sparse=always '" + src + "' '" + dst + "'";
+		if (system(cmd.c_str()) != 0) printf("\n(could not copy %s)\n", src.c_str());
+	}
+	printf("\n[%llu] --- checkpoint written to %s\n", (unsigned long long)cycles, fn);
+}
+static void restore_state(const char *fn) {
+	VerilatedRestore os;
+	os.open(fn);
+	uint32_t hd, sd, pt;
+	os >> *tb;
+	os >> cycles >> nhit >> nmiss >> nrun >> ninst >> hd >> sd >> pt >> tto_log >> uart_log;
+	os.close();
+	halted_d = hd; state_d = sd; ps2_toggle = pt;
+	printf("[%llu] --- restored from %s\n", (unsigned long long)cycles, fn);
+}
+#else
+static void save_state(const char *) { printf("\n(checkpoints need make -C sim save)\n"); }
+#endif
+
+// SESSION: the steps of an interactive session (see the header)
+static void run_session() {
+	if (!getenv("SESSION")) return;
+	char *sc = strdup(getenv("SESSION"));
+	const char *bud2 = getenv("BUDGET");
+	uint64_t sbudget = bud2 ? strtoull(bud2, 0, 0) : 40000000ULL;
+	// "@text" looks for text printed after the last text typed began
+	// (a prompt that comes back at once is not missed) and after the
+	// last text it found
+	size_t mark = tto_log.size();
+	for (char *tok = strtok(sc, "|"); tok; tok = strtok(0, "|")) {
+		if (tok[0] == '@') {
+			bool ok = wait_done(sbudget, tok + 1, mark);
+			printf("\n[%llu] --- waiting for \"%s\": %s\n",
+			       (unsigned long long)cycles, tok + 1, ok ? "seen" : "NOT seen");
+			size_t at = tto_log.find(tok + 1, mark);
+			if (at != std::string::npos)
+				mark = at + strlen(tok + 1);
+			continue;
+		}
+		if (!strcmp(tok, "!R")) {               // OSD Reset
+			printf("\n[%llu] --- OSD reset\n", (unsigned long long)cycles);
+			tb->rst_sys = 1; run(100); tb->rst_sys = 0;
+			run(300000);
+			continue;
+		}
+		if (tok[0] == '!' && tok[1] == 'C') {   // !Cfile: checkpoint
+			save_state(tok + 2);
+			continue;
+		}
+		if (tok[0] == '!' && tok[1] == 'W') {   // !Wn: just run n clocks
+			run(strtoull(tok + 2, 0, 0));
+			continue;
+		}
+		if (tok[0] == '!' && tok[1] == 'D') {   // !Dfile@addr:count (hex):
+			// memory, count longwords from addr, into a file
+			char *at = strrchr(tok, '@');
+			if (!at) continue;
+			*at = 0;
+			unsigned a = strtoul(at + 1, 0, 16), n = 1;
+			if (const char *c = strchr(at + 1, ':')) n = strtoul(c + 1, 0, 16);
+			FILE *df = fopen(tok + 2, "wb");
+			if (!df) { perror(tok + 2); continue; }
+			for (unsigned k = 0; k < n; k++, a += 4) {
+				unsigned lo = R->tb_top__DOT__sdram__DOT__mem[(a >> 1) & 0xFFFFFF];
+				unsigned hi = R->tb_top__DOT__sdram__DOT__mem[((a >> 1) + 1) & 0xFFFFFF];
+				unsigned v = (hi << 16) | lo;
+				fwrite(&v, 4, 1, df);
+			}
+			fclose(df);
+			printf("\n[%llu] --- memory written to %s\n", (unsigned long long)cycles, tok + 2);
+			continue;
+		}
+		if (tok[0] == '!' && tok[1] == 'B') {   // !Bn: OSD Load Address n
+			tb->load_base = atoi(tok + 2);
+			continue;
+		}
+		if (tok[0] == '!' && tok[1] == 'S') {   // !S0, !S1: Start Address 200
+			tb->start_200 = atoi(tok + 2);
+			continue;
+		}
+		if (tok[0] == '!' && tok[1] == 'L') {   // !Lfile: OSD Load Program,
+			// with whatever is running; !L+wfile waits for a CPU write
+			// cycle to be in flight first, !L+rfile for a read cycle
+			if (tok[2] == '+' && (tok[3] == 'w' || tok[3] == 'r')) {
+				int want_w = tok[3] == 'w';
+				for (int i = 0; i < 50000000; i++) {
+					if (R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__cpu_stb &&
+					    R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__cpu_write == want_w)
+						break;
+					tick();
+				}
+				tok += 2;
+			}
+			FILE *lf = fopen(tok + 2, "rb");
+			if (!lf) { perror(tok + 2); continue; }
+			std::vector<unsigned char> ld;
+			int lc;
+			while ((lc = fgetc(lf)) != EOF) ld.push_back(lc);
+			fclose(lf);
+			printf("\n[%llu] --- loading %s (CPU state %d, stb %d, write %d,"
+			       " xpush %d)\n", (unsigned long long)cycles, tok + 2,
+			       R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__state,
+			       R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__cpu_stb,
+			       R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__cpu_write,
+			       R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__cpu_xpush);
+			download(ld);
+			continue;
+		}
+		printf("\n[%llu] --- typing: %s\n", (unsigned long long)cycles, tok);
+		mark = tto_log.size();
+		type(tok);
+		run(2000000);
+	}
+	free(sc);
+}
+
+// the end of a run: the screen, a frame, the counters, the logs
+static int finish(const char *ppm) {
+	dump_screen();
+	// wait for the cursor blink phase so the frame shows the cursor
+	while (!(R->tb_top__DOT__sys__DOT__term__DOT__frame & 16)) tick();
+	grab_frame(ppm);
+	printf("audio %d, cycles %llu\n", tb->audio, (unsigned long long)cycles);
+	printf("MiSTer UART captured %zu bytes; last line: ", uart_log.size());
+	{
+		size_t e = uart_log.find_last_not_of("\r\n");
+		size_t b = (e == std::string::npos) ? 0 : uart_log.find_last_of('\n', e);
+		for (size_t i = (b == std::string::npos ? 0 : b + 1); i <= e && i < uart_log.size(); i++)
+			putchar(uart_log[i] >= 0x20 ? uart_log[i] : '.');
+		putchar('\n');
+	}
+	printf("cache: %llu hits, %llu misses (%.1f%% hit rate)\n",
+	       (unsigned long long)nhit, (unsigned long long)nmiss,
+	       (nhit + nmiss) ? 100.0 * nhit / (nhit + nmiss) : 0.0);
+	printf("cpu: %llu instructions in %llu running clocks, CPI %.2f, %.3f MIPS at 50 MHz\n",
+	       (unsigned long long)ninst, (unsigned long long)nrun,
+	       ninst ? (double)nrun / ninst : 0.0,
+	       nrun ? 50.0 * ninst / nrun : 0.0);
+	if (itr) fclose(itr);
+	if (prof_on) prof_print();
+	if (const char *tl = getenv("TTOLOG")) {        // everything the CPU printed
+		FILE *f = fopen(tl, "wb");
+		if (f) { fwrite(tto_log.data(), 1, tto_log.size(), f); fclose(f); }
+	}
+	if (const char *md = getenv("MEMDUMP")) {       // addr:count,... (hex)
+		std::string spec(md);
+		size_t p = 0;
+		while (p < spec.size()) {
+			size_t e = spec.find(',', p);
+			std::string it = spec.substr(p, e == std::string::npos ? std::string::npos : e - p);
+			unsigned a = strtoul(it.c_str(), 0, 16), n = 1;
+			size_t c = it.find(':');
+			if (c != std::string::npos) n = strtoul(it.c_str() + c + 1, 0, 16);
+			for (unsigned k = 0; k < n; k++, a += 4) {
+				unsigned lo = R->tb_top__DOT__sdram__DOT__mem[(a >> 1) & 0xFFFFFF];
+				unsigned hi = R->tb_top__DOT__sdram__DOT__mem[((a >> 1) + 1) & 0xFFFFFF];
+				printf("M %08X %08X\n", a, (hi << 16) | lo);
+			}
+			if (e == std::string::npos) break;
+			p = e + 1;
+		}
+	}
+	delete tb;
+	return 0;
+}
+
 int main(int argc, char **argv) {
 	Verilated::commandArgs(argc, argv);
 	tb = new Vtb_top;
@@ -425,6 +617,13 @@ int main(int argc, char **argv) {
 	                  &tb->dk_buff_wr, {&tb->dk_buff_din0, &tb->dk_buff_din1},
 	                  &tb->img_mounted, &tb->img_readonly, &tb->img_size});
 	run(20);
+#ifdef SAVABLE
+	if (const char *rf = getenv("RESTORE")) {      // from a checkpoint
+		restore_state(rf);
+		run_session();
+		return finish(ppm);
+	}
+#endif
 	// after the first eval, so the model's initial block has already run
 	if (const char *mf = getenv("MEMFILL")) {
 		unsigned v = strtoul(mf, 0, 0), x = 0x12345678;
@@ -557,141 +756,6 @@ int main(int argc, char **argv) {
 		printf("\n[%llu] second run finished: %s\n", (unsigned long long)cycles, done ? "yes" : "NO");
 	}
 
-	if (getenv("SESSION")) {
-		char *sc = strdup(getenv("SESSION"));
-		const char *bud2 = getenv("BUDGET");
-		uint64_t sbudget = bud2 ? strtoull(bud2, 0, 0) : 40000000ULL;
-		// "@text" looks for text printed after the last text typed began
-		// (a prompt that comes back at once is not missed) and after the
-		// last text it found
-		size_t mark = tto_log.size();
-		for (char *tok = strtok(sc, "|"); tok; tok = strtok(0, "|")) {
-			if (tok[0] == '@') {
-				bool ok = wait_done(sbudget, tok + 1, mark);
-				printf("\n[%llu] --- waiting for \"%s\": %s\n",
-				       (unsigned long long)cycles, tok + 1, ok ? "seen" : "NOT seen");
-				size_t at = tto_log.find(tok + 1, mark);
-				if (at != std::string::npos)
-					mark = at + strlen(tok + 1);
-				continue;
-			}
-			if (!strcmp(tok, "!R")) {               // OSD Reset
-				printf("\n[%llu] --- OSD reset\n", (unsigned long long)cycles);
-				tb->rst_sys = 1; run(100); tb->rst_sys = 0;
-				run(300000);
-				continue;
-			}
-			if (tok[0] == '!' && tok[1] == 'W') {   // !Wn: just run n clocks
-				run(strtoull(tok + 2, 0, 0));
-				continue;
-			}
-			if (tok[0] == '!' && tok[1] == 'D') {   // !Dfile@addr:count (hex):
-				// memory, count longwords from addr, into a file
-				char *at = strrchr(tok, '@');
-				if (!at) continue;
-				*at = 0;
-				unsigned a = strtoul(at + 1, 0, 16), n = 1;
-				if (const char *c = strchr(at + 1, ':')) n = strtoul(c + 1, 0, 16);
-				FILE *df = fopen(tok + 2, "wb");
-				if (!df) { perror(tok + 2); continue; }
-				for (unsigned k = 0; k < n; k++, a += 4) {
-					unsigned lo = R->tb_top__DOT__sdram__DOT__mem[(a >> 1) & 0xFFFFFF];
-					unsigned hi = R->tb_top__DOT__sdram__DOT__mem[((a >> 1) + 1) & 0xFFFFFF];
-					unsigned v = (hi << 16) | lo;
-					fwrite(&v, 4, 1, df);
-				}
-				fclose(df);
-				printf("\n[%llu] --- memory written to %s\n", (unsigned long long)cycles, tok + 2);
-				continue;
-			}
-			if (tok[0] == '!' && tok[1] == 'B') {   // !Bn: OSD Load Address n
-				tb->load_base = atoi(tok + 2);
-				continue;
-			}
-			if (tok[0] == '!' && tok[1] == 'S') {   // !S0, !S1: Start Address 200
-				tb->start_200 = atoi(tok + 2);
-				continue;
-			}
-			if (tok[0] == '!' && tok[1] == 'L') {   // !Lfile: OSD Load Program,
-				// with whatever is running; !L+wfile waits for a CPU write
-				// cycle to be in flight first, !L+rfile for a read cycle
-				if (tok[2] == '+' && (tok[3] == 'w' || tok[3] == 'r')) {
-					int want_w = tok[3] == 'w';
-					for (int i = 0; i < 50000000; i++) {
-						if (R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__cpu_stb &&
-						    R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__cpu_write == want_w)
-							break;
-						tick();
-					}
-					tok += 2;
-				}
-				FILE *lf = fopen(tok + 2, "rb");
-				if (!lf) { perror(tok + 2); continue; }
-				std::vector<unsigned char> ld;
-				int lc;
-				while ((lc = fgetc(lf)) != EOF) ld.push_back(lc);
-				fclose(lf);
-				printf("\n[%llu] --- loading %s (CPU state %d, stb %d, write %d,"
-				       " xpush %d)\n", (unsigned long long)cycles, tok + 2,
-				       R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__state,
-				       R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__cpu_stb,
-				       R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__cpu_write,
-				       R->tb_top__DOT__sys__DOT__core__DOT__cpu__DOT__cpu_xpush);
-				download(ld);
-				continue;
-			}
-			printf("\n[%llu] --- typing: %s\n", (unsigned long long)cycles, tok);
-			mark = tto_log.size();
-			type(tok);
-			run(2000000);
-		}
-		free(sc);
-	}
-
-	dump_screen();
-	// wait for the cursor blink phase so the frame shows the cursor
-	while (!(R->tb_top__DOT__sys__DOT__term__DOT__frame & 16)) tick();
-	grab_frame(ppm);
-	printf("audio %d, cycles %llu\n", tb->audio, (unsigned long long)cycles);
-	printf("MiSTer UART captured %zu bytes; last line: ", uart_log.size());
-	{
-		size_t e = uart_log.find_last_not_of("\r\n");
-		size_t b = (e == std::string::npos) ? 0 : uart_log.find_last_of('\n', e);
-		for (size_t i = (b == std::string::npos ? 0 : b + 1); i <= e && i < uart_log.size(); i++)
-			putchar(uart_log[i] >= 0x20 ? uart_log[i] : '.');
-		putchar('\n');
-	}
-	printf("cache: %llu hits, %llu misses (%.1f%% hit rate)\n",
-	       (unsigned long long)nhit, (unsigned long long)nmiss,
-	       (nhit + nmiss) ? 100.0 * nhit / (nhit + nmiss) : 0.0);
-	printf("cpu: %llu instructions in %llu running clocks, CPI %.2f, %.3f MIPS at 50 MHz\n",
-	       (unsigned long long)ninst, (unsigned long long)nrun,
-	       ninst ? (double)nrun / ninst : 0.0,
-	       nrun ? 50.0 * ninst / nrun : 0.0);
-	if (itr) fclose(itr);
-	if (prof_on) prof_print();
-	if (const char *tl = getenv("TTOLOG")) {        // everything the CPU printed
-		FILE *f = fopen(tl, "wb");
-		if (f) { fwrite(tto_log.data(), 1, tto_log.size(), f); fclose(f); }
-	}
-	if (const char *md = getenv("MEMDUMP")) {       // addr:count,... (hex)
-		std::string spec(md);
-		size_t p = 0;
-		while (p < spec.size()) {
-			size_t e = spec.find(',', p);
-			std::string it = spec.substr(p, e == std::string::npos ? std::string::npos : e - p);
-			unsigned a = strtoul(it.c_str(), 0, 16), n = 1;
-			size_t c = it.find(':');
-			if (c != std::string::npos) n = strtoul(it.c_str() + c + 1, 0, 16);
-			for (unsigned k = 0; k < n; k++, a += 4) {
-				unsigned lo = R->tb_top__DOT__sdram__DOT__mem[(a >> 1) & 0xFFFFFF];
-				unsigned hi = R->tb_top__DOT__sdram__DOT__mem[((a >> 1) + 1) & 0xFFFFFF];
-				printf("M %08X %08X\n", a, (hi << 16) | lo);
-			}
-			if (e == std::string::npos) break;
-			p = e + 1;
-		}
-	}
-	delete tb;
-	return 0;
+	run_session();
+	return finish(ppm);
 }

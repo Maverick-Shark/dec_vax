@@ -238,7 +238,14 @@ EVKAE, because the tests and any operating system need them:
   references at PCBB: the four stack pointers, R0-R13, PC and PSL, P0BR,
   P0LR with ASTLVL in bits 26:24, P1BR, P1LR. LDPCTX leaves the CPU on the
   kernel stack with PC and PSL of the new process pushed for the REI; SVPCTX
-  pops them and moves to the interrupt stack.
+  pops them and moves to the interrupt stack. LDPCTX executed on the kernel
+  stack is UNDEFINED in the SRM, and NetBSD does exactly that when a soft
+  interrupt gives the CPU back (`softint_process` in its
+  `sys/arch/vax/vax/subr.S`): there SP is not saved in ISP, only on the
+  interrupt stack, as the reference simulator does. Saving it, as the SRM's
+  operation text reads, makes ISP point into the soft interrupt's kernel
+  stack, and the next hardware interrupt overwrites the locals of the next
+  soft interrupt (t65).
 * **REI** with all the checks of SRM 5.7 (a reserved operand fault for a PSL
   with must-be-zero bits set, a return to a more privileged mode, PRV_MOD
   more privileged than CUR_MOD, the interrupt stack outside kernel mode or
@@ -357,9 +364,24 @@ Found with EVKAB, or while adding the arithmetic traps, and fixed:
   that wraps the field back into P0 space is legal. The microcode now has a
   flag for it (savpsw\<5:4\>).
 
+Found by NetBSD (README_MiSTer.md, *Booting NetBSD*), and fixed:
+
+* The read of a modify operand (ADDL2 R2,(R1)) carries write intent, as it
+  must, but `cpu.v` set the flag again when it came back to take the data,
+  and left it standing: the next reference went out with write intent too.
+  When that was an instruction fetch from a page the mode may only read - a
+  program's text, UR - the CPU took an access-control violation on its own
+  instruction stream, parameter 4, at the next instruction. NetBSD's
+  dynamic linker relocates a shared library with such ADDL2s, and `init`
+  never got past it. Write intent is now set for the reads alone, and an
+  instruction fetch never has it (t66).
+* LDPCTX on the kernel stack saved SP in ISP (see LDPCTX above; t65).
+
 ## How it was checked
 
-`tests/mmu/` holds 47 test programs in VAX assembler (assembled by
+`tests/mmu/` holds test programs in VAX assembler (those of this
+document below; the I/O ones are in [IO.md](IO.md), compatibility mode's in
+[CMODE.md](CMODE.md); assembled by
 `tools/vasm.py`). `tests/mmu/run.py` runs each one on the reference
 simulator and on a CPU-level test bench (`sim/cpu_tb/`: cpu, vcache, mmu and 8 MB of plain
 memory), and compares R0-R14, PSL, PC after the final HALT, and the memory
@@ -412,6 +434,8 @@ fault, its parameter, VA, PC, PSL and the PSL the handler ran with.
 | t41_octa | The two-byte (FD) opcodes and octaword operands: CLRO, MOVO, MOVAO, PUSHAO in every addressing mode; an opcode split across a page boundary; a destination running into an invalid page; AP, FP, SP as octaword registers (reserved addressing mode); undefined FD opcodes ([FPU.md](FPU.md)) |
 | t42_fpf, t43_fpd, t44_fpg, t45_fph | The F, D, G and H floating point instructions on random operands, with every floating exception and the integer overflow trap (generated: `tests/mmu/gen/mk_fp.py`) |
 | t46_fpexc | Floating faults in detail: frames, registers put back, TP with trace, CVTR's halves, dirty zeros, destinations and a POLY table running into an invalid page |
+| t65_ldpks | LDPCTX on the kernel stack, as NetBSD's soft interrupts use it: ISP stays where it was |
+| t66_acvmod | Access-control violations on modify operands (ADDL2, INCL, BISL2) and on a destination after a source on the same page; from user mode, NetBSD's relocation loop on a UR page with its code on a UR page: one fault, no write intent left for the instruction fetches |
 
 ```
 make -C sim cputb                 # the CPU test bench

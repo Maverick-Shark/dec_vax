@@ -34,7 +34,12 @@
 //            write check upper/lower byte, <08> missed transfer, <07>
 //            Massbus exception, <04> invalid map, <02> read data
 //            substitute, <01> interface sequence timeout; written 1 to
-//            clear
+//            clear, but for <16>, which is the Massbus ATTN line itself
+//            (the drives' ATA bits): TD table 3-6 gives it no other way
+//            to clear, and it goes when the drives' ATA bits are cleared
+//            (NetBSD's and 4.3BSD's interrupt routines write SR back
+//            before they clear AS, and a bit that stayed would interrupt
+//            again with nothing to do)
 //    0C VAR  <16:9> map pointer, <8:0> byte offset
 //    10 BCR  <31:16> Massbus byte counter (read only), <15:0> SBI byte
 //            counter; a write loads the 2's complement of the byte count
@@ -180,9 +185,10 @@ module vax_mba #(
 	/* -------------------------------------------------------- registers */
 	reg         csr_pu, csr_pd;
 	reg         cr_mm, cr_ie, cr_abort;
-	reg         sr_dtbusy, sr_nrconf, sr_pge, sr_ned, sr_attn, sr_dtcomp,
+	reg         sr_dtbusy, sr_nrconf, sr_pge, sr_ned, sr_dtcomp,
 	            sr_dtabt, sr_dlt, sr_wcku, sr_wckl, sr_mxf, sr_mbexc,
 	            sr_invmap, sr_rds, sr_istmo;
+	wire        sr_attn = mb_attn;   // SR<16>: the Massbus ATTN line
 	reg  [16:0] var_r;
 	reg  [15:0] sbc, mbc;            // SBI and Massbus byte counters
 	reg  [10:0] dr_rw;               // DR<31:21>
@@ -316,7 +322,7 @@ module vax_mba #(
 			csr_pu <= 1'b0; csr_pd <= 1'b0;
 			cr_mm <= 1'b0; cr_ie <= 1'b0; cr_abort <= 1'b0;
 			sr_dtbusy <= 1'b0; sr_nrconf <= 1'b0; sr_pge <= 1'b0;
-			sr_ned <= 1'b0; sr_attn <= 1'b0; sr_dtcomp <= 1'b0;
+			sr_ned <= 1'b0; sr_dtcomp <= 1'b0;
 			sr_dtabt <= 1'b0; sr_dlt <= 1'b0; sr_wcku <= 1'b0;
 			sr_wckl <= 1'b0; sr_mxf <= 1'b0; sr_mbexc <= 1'b0;
 			sr_invmap <= 1'b0; sr_rds <= 1'b0; sr_istmo <= 1'b0;
@@ -336,10 +342,6 @@ module vax_mba #(
 		end else begin
 			if (!sbi_cmd)
 				taken <= 1'b0;
-
-			// attention from the Massbus (TD table 3-6: set by the line)
-			if (mb_attn)
-				sr_attn <= 1'b1;
 
 			/* ------------------------ CPU commands for this nexus */
 			if (go_cmd) begin
@@ -412,7 +414,7 @@ module vax_mba #(
 								cr_ie <= 1'b0; cr_abort <= 1'b0;
 								sr_dtbusy <= 1'b0; sr_nrconf <= 1'b0;
 								sr_pge <= 1'b0; sr_ned <= 1'b0;
-								sr_attn <= 1'b0; sr_dtcomp <= 1'b0;
+								sr_dtcomp <= 1'b0;
 								sr_dtabt <= 1'b0; sr_dlt <= 1'b0;
 								sr_wcku <= 1'b0; sr_wckl <= 1'b0;
 								sr_mxf <= 1'b0; sr_mbexc <= 1'b0;
@@ -438,7 +440,6 @@ module vax_mba #(
 							if (sbi_wdat[30]) sr_nrconf <= 1'b0;
 							if (sbi_wdat[19]) sr_pge    <= 1'b0;
 							if (sbi_wdat[18]) sr_ned    <= 1'b0;
-							if (sbi_wdat[16]) sr_attn   <= 1'b0;
 							if (sbi_wdat[13]) sr_dtcomp <= 1'b0;
 							if (sbi_wdat[12]) sr_dtabt  <= 1'b0;
 							if (sbi_wdat[11]) sr_dlt    <= 1'b0;

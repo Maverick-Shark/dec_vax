@@ -27,9 +27,9 @@ L.put(0x80000123, 0x801FFFFF, 0x001FFFFF, 0x801FFFFF, 0x001FFFFF, 0x80000123)
 L.put(0x2022, 0x0180, 0x0800, 0x1001, 0, 0x3F7F, 0x3FF, 0xDC00, 0x2022, 0)
 # register 20: ILR, the read returns 0 with SR<31:16> (attention: the
 # drive's ATA, set by the error); ER1 ILR; DS ATA|ERR|DPR|DRY; AS bit 0;
-# SR<16>; after drive clear ER1 0 but SR<16> stays until cleared
+# SR<16>; drive clear clears ATA, and SR<16>, the ATTN line, goes with it
 L.put(0x00010000, 0x00010002, 0x0001C180, 0x00010001, 0x00010000,
-      0x00010000, 0, 0x0180)
+      0x00000000, 0, 0x0180)
 # unit 2: no TRA in 1.5 us, NED (SR<18>), the data 0; a write too
 L.put(0x00040000, 0x00040000, 0x00040000, 0)
 # a word read: error confirmation (TD 4.2.7) - a machine check, SBIER<08>,

@@ -1786,12 +1786,20 @@ if (debug)$fdisplay(32'h80000002, "ARG_READ2: arg_read_add %x indir_OA %x lit %d
 					state <= `ARG_READ;
 				end
 			end else if (arg_aR) begin
-				/* memory: the longwords one after the other */
+				/*
+				 * memory: the longwords one after the other. A
+				 * modify operand is read with write intent - only
+				 * the reads: this state comes back to take each
+				 * longword read, and write intent left standing
+				 * then went with the next reference, an instruction
+				 * fetch on a read-only page of a program's text
+				 * among them (a spurious access-control violation).
+				 */
 				cpu_size <= a_argsz;
-				cpu_wint <= arg_aW;	/* modify operand */
 				rmemstate <= `RMEM_ARG_READ;
 				if (!arg_rd) begin
 					cpu_addr <= arg_read_add;
+					cpu_wint <= arg_aW;
 					arg_rd <= 1;
 					state <= `S_READMEM;
 				end else begin
@@ -1804,6 +1812,7 @@ if (debug)$fdisplay(32'h80000002, "ARG_READ2: arg_read_add %x indir_OA %x lit %d
 					if (arg_wd != arg_last_wd) begin
 						arg_wd <= arg_wd + 2'd1;
 						cpu_addr <= arg_read_add + 32'd4;
+						cpu_wint <= arg_aW;
 						if (arg_wd == 2'd0)
 							OAu <= arg_read_add + 32'd4;
 						state <= `S_READMEM;
@@ -2267,9 +2276,10 @@ if (debug) $fdisplay(32'h80000002, "MCODE: ctr %d mc_rv %x\r", mcodectr, mc_rv);
 
 		`S_FILLUP: begin
 //if (debug) $fdisplay(32'h80000002, "FILLUP%d: addr %x acki %d isvalid %d dati %x\r\n", dcount, { curpc[31:2], 2'b00 }, cpu_acki, isvalid, CPU_DAT_I);
-			/* Fetch new longword */
+			/* Fetch new longword: a read, never with write intent */
 			cpu_addr <= { curpc[31:2], 2'b00 };
 			cpu_write <= 0;
+			cpu_wint <= 0;
 			cpu_stb <= 1;
 			cpu_size <= `O_LONG;
 			if (cpu_acki) begin

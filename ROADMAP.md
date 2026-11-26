@@ -19,7 +19,8 @@ the OSD and the Diagnostic Supervisor from an RP07, with the 8600's console
 registers; the exercisers load from the disk. Then PDP-11 compatibility
 mode (planned for M11), which the 8600 has: DEC's compatibility mode
 exerciser, EVKAD, passes, and so does EVKAE in full, on the board too.
-Next: NetBSD, the rest of M9, then OpenVMS (M10).
+Next: NetBSD, the rest of M9 - it boots single user in simulation, and
+found three bugs in the core on the way - then OpenVMS (M10).
 
 Relative size: **S** a change in one module, **M** a new module or a block of
 microcode, **L** a subsystem, **XL** the largest pieces.
@@ -366,13 +367,27 @@ pass on the DE10-Nano.
   logical console's "clear warm start", "clear cold start" and "reboot"
   requests through TXCS and TXDB; EHSR cleared after a machine check; the
   interval timer and TODR. The console RL02 driver only takes SCB vector F0
-  until it is used. The core has all of these. The installation is the
-  hard part: NetBSD's install ISO has been reported not to boot on the
-  11/780 and 8600 simulators since a change of 2017-2019 (port-vax, March
-  2024), while installed disks boot there. So the RP07 image is made on the
-  reference simulator - installed from the ISO, with RP07 geometry in its
-  label and NetBSD's boot block - and checked there, then booted on the
-  core.
+  until it is used. The core has all of these. Done: the RP07 image,
+  `tools/netbsd/mkimage.py`. NetBSD's install ISO does not boot on the
+  reference simulator's 11/780 and 8600 (its `/boot` corrupts the kernel it
+  reads from the CD; port-vax, March 2024), so the script installs on the
+  simulator's MicroVAX 3900 onto an RA92 labelled with the RP07's geometry,
+  cuts that to an RP07 image and boots it once on the 8600 model, to the
+  login prompt. Two bugs in NetBSD 11.0 keep it from using any Massbus disk
+  (`hp.c` reads the label through partition `a`, `disksubr.c` indexes a
+  page table with a byte address); `tools/netbsd/nbpatch.py` patches both
+  into the kernel. Then NetBSD found three bugs in the core, all fixed with
+  a test: the RH780's SR<16> was a latch instead of the ATTN line (t51,
+  t52); LDPCTX executed on the kernel stack - undefined in the SRM, and how
+  NetBSD's soft interrupts give the CPU back - saved SP in ISP (t65); and
+  the write intent of a modify operand's read stayed on for the next
+  reference, so an instruction fetch from a read-only page took an
+  access-control violation (t66). README_MiSTer.md, *Booting NetBSD*, has
+  the story and how to boot it. In the full-system simulation NetBSD now
+  boots single user and runs `ls /` with the reference simulator's output
+  (41 million instructions; the model runs some 5 000 a second, and `make
+  -C sim save` adds checkpoints for runs like this); multi-user is for the
+  board.
 
 **Done when:** the Diagnostic Supervisor's exercisers pass and NetBSD boots
 multi-user.
@@ -418,7 +433,7 @@ multi-user.
 | Program | What it exercises | When |
 |---|---|---|
 | EVKAA V8.0 | basic instructions | passes now |
-| `tests/mmu` (65 programs) | memory management, faults and restart, FPD, PROBE, LDPCTX/SVPCTX, REI, CHMx, BPT, XFC, halt codes, IPRs, reserved addressing modes, CASE, BBx, ACB, arithmetic traps, trace, the string, queue and decimal instructions, the octaword and floating point instructions (random operands), the I/O side, PDP-11 compatibility mode (random operands too), compared with the reference simulator | pass now |
+| `tests/mmu` (67 programs) | memory management, faults and restart, FPD, PROBE, LDPCTX/SVPCTX (also LDPCTX on the kernel stack, as NetBSD uses it), REI, CHMx, BPT, XFC, halt codes, IPRs, reserved addressing modes, CASE, BBx, ACB, arithmetic traps, trace, the string, queue and decimal instructions, the octaword and floating point instructions (random operands), the I/O side, PDP-11 compatibility mode (random operands too), compared with the reference simulator | pass now |
 | `software/mmutest.bin` | the same programs on the core itself, self-checking | passes on the full-system model and on the board |
 | EVKAB (Basic Instructions Exerciser) | every integer, branch, bit field, queue, character string and decimal instruction, with every addressing mode, page faults on the operands, timer interrupts and trace | all 161 tests pass under the Diagnostic Supervisor image, and loaded from the RP07 (QUICK in simulation, in full on the board) |
 | EVKAC (Floating Point Instructions Exerciser) | every floating point instruction of the four formats, with every addressing mode, page faults on the operands and timer interrupts | all 98 tests pass under the Diagnostic Supervisor image, with the QUICK flag and without it (page faults on the operands), and loaded from the RP07 (QUICK in simulation, in full on the board) |
@@ -428,7 +443,7 @@ multi-user.
 | SVK | MMU, SCB, interval timer and console interrupts, software interrupts, SVPCTX/LDPCTX | M5 |
 | Random-operand comparison with the reference simulator | decimal, string, floating point (done) | M6, M7 |
 | EDSAA + EVKAB, EVKAC, EVKAD, EVKAE | DEC's own exercisers under the 8600 Diagnostic Supervisor, booted from the RP07 | M9: the supervisor boots from the RP07 (simulation and board) and loads the four exercisers from it, which pass |
-| NetBSD/vax | a complete OS | M9 |
+| NetBSD/vax | a complete OS | M9: single user and `ls /` in the full-system simulation; multi-user on the board next |
 | OpenVMS VAX 7.3 | the goal | M10 |
 
 ## SVK, the vax-kernel repository
