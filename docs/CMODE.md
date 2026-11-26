@@ -160,6 +160,8 @@ PDP-11 code, is 635 million clocks on the full system: 12.7 seconds.
   RP07 and loaded from it, in the full-system simulation: 0 errors detected
   (README_MiSTer.md, *Running EVKAD*). `software/mmutest.bin` runs t61-t64
   on the core itself.
+* On the board, the build of 24 November 2026: EVKAD and all eleven tests
+  of EVKAE pass, loaded from the RP07, and so do `mmutest.bin`'s t61-t64.
 
 ## Files
 

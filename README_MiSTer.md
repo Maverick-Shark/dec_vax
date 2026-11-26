@@ -29,10 +29,8 @@ point exerciser, all of its 98, **EVKAD**, the compatibility mode
 exerciser, all of its 4, and **EVKAE**, the privileged architecture
 exerciser, all of its 11 (see *Running the Diagnostic Supervisor and
 EVKAE*, *Running EVKAB*, *Running EVKAC* and *Running EVKAD*). On the board,
-the build of 21 November 2026 boots the supervisor from the disk and passes
-EVKAB and EVKAC in full and EVKAE's tests 1-2 and 4-11 (that build has no
-compatibility mode yet); EVKAD and EVKAE's test 3 pass in the full-system
-simulation.
+the build of 24 November 2026 boots the supervisor from the disk and passes
+all four in full (EVKAB and EVKAC without QUICK), and `mmutest.bin`.
 The 8600's **I/O side** is there too: the physical address memory map,
 SBIA 0 with its interrupts and DMA, the 8600's machine checks, an **RH780
 Massbus adapter with two RP07 disks** whose contents are disk images on the
@@ -910,8 +908,8 @@ it, as below. A program loaded on the core is byte for byte what the
 reference simulator loads from the same disk, and in the full-system
 simulation, booted and loaded from the disk, EVKAE's 11 tests, EVKAB's
 161, EVKAC's 98 (these two with `SET FLAGS QUICK`) and EVKAD's 4 all end in
-`0 errors detected`, as from the images below. On the board EVKAB and
-EVKAC pass in full, without QUICK.
+`0 errors detected`, as from the images below. On the board (the build of
+24 November 2026) all four pass in full, EVKAB and EVKAC without QUICK.
 
 **From a memory image.** Before the core could boot from a disk,
 `tests/evkae/mkdsimage.py` did the booting in a VAX 8600 simulator on the
@@ -1165,7 +1163,9 @@ DS>
 (captured from the full-system simulation, booted and loaded from the
 RP07). EVKAD's run is 635 million clocks, 12.7 seconds on the core - the
 supervisor's clock agrees - most of it test 2. EVKAE's test 3, the REI
-test, returns to compatibility mode too and passes with it.
+test, returns to compatibility mode too and passes with it. The board
+gives the same (the build of 24 November 2026), with EVKAE's `START`
+running all eleven tests.
 
 ## Testing the memory management and the privileged architecture on the core
 

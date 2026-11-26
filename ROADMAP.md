@@ -18,7 +18,8 @@ the DW780 Unibus adapter. Then M9: the core boots like an 8600, VMB from
 the OSD and the Diagnostic Supervisor from an RP07, with the 8600's console
 registers; the exercisers load from the disk. Then PDP-11 compatibility
 mode (planned for M11), which the 8600 has: DEC's compatibility mode
-exerciser, EVKAD, passes, and so does EVKAE in full.
+exerciser, EVKAD, passes, and so does EVKAE in full, on the board too.
+Next: NetBSD, the rest of M9, then OpenVMS (M10).
 
 Relative size: **S** a change in one module, **M** a new module or a block of
 microcode, **L** a subsystem, **XL** the largest pieces.
@@ -78,10 +79,10 @@ OpenVMS VAX 7.3, the last VAX release, still supports the 8600.
   simulator models the 8600 differently; `software/mmutest.bin` runs them on
   the core, in simulation and on the board. DEC's exercisers run under the
   8600 Diagnostic Supervisor, booted from the RP07 and loaded from it:
-  **EVKAB** (basic instructions, 161 tests), **EVKAC** (floating point, 98)
-  and **EVKAE** (privileged architecture, 11) pass on the board, and in
-  simulation **EVKAD** (compatibility mode, 4) and EVKAE's test 3, which
-  needs compatibility mode, pass too (README_MiSTer.md).
+  **EVKAB** (basic instructions, 161 tests), **EVKAC** (floating point,
+  98), **EVKAD** (compatibility mode, 4) and **EVKAE** (privileged
+  architecture, 11) all pass, in simulation and on the board
+  (README_MiSTer.md).
 - 16 KB cache in M10K, SDRAM controller with read-phase calibration, power-on
   memory test, on-screen VT terminal with USB keyboard, MiSTer UART, program
   loader with autostart, and r-vax's hardware console monitor (`>` prompt).
@@ -346,12 +347,32 @@ pass on the DE10-Nano.
   disk pass as their images do, and so they do on the board (the build of
   21 November 2026: EVKAB and EVKAC in full, without QUICK, and EVKAE's
   tests 1-2 and 4-11). With compatibility mode (below) EVKAD and EVKAE's
-  test 3 pass too, in simulation. Before that, `tests/evkae/mkdsimage.py` brought the supervisor over
+  test 3 pass too, in simulation and on the board (the build of 24
+  November 2026). Before that, `tests/evkae/mkdsimage.py` brought the supervisor over
   as a memory image taken from a simulator at its `DS>` prompt, with any of
   the four exercisers loaded; that is how EVKAB, EVKAC and EVKAE ran, and
   the images still work.
-- NetBSD/vax: its kernel supports the 8600 (`options VAX8600`, two SBIs on the
-  ABus, Massbus disks). A complete, free OS as the rehearsal before VMS.
+- NetBSD/vax, the rehearsal before VMS: a complete, free OS whose kernel
+  still supports the 8600 (NetBSD 11.0, July 2026: `options VAX8600`,
+  `abus0 at mainbus0`, `sbi* at abus0`, `mba* at sbi?`, `hp* at mba?` in
+  GENERIC; `sys/arch/vax/vax/ka860.c`). It boots differently from VMS: VMB
+  with R5<3> (the OSD's *Boot Flags* `8 Boot block`) reads LBN 0 of the
+  RP07, NetBSD's boot block (`xxboot`, which VMB enters at offset 8) reads
+  LBNs 1-15 through VMB's QIO routine and loads `/boot`, and `/boot` reads
+  the kernel with its own RH780 driver. What the kernel asks of an 8600,
+  read from its source: SID type 4; SBIA 0's configuration register at
+  2008 0000 and a machine check for the absent SBIA 1; machine checks for
+  the empty SBI nexus slots; CSWP and MERG at start, ACCS (no FPA); the
+  logical console's "clear warm start", "clear cold start" and "reboot"
+  requests through TXCS and TXDB; EHSR cleared after a machine check; the
+  interval timer and TODR. The console RL02 driver only takes SCB vector F0
+  until it is used. The core has all of these. The installation is the
+  hard part: NetBSD's install ISO has been reported not to boot on the
+  11/780 and 8600 simulators since a change of 2017-2019 (port-vax, March
+  2024), while installed disks boot there. So the RP07 image is made on the
+  reference simulator - installed from the ISO, with RP07 geometry in its
+  label and NetBSD's boot block - and checked there, then booted on the
+  core.
 
 **Done when:** the Diagnostic Supervisor's exercisers pass and NetBSD boots
 multi-user.
@@ -379,7 +400,9 @@ multi-user.
   mode exceptions (SCB 30), the odd address abort, trace, memory management
   faults with restart. Only the RSX application layer uses it, and VMS runs
   without it, but the 8600 has it: EVKAD and EVKAE's REI test (test 3)
-  pass with it.
+  pass with it, in simulation and on the board (the build of 24 November
+  2026, which meets timing with 1.77 ns of setup slack and uses 64 % of
+  the ALMs).
 - The 8600 console's own command language (`>>>`, BOOT, EXAMINE, DEPOSIT,
   CONTINUE, HALT), replacing r-vax's minimal monitor.
 - Console RL02 (`CSA1:`) through STXCS/STXDB.
@@ -399,12 +422,12 @@ multi-user.
 | `software/mmutest.bin` | the same programs on the core itself, self-checking | passes on the full-system model and on the board |
 | EVKAB (Basic Instructions Exerciser) | every integer, branch, bit field, queue, character string and decimal instruction, with every addressing mode, page faults on the operands, timer interrupts and trace | all 161 tests pass under the Diagnostic Supervisor image, and loaded from the RP07 (QUICK in simulation, in full on the board) |
 | EVKAC (Floating Point Instructions Exerciser) | every floating point instruction of the four formats, with every addressing mode, page faults on the operands and timer interrupts | all 98 tests pass under the Diagnostic Supervisor image, with the QUICK flag and without it (page faults on the operands), and loaded from the RP07 (QUICK in simulation, in full on the board) |
-| EVKAE (Privileged Architecture Exerciser) | interrupts, exceptions, REI, CHMx, IPRs, interval timer, memory management, kernel stack not valid, PROBE, LDPCTX/SVPCTX - DEC's own test of the MMU work | all 11 tests pass in simulation, loaded from the RP07 or as an image; on the board 10 (test 3 needs compatibility mode, which the board build has not got yet) |
-| EVKAD (Compatibility Mode Instructions Exerciser) | REI into compatibility mode and the exceptions out of it, the single and double operand and program control instructions | its 4 tests pass in simulation, loaded from the RP07 |
+| EVKAE (Privileged Architecture Exerciser) | interrupts, exceptions, REI, CHMx, IPRs, interval timer, memory management, kernel stack not valid, PROBE, LDPCTX/SVPCTX - DEC's own test of the MMU work | all 11 tests pass, in simulation (loaded from the RP07 or as an image) and on the board |
+| EVKAD (Compatibility Mode Instructions Exerciser) | REI into compatibility mode and the exceptions out of it, the single and double operand and program control instructions | its 4 tests pass, loaded from the RP07, in simulation and on the board |
 | Own C and assembler tests | each new instruction and exception, traced against the reference simulator | from M3 |
 | SVK | MMU, SCB, interval timer and console interrupts, software interrupts, SVPCTX/LDPCTX | M5 |
 | Random-operand comparison with the reference simulator | decimal, string, floating point (done) | M6, M7 |
-| EDSAA + EVKAB, EVKAC, EVKAD, EVKAE | DEC's own exercisers under the 8600 Diagnostic Supervisor, booted from the RP07 | M9: the supervisor boots from the RP07 (simulation and board) and loads the four exercisers from it, which pass (EVKAD and EVKAE's test 3 in simulation so far) |
+| EDSAA + EVKAB, EVKAC, EVKAD, EVKAE | DEC's own exercisers under the 8600 Diagnostic Supervisor, booted from the RP07 | M9: the supervisor boots from the RP07 (simulation and board) and loads the four exercisers from it, which pass |
 | NetBSD/vax | a complete OS | M9 |
 | OpenVMS VAX 7.3 | the goal | M10 |
 

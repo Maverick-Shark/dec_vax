@@ -15,9 +15,9 @@ Status: complete. 47 directed tests give the same results as the reference
 simulator (or, where it departs from the SRM, the SRM's); EVKAA,
 `hello.bin` and `bench.bin` still pass; the Quartus build meets timing and
 the memory management tests pass on the board. DEC's EVKAE, under the 8600
-Diagnostic Supervisor, passes its 11 tests in simulation (test 3 since
-PDP-11 compatibility mode, [CMODE.md](CMODE.md)), and on the board but for
-test 3 with the builds before compatibility mode.
+Diagnostic Supervisor, passes its 11 tests in simulation and on the board
+(test 3 since PDP-11 compatibility mode, [CMODE.md](CMODE.md); on the board
+since the build of 24 November 2026).
 
 ## Sources
 
