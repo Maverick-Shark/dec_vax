@@ -88,6 +88,8 @@ module tb_cpu #(
 		.tti_rx     (1'b1),
 		.halt_req   (1'b0),
 		.con_boot   (1'b0),
+		.TODR_LD_I  (1'b0),
+		.TODR_I     (32'd0),
 		.cpu_halted (halted),
 		.cpu_mcheck (mcheck),
 		.IO_ERR_I   (io_err),

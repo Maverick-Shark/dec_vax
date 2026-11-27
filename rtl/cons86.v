@@ -67,7 +67,15 @@
  * TXCS<11:8> and <7> say which line the console offers the next byte to.
  * After a byte is written, or the mask, the console offers the first ready
  * enabled line in the order logical console, EMM, remote port, console
- * terminal (DEC's description gives no order). Processor initialization
+ * terminal (DEC's description gives no order). With no line enabled it
+ * offers ID F, "no lines currently enabled", and sets <7> with it, with an
+ * interrupt if enabled, as it does for a line: the CPU writes a new mask
+ * only while <7> is set, and VMS's port driver, finding it clear, leaves
+ * the mask for its transmit interrupt routine to write at the next
+ * interrupt, which then has to come (VMS stops the console line with a mask
+ * of 0 and starts it again with a new one at the next output; the
+ * reference simulator works the same way). A byte written for ID F goes
+ * nowhere and changes nothing. Processor initialization
  * clears the interrupt enables and RXCS and leaves the console terminal
  * enabled, as the console program has it for the programs that, like VMB,
  * write TXDB without setting the mask.
@@ -261,8 +269,10 @@ module cons86 #(
 					tx_rdy <= 1'b0;
 				end
 			end else if (wr_txdb) begin
-				/* the byte went to line tx_id (or nowhere if not ready) */
-				tx_rdy <= 1'b0;
+				/* the byte went to line tx_id (or nowhere if not
+				   ready); for ID F the console has nothing to do */
+				if (tx_id != ID_NONE)
+					tx_rdy <= 1'b0;
 			end else if (!tx_rdy) begin
 				if (cand[3]) begin
 					tx_id <= ID_LC;
@@ -276,8 +286,10 @@ module cons86 #(
 				end else if (cand[0]) begin
 					tx_id <= ID_CT;
 					tx_rdy <= 1'b1;
-				end else if (tx_mask == 4'd0)
+				end else if (tx_mask == 4'd0) begin
 					tx_id <= ID_NONE;
+					tx_rdy <= 1'b1;
+				end
 			end
 		end
 

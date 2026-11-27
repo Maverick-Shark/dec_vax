@@ -2,7 +2,7 @@
 #   make -C sim   then   sim/obj/Vtb_top software/hello.bin 0 "1000P~"   )
 MISTER = vax_uart.v vax_kbd.v vt_font.v vt_term.v vax_msg.v vax_selftest.v \
          vax_sdram.v vax_cache.v vax_sbi.v vax_uba.v vax_mba.v vax_rp07.v vax_io.v \
-         vax_core.v vax_system.v
+         vax_toy.v vax_core.v vax_system.v
 RVAX = div.v ucode.v intrpt.v intclk.v constx.v consrx.v cons86.v console.v mmu.v \
        argdecode.v alu.v vcache.v decunit.v fpunit.v cmdecode.v cpu.v
 SRC = $(addprefix ../rtl/,$(RVAX)) $(addprefix ../rtl/mister/,$(MISTER)) sdram_model.v tb_top.v
@@ -47,6 +47,14 @@ obj_cpu/Vtb_cpu: $(CPUTB) cpu_tb/tb_cpu.cpp hpsdisk.h
 
 unit: obj_unit/Vunit_top
 
+# unit test of vax_toy.v (TODR from the RTC) against the C library
+toytb: obj_toy/Vvax_toy
+
+obj_toy/Vvax_toy: ../rtl/mister/vax_toy.v toy_tb/toy_tb.cpp
+	verilator --cc --exe --build -j 4 -O2 -Wno-fatal -Wno-WIDTH \
+	  --top-module vax_toy -Mdir obj_toy ../rtl/mister/vax_toy.v toy_tb/toy_tb.cpp \
+	  -CFLAGS "-O1 -w" -o Vvax_toy
+
 # unit test of the decimal unit against a C model of its operations
 dutb: obj_du/Vdecunit
 
@@ -66,7 +74,7 @@ obj_fpu/Vfpunit: ../rtl/fpunit.v fpu_tb/fpu_tb.cpp
 	  -CFLAGS "-O1 -w" -o Vfpunit
 
 clean:
-	rm -rf obj obj_unit obj_nc obj_e obj_l obj_cpu obj_fast obj_save obj_du obj_dqma obj_fpu obj_cpux obj_x obj_cpuf
+	rm -rf obj obj_unit obj_nc obj_e obj_l obj_cpu obj_fast obj_save obj_toy obj_du obj_dqma obj_fpu obj_cpux obj_x obj_cpuf
 
 UNIT = $(addprefix ../rtl/mister/,vt_font.v vt_term.v vax_kbd.v) unit_top.v
 

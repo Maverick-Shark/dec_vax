@@ -8,8 +8,13 @@
 //  SO/SI, autowrap (VT100 style), scrolling,
 //  ESC [ n A/B/C/D, ESC [ r;c H/f, ESC [ n J, ESC [ n K, ESC [ n;n m (bold,
 //  reverse), ESC D/E/M/7/8/c, ESC ( 0 / ESC ( B (DEC Special Graphics),
-//  CSI also as 8-bit 9Bh.  Not yet: scrolling regions (ESC [ t;b r),
-//  insert/delete line/char, answerback (ESC [ c, ESC [ 6 n).
+//  CSI also as 8-bit 9Bh. Reports, as a VT100 sends them back on the line
+//  to the computer (ans_data/ans_valid, taken with ans_take): device
+//  attributes for ESC [ c, ESC [ 0 c and ESC Z - "ESC [ ? 1 ; 0 c", a
+//  VT100 without options, which is how VMS's SET TERMINAL/INQUIRE at login
+//  learns the terminal type - status for ESC [ 5 n (ESC [ 0 n) and the
+//  cursor position for ESC [ 6 n (ESC [ row ; col R). Not yet: scrolling
+//  regions (ESC [ t;b r), insert/delete line/char.
 //
 //  Text RAM: 32 rows x 128 columns x 10 bits {bold, reverse, glyph}; rows are
 //  used as a ring (top = first visible row) so scrolling is a pointer change
@@ -29,6 +34,9 @@ module vt_term (
 	input      [1:0] color,        // 0 green, 1 amber, 2/3 white
 	output           rx_ready,     // input FIFO has room (and reset is over)
 	output reg       bell,         // one clock pulse per BEL
+	output     [7:0] ans_data,     // reports for the computer (see above)
+	output           ans_valid,
+	input            ans_take,     // ans_data taken: the next one
 
 	output           ce_pix,
 	output reg       hs,
@@ -98,6 +106,35 @@ module vt_term (
 	reg        sv_g0, sv_g1, sv_so;
 	reg  [7:0] p0, p1;
 	reg  [1:0] pidx;
+	reg        cprv;               // CSI with a private marker or intermediate
+
+	// reports waiting to go to the computer: a ring of 32 bytes, room for
+	// the three device attribute reports VMS asks for in a row
+	reg  [7:0] abuf [0:31];
+	reg  [4:0] awp, arp;
+	initial begin awp = 5'd0; arp = 5'd0; end
+	wire [4:0] afree = arp - awp - 5'd1;
+	assign ans_data  = abuf[arp];
+	assign ans_valid = awp != arp;
+	always @(posedge clk)
+		if (rst)
+			arp <= awp;                        // a reset drops what is left
+		else if (ans_take && ans_valid)
+			arp <= arp + 5'd1;
+
+	// two decimal digits of 1..99 (the cursor position report)
+	function [7:0] tens;
+		input [7:0] v;
+		tens = v >= 8'd90 ? "9" : v >= 8'd80 ? "8" : v >= 8'd70 ? "7" :
+		       v >= 8'd60 ? "6" : v >= 8'd50 ? "5" : v >= 8'd40 ? "4" :
+		       v >= 8'd30 ? "3" : v >= 8'd20 ? "2" : v >= 8'd10 ? "1" : "0";
+	endfunction
+	function [7:0] ones;
+		input [7:0] v;
+		ones = "0" + (v - (tens(v) - "0") * 8'd10);
+	endfunction
+	wire [7:0] rpos = {3'd0, cur_r} + 8'd1;
+	wire [7:0] cpos = {1'b0, cur_c} + 8'd1;
 
 	reg        f_act;
 	reg  [4:0] f_r, f_er;
@@ -154,6 +191,16 @@ module vt_term (
 				fill(LAST_ROW, 7'd0, LAST_ROW, LAST_COL);
 			end else
 				cur_r <= cur_r + 5'd1;
+		end
+	endtask
+
+	task da;                         // device attributes: a VT100, no options
+		if (afree >= 5'd7) begin
+			abuf[awp]        <= 8'h1B; abuf[awp + 5'd1] <= "[";
+			abuf[awp + 5'd2] <= "?";   abuf[awp + 5'd3] <= "1";
+			abuf[awp + 5'd4] <= ";";   abuf[awp + 5'd5] <= "0";
+			abuf[awp + 5'd6] <= "c";
+			awp <= awp + 5'd7;
 		end
 	endtask
 
@@ -229,7 +276,7 @@ module vt_term (
 					8'h0E: so <= 1'b1;
 					8'h0F: so <= 1'b0;
 					8'h1B: esc <= E_ESC;
-					8'h9B: begin esc <= E_CSI; p0 <= 8'd0; p1 <= 8'd0; pidx <= 2'd0; end
+					8'h9B: begin esc <= E_CSI; p0 <= 8'd0; p1 <= 8'd0; pidx <= 2'd0; cprv <= 1'b0; end
 					default: ;
 					endcase
 				end
@@ -237,7 +284,7 @@ module vt_term (
 			E_ESC: begin
 				esc <= E_NORM;
 				case (ch)
-				"[": begin esc <= E_CSI; p0 <= 8'd0; p1 <= 8'd0; pidx <= 2'd0; end
+				"[": begin esc <= E_CSI; p0 <= 8'd0; p1 <= 8'd0; pidx <= 2'd0; cprv <= 1'b0; end
 				"(": esc <= E_SCS0;
 				")": esc <= E_SCS1;
 				"#": esc <= E_SKIP;
@@ -252,6 +299,7 @@ module vt_term (
 					cur_r <= sv_r; cur_c <= sv_c; a_bold <= sv_bold; a_rev <= sv_rev;
 					g0_gfx <= sv_g0; g1_gfx <= sv_g1; so <= sv_so; wrap <= 1'b0;
 				end
+				"Z": da;                           // DECID: as DA
 				"c": begin
 					cur_r <= 5'd0; cur_c <= 7'd0; wrap <= 1'b0;
 					a_bold <= 1'b0; a_rev <= 1'b0; g0_gfx <= 1'b0; g1_gfx <= 1'b0; so <= 1'b0;
@@ -277,6 +325,8 @@ module vt_term (
 					end
 				end else if (ch == ";") begin
 					if (pidx != 2'd3) pidx <= pidx + 2'd1;
+				end else if ((ch >= 8'h3C && ch <= 8'h3F) || (ch >= 8'h20 && ch <= 8'h2F)) begin
+					cprv <= 1'b1;                      // ? > = < and intermediates
 				end else if (ch == 8'h18 || ch == 8'h1A) begin
 					esc <= E_NORM;                     // CAN / SUB abort
 				end else if (ch == 8'h1B) begin
@@ -314,7 +364,40 @@ module vt_term (
 						default: ;
 						endcase
 					"m": {a_bold, a_rev} <= sgr_b;
-					default: ;                         // ignored (modes, regions, reports)
+					"c": if (!cprv && p0 == 8'd0) da;  // device attributes
+					"n": if (!cprv && p0 == 8'd5) begin  // status: fine
+						if (afree >= 5'd4) begin
+							abuf[awp] <= 8'h1B; abuf[awp + 5'd1] <= "[";
+							abuf[awp + 5'd2] <= "0"; abuf[awp + 5'd3] <= "n";
+							awp <= awp + 5'd4;
+						end
+					end else if (!cprv && p0 == 8'd6) begin  // cursor position
+						if (afree >= 5'd8) begin
+							abuf[awp] <= 8'h1B; abuf[awp + 5'd1] <= "[";
+							if (rpos >= 8'd10) begin
+								abuf[awp + 5'd2] <= tens(rpos); abuf[awp + 5'd3] <= ones(rpos);
+								abuf[awp + 5'd4] <= ";";
+								if (cpos >= 8'd10) begin
+									abuf[awp + 5'd5] <= tens(cpos); abuf[awp + 5'd6] <= ones(cpos);
+									abuf[awp + 5'd7] <= "R"; awp <= awp + 5'd8;
+								end else begin
+									abuf[awp + 5'd5] <= ones(cpos);
+									abuf[awp + 5'd6] <= "R"; awp <= awp + 5'd7;
+								end
+							end else begin
+								abuf[awp + 5'd2] <= ones(rpos);
+								abuf[awp + 5'd3] <= ";";
+								if (cpos >= 8'd10) begin
+									abuf[awp + 5'd4] <= tens(cpos); abuf[awp + 5'd5] <= ones(cpos);
+									abuf[awp + 5'd6] <= "R"; awp <= awp + 5'd7;
+								end else begin
+									abuf[awp + 5'd4] <= ones(cpos);
+									abuf[awp + 5'd5] <= "R"; awp <= awp + 5'd6;
+								end
+							end
+						end
+					end
+					default: ;                         // ignored (modes, regions)
 					endcase
 				end
 				// '?', '>' and intermediates are ignored

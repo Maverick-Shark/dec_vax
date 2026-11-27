@@ -9,14 +9,17 @@ module unit_top (
 	input         kbd_es,
 	output  [7:0] kbd_data,
 	output        kbd_valid,
-	output        bell
+	output        bell,
+	output  [7:0] ans_data,
+	output        ans_valid
 );
 	wire ce, hs, vs, hb, vb;
 	wire [7:0] r, g, b;
 
 	vt_term term (
 		.clk(clk), .rst(rst), .rx_data(rx_data), .rx_valid(rx_valid),
-		.color(2'd0), .bell(bell), .ce_pix(ce), .hs(hs), .vs(vs),
+		.color(2'd0), .bell(bell), .ans_data(ans_data), .ans_valid(ans_valid),
+		.ans_take(1'b1), .ce_pix(ce), .hs(hs), .vs(vs),
 		.hblank(hb), .vblank(vb), .r(r), .g(g), .b(b)
 	);
 

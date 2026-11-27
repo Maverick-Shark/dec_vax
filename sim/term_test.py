@@ -148,6 +148,27 @@ def deterministic():
     return tests
 
 
+def reports():
+    """The reports a VT100 sends back: device attributes for ESC [ c,
+    ESC [ 0 c and ESC Z (not for a secondary request, ESC [ > c), status
+    for ESC [ 5 n, the cursor position for ESC [ 6 n (one- and two-digit
+    rows and columns; not ESC [ ? 6 n)."""
+    data = ('abc' + ESC + '[c' + ESC + '\\' + ESC + 'Z' + ESC + '[0c' + ESC + '[>c' +
+            ESC + '[5n\r\n\n\n' + ESC + '[12;34H' + ESC + '[6n' + ESC + '[3;7H' +
+            ESC + '[6n' + ESC + '[30;80H' + ESC + '[6n' + ESC + '[?6n')
+    want = ([ESC + '[?1;0c'] * 3 + [ESC + '[0n', ESC + '[12;34R', ESC + '[3;7R',
+                                    ESC + '[30;80R'])
+    with tempfile.NamedTemporaryFile(suffix='.bin', delete=False) as f:
+        f.write(data.encode('latin-1'))
+        fn = f.name
+    out = subprocess.run(['obj_unit/Vunit_top', 'term', fn], capture_output=True).stdout.decode('utf-8')
+    got = out.split('answers:')[1].split('\n')[0].split()
+    got = ''.join(ESC if a == 'ESC' else a for a in got)
+    ok = got == ''.join(want)
+    print('%-28s %s' % ('reports', 'OK' if ok else 'FAIL: %r' % got))
+    return ok
+
+
 def random_stream(seed, n=3000):
     rnd = random.Random(seed)
     parts = []
@@ -174,6 +195,7 @@ def main():
     ok = True
     for name, data in deterministic().items():
         ok &= compare(name, data)
+    ok &= reports()
     for i in range(nrand):
         ok &= compare('random seed %d' % i, random_stream(i))
     print('ALL PASS' if ok else 'SOME FAILURES')

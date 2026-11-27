@@ -37,7 +37,9 @@ Massbus adapter with two RP07 disks** whose contents are disk images on the
 SD card, mounted from the OSD, and a **DW780 Unibus adapter**, with no
 devices on its Unibus yet ([docs/IO.md](docs/IO.md)). The OSD boots a
 disk as the 8600's console does, through DEC's VMB (*Booting from a disk:
-VMB*); OpenVMS itself is the next milestone.
+VMB*): **NetBSD 11.0** boots from an RP07 on the board (*Booting NetBSD*),
+and **OpenVMS VAX 7.3**, the last VMS for the 8600, is the milestone under
+way (*Booting OpenVMS*).
 See *What is missing*, and [ROADMAP.md](ROADMAP.md) for the plan.
 
 ```
@@ -65,9 +67,10 @@ See *What is missing*, and [ROADMAP.md](ROADMAP.md) for the plan.
 | Massbus | `rtl/mister/vax_mba.v`, `vax_rp07.v` | RH780 at TR 8, two RP07 disks on SD card images |
 | Unibus | `rtl/mister/vax_uba.v` | DW780 at TR 3: map, data paths, Unibus interrupts; no devices yet |
 | Console registers | `rtl/cons86.v` | The 8600's RXCS, RXDB, TXCS, TXDB: four lines, the logical console |
+| Time of year | `rtl/mister/vax_toy.v` | TODR from MiSTer's real-time clock at power-up |
 | Bus | `rtl/mister/vax_core.v` | CPU, memory and I/O put together |
 | Power-on test | `rtl/mister/vax_selftest.v`, `vax_msg.v` | Memory test and banner |
-| Console terminal | `rtl/mister/vt_term.v`, `vt_font.v` | 80x30, VT100 subset |
+| Console terminal | `rtl/mister/vt_term.v`, `vt_font.v` | 80x30, VT100 subset, with VT100's reports |
 | Keyboard | `rtl/mister/vax_kbd.v` | USB keyboard, US or ES layout |
 | Serial | `rtl/mister/vax_uart.v` | Internal console line and the MiSTer UART |
 | Integration | `rtl/mister/vax_system.v`, `dec_vax.sv` | Loader, autostart, `emu` top level |
@@ -95,7 +98,14 @@ port has no modem and there is no EMM (both take bytes and drop them), and
 the logical console answers what the CPU asks the console program: the
 microcode version, the COLD and WARM flags, the snapshot files, a reboot
 (the CPU halts; boot it again from the OSD). Programs that never touch the
-mask, like VMB, see the console terminal alone, as on the 8600. DEC's
+mask, like VMB, see the console terminal alone, as on the 8600. A mask of 0
+leaves no line: `TXCS<11:8>` reads F, "no lines currently enabled", with the
+ready bit set and an interrupt if it is enabled. VMS's console driver stops
+the line that way when it has nothing more to print and writes a new mask
+only while the ready bit is set (otherwise it leaves that to its interrupt
+routine): with the ready bit clear the core kept VMS from printing anything
+after its first messages (`tests/mmu/t67_txidle.s` checks the console's
+side of it). DEC's
 bootstrap for the Diagnostic Supervisor, DIAGBOOT, asks for the microcode
 version before anything else, and waits for the answer for ever.
 
@@ -126,7 +136,28 @@ are the single letters in the table below.
 What the terminal on the screen adds is only the display and the keyboard: an
 80x30 VT100-subset terminal (`vt_term.v`) decodes the serial line and draws it,
 and `vax_kbd.v` turns USB keystrokes back into characters. The CPU cannot tell
-the difference between that and a real VT100 on a 25-pin plug.
+the difference between that and a real VT100 on a 25-pin plug: the terminal
+also answers what a VT100 answers - its device attributes for `ESC [ c` and
+`ESC Z` (`ESC [ ? 1 ; 0 c`, a VT100 without options: VMS's login asks for
+them to learn the terminal type, and without an answer its screen editors
+refuse the terminal), its status for `ESC [ 5 n` and the cursor position for
+`ESC [ 6 n`. When the MiSTer UART is a console too (OSD), the terminal at its
+other end answers instead, and the screen keeps quiet.
+
+**The time of year.** The 8600's time-of-year clock, TODR, lives in its
+console subsystem and runs on a battery, so an operating system finds the
+time it left there when the machine is switched on again. The core has no
+battery; MiSTer sends the time of day when the core is loaded (from the
+network or an RTC board), and `vax_toy.v` puts it into TODR once, the way
+VMS keeps it: hundredths of a second since 1 January 00:00, plus
+10000000 (hex). NetBSD reads TODR the same way, and the reference
+simulator's 8600 sets it so too. Without a time from MiSTer TODR starts at
+0, as after a failed battery, and VMS asks for the date when it boots. An
+OSD reset leaves TODR alone. VMS also keeps, on its system disk, the TODR
+of the last time it set the clock, and when TODR is more than a day behind
+that it asks too (`PLEASE ENTER DATE AND TIME (DD-MMM-YYYY  HH:MM)`): with
+a time from MiSTer that happens only in a new year, as TODR counts from
+1 January here, where a real 8600's ran on through the year's end.
 
 ## How the bus and the I/O adapters are built
 
@@ -550,13 +581,14 @@ which asks the console for the microcode version through the logical
 console (*Which console is this?*) and loads the supervisor; then the
 supervisor can load its programs from the same disk. The `DS>` prompt comes
 some 5 seconds after the `G`. Most of that is the supervisor asking the
-terminal what it is (`ESC Z`, `ESC [ c`, Ctrl+E) and waiting 1.05 s for each
-answer, which the on-screen terminal does not give (nor does the reference
-simulator's console); the three sequences draw nothing. Then, as on the
-reference simulator:
+terminal what it is (`ESC Z`, `ESC [ c`, Ctrl+E) and giving it 1.05 s to
+answer each; the on-screen terminal answers the first two as a VT100 does
+(the reference simulator's console answers none), and the three sequences
+draw nothing. Then, as on the reference simulator, with the day and time
+from TODR (*The time of year*) and the supervisor's own year:
 
 ```
-DIAGNOSTIC SUPERVISOR.  ZZ-EDSAA-10.10-312  17-NOV-1987 16:55:30
+DIAGNOSTIC SUPERVISOR.  ZZ-EDSAA-10.10-312  27-NOV-1987 10:00:05
 DS> ATTACH KA86 ABUS KA0 yes yes 0 0
 DS> ATTACH RH780 ABUS RH0 8 5
 DS> ATTACH RP07 RH0 DRA0
@@ -713,9 +745,98 @@ five seconds. In the full-system simulation (some 5 000 instructions a
 second) `boot netbsd -s` reaches the shell and `ls /` after 41 million
 instructions, 1.8 thousand million clocks (36 seconds of the real core),
 with the same output as the reference simulator; multi-user is left to the
-board. The simulation was run with checkpoints (`make -C sim save`,
-*Simulation* below): from one taken at the single-user prompt, what follows
-takes half an hour instead of four.
+board, where it boots (the build of 27 November 2026). The simulation was
+run with checkpoints (`make -C sim save`, *Simulation* below): from one
+taken at the single-user prompt, what follows takes half an hour instead of
+four.
+
+### Booting OpenVMS
+
+OpenVMS VAX V7.3 (2001) is the last version of VMS for the 8600 and 8650
+(its software product description, SPD 25.01.69; the 11/750 to 11/785
+stopped at V6.2). VMB with *Boot Flags* `0` reads `[SYS0.SYSEXE]SYSBOOT.EXE`
+from the RP07, SYSBOOT loads the executive, and VMS runs its startup
+procedure on the console terminal.
+
+**The disk image.** VMS is not part of this project: you need the OpenVMS
+VAX V7.3 distribution CD, as an ISO image (`OpenVMS-VAX-7.3.iso`), and the
+reference simulator's VAX 8600 with Python's `pexpect`. Then
+
+```
+python3 tools/vms/mkimage.py OpenVMS-VAX-7.3.iso openvms-7.3-rp07.dsk
+```
+
+installs it in about ten minutes as an 8600 with a CD-ROM drive on a
+UDA50 would: the CD boots into standalone BACKUP, which restores the
+`VMS073.B` save set onto the RP07 (VMS calls the drive `DBA0`, the CD
+`DUA0`); the RP07 boots into the installation procedure, which takes the
+library, optional and help message files from the CD (no DECwindows,
+DECnet or Management Station), sets the passwords of `SYSTEM`, `SYSTEST`
+and `FIELD` (`--password`, `VAXMISTER` by default), the node name and
+number (`VAX860`, 1025) and the time zone (`--tz`, its number in the
+installation's menu; 3, CET, by default); AUTOGEN runs and reboots, and
+`SYSTEM` logs in and shuts it down so that the image is left clean. Then
+the image boots once more on the reference simulator with only what the
+core has - the RH780 with two RP07s, the DW780 with nothing on its Unibus -
+to the login prompt. VMS's hobbyist licences are no more: VMS boots and
+lets you log in on the console without one, with `%LICENSE` warnings. The
+image holds VMS: it is for whoever owns the CD, not for passing around, and
+`.gitignore` keeps disk images out of the repository.
+
+**On the core.** Copy the image to the SD card (`games/DEC_VAX`), and in
+the OSD: *RP07 Unit 0* = the image, *Boot Device* `DBA0`, *Boot Flags* `0`,
+*VMB Memory Test* `Off` (or `On`, slower), then *Boot (VMB.EXE)*. With a
+time of day from MiSTer (*The time of year*, above) VMS takes the date from
+TODR; otherwise it asks for it (`DD-MMM-YYYY HH:MM`, then Return). This is
+how the reference simulator boots the image, and the core as far as its
+simulation has gone (to `%STDRV-I-STARTUP`, below):
+
+```
+%SYSBOOT-I-SYSBOOT Mapping the SYSDUMP.DMP on the System Disk
+%SYSBOOT-I-SYSBOOT SYSDUMP.DMP on System Disk successfully mapped
+%SYSBOOT-I-SYSBOOT Mapping PAGEFILE.SYS on the System Disk
+%SYSBOOT-I-SYSBOOT SAVEDUMP parameter not set to protect the PAGEFILE.SYS
+   OpenVMS (TM) VAX Version V7.3     Major version id = 1 Minor version id = 0
+%WBM-I-WBMINFO Write Bitmap has successfully completed initialization.
+
+$!  Copyright 2001 Compaq Computer Corporation.
+
+%STDRV-I-STARTUP, OpenVMS startup begun at 27-NOV-2026 11:48:13.32
+%DCL-S-SPAWNED, process SYSTEM_1 spawned
+%%%%%%%%%%%  OPCOM  27-NOV-2026 11:48:17.24  %%%%%%%%%%%
+Operator _VAX860$OPA0: has been enabled, username SYSTEM
+...
+%LICENSE-F-EMTLDB, license database contains no license records
+...
+The OpenVMS VAX system is now executing the site-specific startup commands.
+
+%SET-I-INTSET, login interactive limit = 64, current interactive value = 0
+  SYSTEM       job terminated at 27-NOV-2026 11:48:19.54
+...
+
+ Welcome to OpenVMS (TM) VAX Operating System, Version V7.3
+
+Username:
+```
+
+The login prompt comes when you press Return: `SYSTEM`, password
+`VAXMISTER`. `@SYS$SYSTEM:SHUTDOWN` stops VMS cleanly (take the defaults);
+it ends with `SYSTEM SHUTDOWN COMPLETE` and the CPU halted.
+
+**What VMS found in the core.** With the core as it was, VMS printed its
+banner and the `%WBM` message and then nothing more. Two things were in
+its way. TODR started at a made-up value, behind the time VMS had kept on
+the disk at its installation, so VMS asked for the date and time - and
+that question never came out: VMS's console driver stops the console line
+with a transmit mask of 0 when it has printed what it had, and the core's
+console then cleared `TXCS<7>`; the next output found it clear, left the
+new mask for the transmit interrupt routine, and no interrupt came (*Which
+console is this?*; `rtl/cons86.v`, `tests/mmu/t67_txidle.s`). TODR now
+comes from MiSTer's clock (`rtl/mister/vax_toy.v`). With both, the
+simulation of the core goes on into VMS's startup procedure, with the date
+from the clock; at some 5 000 instructions a second it needs hours for the
+hundred million instructions the reference simulator counts to the login
+prompt, which the board does in minutes.
 
 ### Loading and running a program
 
@@ -1313,10 +1434,11 @@ I/O side: the PAMM, SBIA 0, machine checks, the RH780 and the DW780, and
 the 8600's console registers with the logical console (`t60`), and PDP-11
 compatibility mode (`t61`-`t64`: entering and leaving it, its exceptions,
 600 instructions with random operands, program control and trace, and
-memory management faults in it), and two things NetBSD found: LDPCTX on
+memory management faults in it), two things NetBSD found: LDPCTX on
 the kernel stack the way its soft interrupts use it (`t65`), and
 access-control violations on modify operands with the code on a read-only
-page (`t66`). (The
+page (`t66`), and one that VMS found: the console's transmitter with no
+line enabled (`t67`). (The
 programs that end in a processor halt other than t16's, `t22`-`t24` and
 `t49`, those that need generated disks, `t52`-`t54`, and `t59`, which needs
 the test bench's Unibus device, are only run in simulation.)
@@ -1339,8 +1461,9 @@ t61_cmode......... PASS
 t64_cmmm.......... PASS
 t65_ldpks......... PASS
 t66_acvmod........ PASS
+t67_txidle........ PASS
 
-Passed: 58   Failed: 00
+Passed: 59   Failed: 00
 All tests passed.
 
 Last, t16_isnv: the CPU must halt here with code 00000004.
@@ -1585,17 +1708,19 @@ The plan for all of this, in order, is in [ROADMAP.md](ROADMAP.md).
   the architecture allows, and hold off interrupts until they finish: some
   tens of microseconds for EDITPC and the decimal ones, but tens of
   milliseconds for a MOVTC of 65535 bytes.
-- **VMS.** VMB boots the Diagnostic Supervisor and NetBSD from an RP07
-  (*Booting from a disk: VMB*, *Booting NetBSD*); VMS itself is milestone
-  10.
+- **VMS, to the end.** VMB boots the Diagnostic Supervisor and NetBSD from
+  an RP07 (*Booting from a disk: VMB*, *Booting NetBSD*), and OpenVMS VAX
+  7.3 runs its startup procedure in the full-system simulation; the login
+  prompt on the board is what milestone 10 is waiting for (*Booting
+  OpenVMS*).
 - **The 8600 console's other lines.** No remote services port (modem), no
   environmental monitoring module, no console command strings (the logical
   console's request 20, which diagnostics such as EDKAX use); no console
   storage (STXCS, STXDB).
 - **Unibus devices.** The DW780 is there, but nothing is on its Unibus yet
   (a DZ11 for more terminals is the first candidate).
-- **Terminal.** No scrolling regions (`ESC [ t;b r`), no insert/delete line, no
-  answerback (`ESC [ c`, `ESC [ 6 n`).
+- **Terminal.** No scrolling regions (`ESC [ t;b r`), no insert/delete line,
+  no answerback message for Ctrl+E.
 - **Speed.** About 40 clocks per instruction is r-vax's microarchitecture, not
   the memory: even a taken branch costs some 26 clocks. Widening the
   instruction fetch - the CPU fetches one byte at a time out of a
@@ -1615,6 +1740,7 @@ make -C sim cputb                # CPU, aligner, MMU, I/O side and plain memory,
 make -C sim fast                 # full system, optimised harder, for long runs
 make -C sim save                 # the same with checkpoints (Verilator --savable)
 make -C sim dutb && sim/obj_du/Vdecunit 20000   # the decimal unit against a C model
+make -C sim toytb && sim/obj_toy/Vvax_toy 100000 # TODR from MiSTer's clock (vax_toy.v)
 make -C sim fputb && python3 sim/fpu_tb/vaxfp.py v.txt 20000 && sim/obj_fpu/Vfpunit v.txt
                                  # the floating point unit against an exact model
 make -C sim dqma                 # full system, SDRAM byte masks on A11/A12 (128 MB modules)
@@ -1636,6 +1762,12 @@ LOAD EVKAE~|@DS> |START/TEST:1:2~|@End of run|@DS> " \
     sim/obj_fast/Vtb_top software/vmb.exe 1 ""      # the OSD's Boot: VMB, DIAGBOOT, the
                                  # supervisor from the RP07, EVKAE loaded from it (25 min)
                                  # (LOAD EVKAD~|@DS> |START~|@End of run: EVKAD, 75 min)
+cp openvms-7.3-rp07.dsk vms.dsk
+BOOT=1 BOOTR5=80 NOTEST=1 DISK0=vms.dsk UNTIL="SYSBOOT" BUDGET=9000000000 TTOLOG=vms.txt \
+SESSION="@WBMINFO|!Cck_wbm|@job terminated|!Cck_startup|~|@Username:|SYSTEM~|\
+@Password:|VAXMISTER~|@\$ " sim/obj_save/Vtb_top software/vmb.exe 1 ""
+                                 # OpenVMS: %WBM after 280 million clocks (half an hour),
+                                 # then hours of its startup procedure; checkpoints on the way
 IMAGE=software/evkab_ds.bin TRACE=1 tests/evkae/run_sim.sh 134:144   # EVKAB's string tests
 IMAGE=software/evkac_ds.bin TRACE=1 QUICK=1 BUDGET=2000000000 \
     tests/evkae/run_sim.sh 1:98  # EVKAC, floating point (QUICK: about an hour)
@@ -1649,12 +1781,15 @@ START200=1 BUDGET=70000000 UNTIL="Hit any key" SESSION="@done!|^C|@breakpoint|5~
     sim/obj/Vtb_top software/evkaa.exe 1 "~"          # EVKAA, then Ctrl+C at the end
 RXTRACE=1 ...                                         # log every character the CPU receives
 
-cd sim && python3 term_test.py 40     # terminal against pyte's VT100 (pip install pyte)
+cd sim && python3 term_test.py 40     # terminal against pyte's VT100 (pip install pyte),
+                                      # and its reports (device attributes, cursor)
 ```
 
 Startup is modelled on what MiSTer Main really does: the module size arrives,
 then the core is held in reset for 40 ms (`HPSRST=n` to change it, `NOHPSRST`
-to skip it) before the power-on test may start. `MEMFILL=0x...` or
+to skip it) before the power-on test may start; the time of day comes with
+it (`RTC="YYYY-MM-DD HH:MM:SS"`, by default 2026-11-27 10:00:00 so that runs
+repeat; `RTC=none` sends none and TODR starts at 0). `MEMFILL=0x...` or
 `MEMFILL=rand` fills the SDRAM model before power-up, like a real module's
 leftover contents. In key strings `~` is Enter, `^C` is Ctrl+C and `{` is the
 cursor-up key; in `SESSION`, `@text` waits for text to appear (after the

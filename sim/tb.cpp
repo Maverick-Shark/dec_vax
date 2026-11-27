@@ -24,6 +24,8 @@
 //   MEMFILL=x   fill the whole SDRAM with 16-bit value x before anything
 //               runs (default: zero); MEMFILL=rand for pseudo-random data,
 //               which is what a real module holds at power-up
+//   RTC         the time of day the HPS sends at load (TODR, vax_toy.v):
+//               "YYYY-MM-DD HH:MM:SS" (default 2026-11-27 10:00:00), or none
 //   UNTIL/UNTIL2/BUDGET/HALT/BANNER/FAULT/SESSION  see below
 //   SESSION     tokens separated by '|': text is typed, "@text" waits for
 //               text to appear on the console (BUDGET clocks at most) after
@@ -644,6 +646,26 @@ int main(int argc, char **argv) {
 	run(30000);
 	tb->sdram_sz = 0x8001;                  // valid, 32 MB
 	run(20);
+	// the time of day, as MiSTer Main sends it when the core loads
+	// (hps_io RTC: BCD, local time): RTC="YYYY-MM-DD HH:MM:SS", default
+	// 2026-11-27 10:00:00 so that runs repeat; RTC=none sends nothing
+	{
+		const char *rt = getenv("RTC");
+		int Y = 2026, Mo = 11, D = 27, h = 10, mi = 0, se = 0;
+		if (rt && strcmp(rt, "none") &&
+		    sscanf(rt, "%d-%d-%d %d:%d:%d", &Y, &Mo, &D, &h, &mi, &se) != 6) {
+			printf("RTC: use YYYY-MM-DD HH:MM:SS\n");
+			return 1;
+		}
+		if (!rt || strcmp(rt, "none")) {
+			auto b = [](int v) { return (unsigned)((v / 10) << 4 | (v % 10)); };
+			tb->rtc[0] = b(se) | b(mi) << 8 | b(h) << 16 | b(D) << 24;
+			tb->rtc[1] = b(Mo) | b(Y % 100) << 8 | 0x40u << 24;
+			tb->rtc[2] = 1;                 // RTC<64> toggles: a new value
+			printf("[%llu] RTC %04d-%02d-%02d %02d:%02d:%02d\n",
+			       (unsigned long long)cycles, Y, Mo, D, h, mi, se);
+		}
+	}
 	// the disk images the user has mounted
 	for (int u = 0; u < 2; u++)
 		for (int k = 0; k < 3; k++) { hps.mount_step(u, k); tick(); }

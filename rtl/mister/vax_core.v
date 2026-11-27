@@ -50,6 +50,8 @@ module vax_core #(
 	output            tto_tx,
 	input             halt_req,      // console halt request (Ctrl+P, OSD): one clock
 	input             con_boot,      // the console begins a bootstrap: one clock
+	input             todr_ld,       // TODR <- todr_val: the time of year at
+	input      [31:0] todr_val,      // power-up (vax_toy.v), one clock
 
 	// fault finding (OSD), taken at processor initialization:
 	// <0> cache off, <1> translation buffer off
@@ -139,6 +141,8 @@ module vax_core #(
 		.tti_rx     (tti_rx),
 		.halt_req   (halt_req),
 		.con_boot   (con_boot),
+		.TODR_LD_I  (todr_ld),
+		.TODR_I     (todr_val),
 		.cpu_halted (cpu_halted),
 		.cpu_mcheck (mcheck),
 

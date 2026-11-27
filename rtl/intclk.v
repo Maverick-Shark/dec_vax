@@ -59,6 +59,8 @@ module intclk(
 	input		wrnicr,
 	input		wriccs,
 	input		wrtodr,
+	input		todr_ld,	/* the time-of-year at power-up (vax_toy.v) */
+	input [31:0]	todr_in,
 
 	input [31:0]	iprdb,
 
@@ -106,12 +108,18 @@ parameter TODRCNTINIT =	15'h18f1; // 10 ms clock: 6385..16384 = 10000 us
 	assign uspulse = clkcnt[7] & running;
 
 	/*
-	 * Counts to 10000, then increases TODR. This is a 10ms clock.
+	 * Counts to 10000, then increases TODR. This is a 10ms clock. It
+	 * runs whatever the CPU does, and a processor initialization leaves
+	 * it alone. At power-up it is 0, as the 8600's TOY clock with its
+	 * battery run down; MiSTer's real-time clock then sets it once
+	 * (todr_ld, vax_toy.v), as the battery would have kept it.
 	 */
-	initial todr = 32'h7315BAAC; // VMS valid something...
+	initial todr = 32'd0;
 	reg [14:0]	todrcnt;
 	always @(posedge clk) begin
-		if (wrtodr)
+		if (todr_ld)
+			todr <= todr_in;
+		else if (wrtodr)
 			todr <= iprdb;
 		else if (clkcnt[7]) begin
 			if (todrcnt[14]) begin

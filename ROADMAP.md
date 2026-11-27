@@ -19,8 +19,10 @@ the OSD and the Diagnostic Supervisor from an RP07, with the 8600's console
 registers; the exercisers load from the disk. Then PDP-11 compatibility
 mode (planned for M11), which the 8600 has: DEC's compatibility mode
 exerciser, EVKAD, passes, and so does EVKAE in full, on the board too.
-Next: NetBSD, the rest of M9 - it boots single user in simulation, and
-found three bugs in the core on the way - then OpenVMS (M10).
+Then NetBSD 11.0, the rest of M9, which found three bugs in the core on the
+way and boots on the board. Now OpenVMS VAX 7.3 (M10): its first boots
+found the 8600 console's transmitter wrong with no line enabled, and TODR
+now comes from MiSTer's clock.
 
 Relative size: **S** a change in one module, **M** a new module or a block of
 microcode, **L** a subsystem, **XL** the largest pieces.
@@ -390,14 +392,44 @@ pass on the DE10-Nano.
   board.
 
 **Done when:** the Diagnostic Supervisor's exercisers pass and NetBSD boots
-multi-user.
+multi-user. Done: confirmed on the board with the build of 27 November
+2026 - NetBSD boots from the RP07, and the tests pass there as in
+simulation.
 
 ### M10 - OpenVMS VAX 7.3 (L)
 
 - Install OpenVMS VAX 7.3 on an RP07 image (on a simulator), copy the image
   to `/media/fat/games/DEC_VAX/`, mount it from the OSD, boot through VMB.
+  Done: `tools/vms/mkimage.py` installs it from the V7.3 CD image on the
+  reference simulator's 8600 as an 8600 with a CD-ROM drive on a UDA50
+  would (standalone BACKUP from the CD onto the RP07, then the installation
+  procedure and AUTOGEN on the RP07) and boots the result once more with
+  only what the core has, to the login prompt (README_MiSTer.md, *Booting
+  OpenVMS*).
 - Whatever goes wrong is chased with the trace comparison, the reference
-  simulator booting the same image.
+  simulator booting the same image. The first boot on the RTL, in the
+  full-system simulation, went as on the reference simulator to the
+  `%WBM-I-WBMINFO` message and then printed nothing more. TODR's made-up
+  initial value was behind the time VMS had kept on the disk, so VMS asked
+  for the date - and the question never came out: VMS's console driver
+  stops the console line with a transmit mask of 0 and writes the next
+  mask only while TXCS<7> is set, otherwise its transmit interrupt routine
+  writes it at the next interrupt; the core's console cleared TXCS<7> with
+  no line enabled, and no interrupt came. Now the console offers ID F
+  ("no lines currently enabled") with TXCS<7> set and an interrupt, as the
+  reference simulator does (`rtl/cons86.v`, `tests/mmu/t67_txidle.s`).
+  And TODR comes from MiSTer's real-time clock at power-up, as the 8600's
+  battery-backed TOY clock would have kept it (`rtl/mister/vax_toy.v`,
+  checked against the C library's calendar for 100 000 dates by
+  `make -C sim toytb`). With both, VMS goes on into its startup procedure
+  in the full-system simulation (`%STDRV-I-STARTUP`, with the date from
+  MiSTer's clock); the reference simulator needs some hundred million
+  instructions to the login prompt, hours for the model at some 5 000 a
+  second, minutes for the board.
+- The on-screen terminal answers what VMS's terminal driver asks a VT100
+  (`SET TERMINAL/INQUIRE` at login): its device attributes for `ESC [ c`
+  and `ESC Z`, its status and the cursor position (`vt_term.v`,
+  `sim/term_test.py`).
 - Licences: HPE stopped issuing OpenVMS hobbyist licences in 2020, VAX
   included, and VSI's community licence covers only x86-64. OpenVMS VAX boots
   without a licence and lets you log in on the console, with `%LICENSE`
@@ -433,7 +465,7 @@ multi-user.
 | Program | What it exercises | When |
 |---|---|---|
 | EVKAA V8.0 | basic instructions | passes now |
-| `tests/mmu` (67 programs) | memory management, faults and restart, FPD, PROBE, LDPCTX/SVPCTX (also LDPCTX on the kernel stack, as NetBSD uses it), REI, CHMx, BPT, XFC, halt codes, IPRs, reserved addressing modes, CASE, BBx, ACB, arithmetic traps, trace, the string, queue and decimal instructions, the octaword and floating point instructions (random operands), the I/O side, PDP-11 compatibility mode (random operands too), compared with the reference simulator | pass now |
+| `tests/mmu` (68 programs) | memory management, faults and restart, FPD, PROBE, LDPCTX/SVPCTX (also LDPCTX on the kernel stack, as NetBSD uses it), REI, CHMx, BPT, XFC, halt codes, IPRs, reserved addressing modes, CASE, BBx, ACB, arithmetic traps, trace, the string, queue and decimal instructions, the octaword and floating point instructions (random operands), the I/O side, PDP-11 compatibility mode (random operands too), the 8600 console's transmitter with no line enabled, compared with the reference simulator | pass now |
 | `software/mmutest.bin` | the same programs on the core itself, self-checking | passes on the full-system model and on the board |
 | EVKAB (Basic Instructions Exerciser) | every integer, branch, bit field, queue, character string and decimal instruction, with every addressing mode, page faults on the operands, timer interrupts and trace | all 161 tests pass under the Diagnostic Supervisor image, and loaded from the RP07 (QUICK in simulation, in full on the board) |
 | EVKAC (Floating Point Instructions Exerciser) | every floating point instruction of the four formats, with every addressing mode, page faults on the operands and timer interrupts | all 98 tests pass under the Diagnostic Supervisor image, with the QUICK flag and without it (page faults on the operands), and loaded from the RP07 (QUICK in simulation, in full on the board) |
@@ -443,8 +475,8 @@ multi-user.
 | SVK | MMU, SCB, interval timer and console interrupts, software interrupts, SVPCTX/LDPCTX | M5 |
 | Random-operand comparison with the reference simulator | decimal, string, floating point (done) | M6, M7 |
 | EDSAA + EVKAB, EVKAC, EVKAD, EVKAE | DEC's own exercisers under the 8600 Diagnostic Supervisor, booted from the RP07 | M9: the supervisor boots from the RP07 (simulation and board) and loads the four exercisers from it, which pass |
-| NetBSD/vax | a complete OS | M9: single user and `ls /` in the full-system simulation; multi-user on the board next |
-| OpenVMS VAX 7.3 | the goal | M10 |
+| NetBSD/vax | a complete OS | M9: single user and `ls /` in the full-system simulation; boots on the board |
+| OpenVMS VAX 7.3 | the goal | M10: into its startup procedure in the full-system simulation; the login prompt on the board next |
 
 ## SVK, the vax-kernel repository
 

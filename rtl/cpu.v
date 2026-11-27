@@ -167,6 +167,8 @@ module cpu(
 	input		tti_rx,
 	input		halt_req,	/* console halt request (Ctrl+P, OSD) */
 	input		con_boot,	/* the console begins a bootstrap (cons86.v) */
+	input		TODR_LD_I,	/* TODR <- TODR_I: the time of year at */
+	input [31:0]	TODR_I,		/* power-up (rtl/mister/vax_toy.v) */
 	output		cpu_halted,
 	output		cpu_mcheck,
 
@@ -1286,6 +1288,8 @@ initial debug = 0;
 		.wrnicr(wrnicr),
 		.wriccs(wriccs),
 		.wrtodr(wrtodr),
+		.todr_ld(TODR_LD_I),
+		.todr_in(TODR_I),
 		.iprdb(ipr_regwdata),
 
 		.err_o(iccs_err),

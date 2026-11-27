@@ -31,6 +31,7 @@ module tb_top #(
 	input   [2:0] rdphase_sel,
 	input   [1:0] diag,
 	input  [15:0] sdram_sz,
+	input  [64:0] rtc,
 	input  [10:0] ps2_key,
 	input         uart_rxd,
 
@@ -83,7 +84,7 @@ module tb_top #(
 		.color(color), .kbd_es(kbd_es), .uart_console(1'b1),
 		.ctrlp_halt(1'b1), .halt_osd(1'b0),
 		.selftest_en(selftest_en), .selftest_go(selftest_go),
-		.rdphase_sel(rdphase_sel), .diag(diag), .sdram_sz(sdram_sz),
+		.rdphase_sel(rdphase_sel), .diag(diag), .sdram_sz(sdram_sz), .rtc(rtc),
 		.ps2_key(ps2_key), .uart_rxd(uart_rxd), .uart_txd(uart_txd),
 		.sd_a(sd_a), .sd_ba(sd_ba), .sd_ncs(sd_ncs), .sd_nras(sd_nras),
 		.sd_ncas(sd_ncas), .sd_nwe(sd_nwe), .sd_dqml(sd_dqml), .sd_dqmh(sd_dqmh),

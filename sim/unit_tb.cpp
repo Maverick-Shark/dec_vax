@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <vector>
+#include <string>
 #include "Vunit_top.h"
 #include "Vunit_top___024root.h"
 #include "verilated.h"
@@ -13,7 +14,9 @@ static Vunit_top *t;
 #define R (t->rootp)
 static int bells = 0;
 
+static std::string answers;              // the terminal's reports, in order
 static void tick() {
+	if (t->ans_valid) answers.push_back((char)t->ans_data);  // taken this clock
 	t->clk = 1; t->eval(); t->clk = 0; t->eval();
 	if (t->bell) bells++;
 }
@@ -67,6 +70,10 @@ int main(int argc, char **argv) {
 		printf("cursor %d %d wrap %d bells %d bytes %d\n",
 		       R->unit_top__DOT__term__DOT__cur_r, R->unit_top__DOT__term__DOT__cur_c,
 		       R->unit_top__DOT__term__DOT__wrap, bells, n);
+		printf("answers:");
+		for (unsigned char a : answers)
+			printf(a == 0x1b ? " ESC" : " %c", a);
+		printf("\n");
 	} else {
 		FILE *f = fopen(argv[2], "r");
 		int code, pr, ext, tog = 0;

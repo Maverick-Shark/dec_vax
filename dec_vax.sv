@@ -131,6 +131,7 @@ wire         dk_buff_wr;
 wire   [1:0] img_mounted;
 wire         img_readonly;
 wire  [63:0] img_size;
+wire  [64:0] rtc;           // the time of day, sent once when the core loads
 
 hps_io #(.CONF_STR(CONF_STR), .VDNUM(2)) hps_io
 (
@@ -167,7 +168,8 @@ hps_io #(.CONF_STR(CONF_STR), .VDNUM(2)) hps_io
 	.sd_buff_din('{dk_buff_din0, dk_buff_din1}),
 	.sd_buff_wr(dk_buff_wr),
 
-	.sdram_sz(sdram_sz)
+	.sdram_sz(sdram_sz),
+	.RTC(rtc)
 );
 
 
@@ -282,6 +284,7 @@ vax_system #(.CLK_HZ(50000000), .CPB(`CLKPERBIT), .UART_CPB(434), .CACHEIDX(`CAC
 	.rdphase_sel    (status[13:11]),
 	.diag           (status[18:17]),
 	.sdram_sz       (sdram_sz),
+	.rtc            (rtc),
 
 	.ps2_key        (ps2_key),
 	.uart_rxd       (UART_RXD),

@@ -59,6 +59,7 @@ module vax_system #(
 	input       [2:0] rdphase_sel,  // 0 = calibrated, 1..4 = force phase 0..3
 	input       [1:0] diag,         // fault finding: <0> cache off, <1> TB off
 	input      [15:0] sdram_sz,
+	input      [64:0] rtc,          // hps_io RTC: the time of day, local, BCD
 
 	input      [10:0] ps2_key,
 	input             uart_rxd,
@@ -112,6 +113,18 @@ module vax_system #(
 	wire cpu_halted;
 	reg  halt_req;      // Ctrl+P / OSD halt, one clock (see the console input)
 	reg  con_boot;      // a boot begins: the console's COLD flag, one clock
+
+	// ------------------------------------------------------------ time of year
+	// TODR at power-up from MiSTer's real-time clock, as the 8600's
+	// battery-backed TOY clock would have kept it (vax_toy.v)
+	wire        todr_ld;
+	wire [31:0] todr_val;
+	vax_toy toy(
+		.clk (clk),
+		.rtc (rtc),
+		.ld  (todr_ld),
+		.val (todr_val)
+	);
 
 	// ------------------------------------------------------------ loader
 	// ioctl_index 1: OSD Load Program, at the OSD's load address;
@@ -324,6 +337,8 @@ module vax_system #(
 		.tto_tx     (tto_tx),
 		.halt_req   (halt_req),
 		.con_boot   (con_boot),
+		.todr_ld    (todr_ld),
+		.todr_val   (todr_val),
 		.diag       (diag),
 
 		.stat_hit   (),
@@ -371,6 +386,14 @@ module vax_system #(
 		.valid (rx_valid)
 	);
 
+	// the terminal's reports (device attributes, cursor position) go back
+	// on the console line like typed characters (see the input FIFO) -
+	// unless the MiSTer UART is a console too: the terminal on its other
+	// end answers then, and two answers would reach the computer
+	wire [7:0] ans_data;
+	wire       ans_valid;
+	wire       ans_take;
+
 	// the self test writes to the screen before the CPU is released
 	wire [7:0] term_data  = st_busy ? st_char : rx_data;
 	wire       term_valid = st_busy ? st_stb  : rx_valid;
@@ -383,6 +406,9 @@ module vax_system #(
 		.rx_ready (term_ready),
 		.color    (color),
 		.bell     (bell),
+		.ans_data (ans_data),
+		.ans_valid(ans_valid),
+		.ans_take (ans_take),
 		.ce_pix   (ce_pix),
 		.hs       (hs),
 		.vs       (vs),
@@ -621,6 +647,10 @@ module vax_system #(
 	always @(posedge clk)
 		halt_req <= kbd_ctrlp | urx_ctrlp | halt_osd;
 
+	// a report is taken when the autostart is not typing (the UART's own
+	// terminal answers when the UART is a console: these are dropped)
+	assign ans_take = ans_valid && !rst_mem && !as_valid && (uart_console || !txf_full);
+
 	always @(posedge clk) begin
 		if (rst_mem) begin
 			txf_wp <= 8'd0;
@@ -632,6 +662,9 @@ module vax_system #(
 
 			if (as_valid && !txf_full) begin
 				txf[txf_wp] <= as_data;
+				txf_wp <= txf_wp + 8'd1;
+			end else if (ans_take && !uart_console) begin
+				txf[txf_wp] <= ans_data;
 				txf_wp <= txf_wp + 8'd1;
 			end else if (kbd_p && !txf_full) begin
 				txf[txf_wp] <= kbd_h;
