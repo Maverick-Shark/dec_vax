@@ -448,7 +448,13 @@ cm_table:
 intrq:
 	and 0 0		argp1		# end in scb_common
 	shr savpsw 10	argd0		# get IPL which is upper word in PSL
-	shl savpsw B	ncond goto intrq_hw # skip is hardware interrupt
+	# Hardware or software from the level just read, not from savpsw
+	# again: savpsw<20:16> is the level requested now, and a hardware
+	# request that came in between (the interval clock just after a
+	# software request at IPL 4 was taken) sent level 4 down the
+	# hardware path - SBIA 2008 0050, which does not exist, a machine
+	# check while starting the interrupt, halt 5 (VMS at boot).
+	and argd0 10	nzcond goto intrq_hw # skip is hardware interrupt
 	and 15 15	crn		# set ipr SISR
 	shl 1 argd0	arg1		# fix bit for masking
 	plus civ 0	arg2		# XXX civ in right
